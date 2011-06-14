@@ -14,7 +14,6 @@
 
 %% Router callbacks
 -export([handle/3]).
--export([send_request/3, send_response/2]).
 
 %% Include files
 -include_lib("sip_message.hrl").
@@ -31,14 +30,6 @@ handle(Conn, From, Msg) ->
 	{Kind, _ , _} = Msg#sip_message.start_line,
 	?MODULE ! {Kind, Conn, From, Msg},
 	ok.
-
--spec send_request(sip_transport:connection() | undefined, #sip_endpoint{}, #sip_message{}) -> sip_transport:connection().
-send_request(Conn, To, Msg) ->
-	sip_router:send_request(Conn, To, Msg).
-
--spec send_response(sip_transport:connection() | undefined, #sip_message{}) -> sip_transport:connection().
-send_response(Conn, Msg) ->
-	sip_router:send_response(Conn, Msg).
 
 %% Tests
 -ifdef(EUNIT).
@@ -93,14 +84,14 @@ send_request({_Transport, UDP, TCP}) ->
 	ExpectedRequestBin = sip_message:to_binary(Request#sip_message{headers = Headers}),
 
 	% RFC 3261, 18.1.1: Sending Requests
-	send_request(undefined, To, Request),
+	sip_transport:send_request(undefined, To, Request),
 	{ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),	
 	?assertEqual(ExpectedRequestBin, Packet),
 	
 	% RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
 	LongBody = sip_test:generate_body(<<$A>>, 1300),
 	LongRequest = Request#sip_message{body = LongBody},
-	send_request(undefined, To, LongRequest),
+	sip_transport:send_request(undefined, To, LongRequest),
 	{ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
 	LongExpected = <<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",
 					 "Via: SIP/2.0/TCP ", (sip_binary:any_to_binary(Hostname))/binary, ":15060\r\n",
@@ -116,7 +107,7 @@ send_request({_Transport, UDP, TCP}) ->
 	MTo = To#sip_endpoint{address = MAddr, ttl = 4},
 	
 	% Send request
-	send_request(undefined, MTo, Request),
+	sip_transport:send_request(undefined, MTo, Request),
 	
 	{ok, {_, 15060, MPacket}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 	?assertEqual(<<"INVITE sip:127.0.0.1/test SIP/2.0\r\n", 
@@ -225,7 +216,7 @@ send_response({_Transport, UDP, TCP}) ->
 		{request, Conn, _From, Msg} ->
 			?assertEqual(Request, sip_message:parse_whole(Msg)),
 			% Send response
-			send_response(Conn, Response),
+			sip_transport:send_response(Conn, Response),
 			{ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
 			?assertEqual(ActualResponse, ResponseBin);
 		
@@ -249,7 +240,7 @@ send_response({_Transport, UDP, TCP}) ->
 			gen_tcp:close(Socket2),
 			timer:sleep(?TIMEOUT),
 			% Send response
-			send_response(Conn2, Response),
+			sip_transport:send_response(Conn2, Response),
 			
 			% Server should retry by opening connection to received:sent-by-port
 			{ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
@@ -271,12 +262,12 @@ send_response({_Transport, UDP, TCP}) ->
 	ResponseBin2 = sip_message:to_binary(Response2),
 	
 	% Should be timeout (membership is not configured yet!)
-	send_response(undefined, Response2),
+	sip_transport:send_response(undefined, Response2),
 	{error, timeout} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 	
 	% This time we should receive it
 	inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),	
-	send_response(undefined, Response2),
+	sip_transport:send_response(undefined, Response2),
 	{ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ResponseBin2), ?TIMEOUT),
 	?assertEqual(ResponseBin2, Packet),
 	inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
@@ -287,7 +278,7 @@ send_response({_Transport, UDP, TCP}) ->
 							 headers = [{'via', [Via3]}]},
 	ResponseBin3 = sip_message:to_binary(Response3),
 	
-	send_response(undefined, Response3),
+	sip_transport:send_response(undefined, Response3),
 	{ok, {_, 15060, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
 	?assertEqual(ResponseBin3, Packet2),
 	
@@ -299,7 +290,7 @@ send_response({_Transport, UDP, TCP}) ->
 	
 	% check on default port
 	{ok, DefaultUDP} = gen_udp:open(5060, [inet, binary, {active, false}]),
-	send_response(undefined, Response4),
+	sip_transport:send_response(undefined, Response4),
 	{ok, {_, 15060, Packet3}} = gen_udp:recv(DefaultUDP, size(ResponseBin4), ?TIMEOUT),
 	gen_udp:close(DefaultUDP),
 	?assertEqual(ResponseBin4, Packet3),

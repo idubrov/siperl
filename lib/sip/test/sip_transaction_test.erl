@@ -11,7 +11,6 @@
 
 %% Router callbacks
 -export([handle/3]).
--export([send_request/3, send_response/2]).
 
 %% Include files
 -include_lib("sip_message.hrl").
@@ -27,18 +26,6 @@
 handle(Conn, From, Msg) ->
 	sip_router:handle(Conn, From, Msg).
 
-%% route requests to self instead of transport layer
--spec send_request(sip_transport:connection() | undefined, #sip_endpoint{}, #sip_message{}) -> sip_transport:connection().
-send_request(Conn, To, Msg) ->
-	?MODULE ! {request, Conn, To, Msg},
-	{ok, Conn}.
-
-%% route responses to self instead of transport layer
--spec send_response(sip_transport:connection() | undefined, #sip_message{}) -> sip_transport:connection().
-send_response(Conn, Msg) ->
-	?MODULE ! {response, Conn, Msg},
-	{ok, Conn}.
-
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -50,10 +37,22 @@ transaction_test_() ->
 	Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, sip_transaction_test}]),
 	Setup = 
 		fun () -> {ok, Pid} = sip_transaction_sup:start_link(Cfg),
+				  meck:new(sip_transport, [passthrough]),
+				  SendRequest = fun (Conn, To, Msg) ->
+										 ?MODULE ! {request, Conn, To, Msg},
+										 {ok, Conn}
+								end,
+				  SendResponse = fun (Conn, Msg) ->
+										  ?MODULE ! {response, Conn, Msg},
+										  {ok, Conn}
+								 end,
+				  meck:expect(sip_transport, send_request, SendRequest),
+				  meck:expect(sip_transport, send_response, SendResponse),
 				  {Pid} 
 		end,
 	Cleanup = 
 		fun ({Pid}) ->
+				 meck:unload(sip_transport),
 				 sip_test:shutdown_sup(Pid),
 				 ok
 		end,

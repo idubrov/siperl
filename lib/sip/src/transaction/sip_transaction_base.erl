@@ -67,14 +67,12 @@ send_ack(Response, Data) ->
 
 -spec send_request(#sip_message{}, #data{}) -> #data{}.
 send_request(Msg, Data) ->
-	Router = Data#data.router,
-	{ok, Conn} = Router:send_request(Data#data.connection, Data#data.remote, Msg),
+	{ok, Conn} = sip_transport:send_request(Data#data.connection, Data#data.remote, Msg),
 	Data#data{connection = Conn}.
 
 -spec send_response(#sip_message{}, #data{}) -> #data{}.
 send_response(Msg, Data) ->
-	Router = Data#data.router,
-	{ok, Conn} = Router:send_response(Data#data.connection, Msg),
+	{ok, Conn} = sip_transport:send_response(Data#data.connection, Msg),
 	Data#data{connection = Conn}.
 
 -spec pass_to_tu(#sip_message{}, #data{}) -> term().
