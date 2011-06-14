@@ -10,7 +10,7 @@
 -behaviour(sip_router).
 
 %% Router callbacks
--export([handle_request/3, handle_response/3]).
+-export([handle/3]).
 -export([send_request/3, send_response/2]).
 
 %% Include files
@@ -23,13 +23,9 @@
 %% Functions
 %%-----------------------------------------------------------------
 
--spec handle_request(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_request(Conn, From, Msg) ->
-	sip_router:handle_request(Conn, From, Msg).
-
--spec handle_response(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_response(Conn, From, Msg) ->
-	sip_router:handle_response(Conn, From, Msg).
+-spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
+handle(Conn, From, Msg) ->
+	sip_router:handle(Conn, From, Msg).
 
 %% route requests to self instead of transport layer
 -spec send_request(sip_transport:connection() | undefined, #sip_endpoint{}, #sip_message{}) -> sip_transport:connection().
@@ -85,7 +81,7 @@ client_invite_udp_err({_Tx}) ->
 	end,
 	
 	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-	handle_response(undefined, To, Response),
+	handle(undefined, To, Response),
 	
 	receive
 		{tx, TxRef, {response, Response}} ->
@@ -130,7 +126,7 @@ client_invite_tcp_err({_Tx}) ->
 	end,
 	
 	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-	handle_response(undefined, Dest, Response),
+	handle(undefined, Dest, Response),
 	
 	receive
 		{tx, TxRef, {response, Response}} ->

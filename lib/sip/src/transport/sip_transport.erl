@@ -146,7 +146,7 @@ dispatch(Connection, Remote, Msg)
 dispatch_request(Connection, From, Msg) ->
 	Msg2 = add_via_received(From, Msg),
 	Router = gen_server:call(?SERVER, get_router),
-	Router:handle_request(Connection, From, Msg2).
+	Router:handle(Connection, From, Msg2).
 
 dispatch_response(Connection, From, Msg) ->
 	% When a response is received, the client transport examines the top
@@ -157,7 +157,7 @@ dispatch_response(Connection, From, Msg) ->
 	case check_sent_by(From#sip_endpoint.transport, Msg) of
 		true ->
 			Router = gen_server:call(?SERVER, get_router),
-			Router:handle_response(Connection, From, Msg);
+			Router:handle(Connection, From, Msg);
 		
 		{ExpectedSentBy, SentBy} ->
 			error_logger:warning_report(['message_discarded', 

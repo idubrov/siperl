@@ -16,7 +16,7 @@
 
 %% API
 -export([start_link/1]).
--export([handle_request/3, handle_response/3]).
+-export([handle/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -35,19 +35,20 @@
 start_link(Cfg) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Cfg, []).
 
--spec handle_request(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_request(_Connection, Remote, Request) 
+-spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
+handle(_Connection, Remote, Msg) 
   when is_record(Remote, sip_endpoint), 
-	   is_record(Request, sip_message) ->
+	   is_record(Msg, sip_message) ->
 	
-	sip_transaction:start_tx(server, whereis(sip_core), Remote, Request),
-	ok.
+	case sip_message:is_request(Msg) of
+		true ->
+			sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg),
+			ok;
+		
+		false ->
+			ok
+	end.
 
--spec handle_response(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_response(_Connection, Remote, Request) 
-  when is_record(Remote, sip_endpoint), 
-	   is_record(Request, sip_message) ->
-	ok.
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------

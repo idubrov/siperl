@@ -14,7 +14,7 @@
 -behaviour(sip_router).
 
 %% Router callbacks
--export([handle_request/3, handle_response/3]).
+-export([handle/3]).
 -export([send_request/3, send_response/2]).
 -export([behaviour_info/1]).
 
@@ -29,8 +29,8 @@
 
 -spec behaviour_info(term()) -> list() | undefined.
 behaviour_info(callbacks) ->
-    [{handle_request, 3}, {handle_response, 3}, 	% Transport layer callbacks
-	 {send_request, 3}, {send_response, 2}			% Transport layer API
+    [{handle, 3}, 							% Transport layer callback
+	 {send_request, 3}, {send_response, 2}	% Transport layer API
 	];
 
 behaviour_info(_) ->
@@ -39,18 +39,18 @@ behaviour_info(_) ->
 %% Router implementation
 
 %% @doc
-%% Handle the request received by the transport layer.
+%% Handle the request/response received by the transport layer.
 %% @end
--spec handle_request(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_request(Conn, From, Msg) ->
-	handle(Conn, From, Msg, handle_request).
-
-%% @doc
-%% Handle the response received by the transport layer.
-%% @end
--spec handle_response(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle_response(Conn, From, Msg) ->
-	handle(Conn, From, Msg, handle_response).
+-spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
+handle(Conn, Remote, Msg) ->
+	case sip_transaction:handle(Conn, Remote, Msg) of
+		false ->
+			% pass to core, transaction layer have not processed the message
+			sip_core:handle(Conn, Remote, Msg);
+		_ -> 
+			% handled by tx layer
+			ok
+	end.
 
 %% @doc
 %% Send the request to the transport layer.
@@ -69,15 +69,3 @@ send_response(Conn, Msg) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
-
-%% Pass the message to the given handler function of transaction/core module
-handle(Conn, Remote, Msg, Handler) ->
-	case sip_transaction:handle(Conn, Remote, Msg) of
-		false ->
-			% pass to core, transaction layer have not processed the message
-			sip_core:Handler(Conn, Remote, Msg);
-		_ -> 
-			% handled by tx layer
-			ok
-	end.
-
