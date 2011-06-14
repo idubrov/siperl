@@ -1,0 +1,4 @@
+#!/bin/sh
+
+erl -pa lib/*/ebin -boot start_sasl
+

@@ -1,0 +1,5 @@
+_build
+*.beam
+.eunit
+lib/sip/ebin/sip.app
+rel/sipnode
