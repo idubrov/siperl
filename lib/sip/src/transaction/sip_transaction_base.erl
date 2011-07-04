@@ -36,7 +36,6 @@ init({Cfg, Key, TxUser, {Remote, Request}}) when is_record(Remote, sip_endpoint)
 	#data{t1 = sip_config:t1(Cfg),
 		  t2 = sip_config:t2(Cfg),
 		  t4 = sip_config:t4(Cfg),
-		  router = sip_config:router(Cfg),
 		  tx_user = TxUser,
 		  remote = Remote,
 		  request = Request,
