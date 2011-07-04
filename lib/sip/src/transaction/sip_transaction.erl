@@ -68,14 +68,24 @@ handle(_Connection, Remote, Msg)
   when is_record(Remote, sip_endpoint), 
 	   is_record(Msg, sip_message) ->
 	
-	Kind = case Msg#sip_message.start_line of
-			   {request, _Method, _RequestURI} ->
+	% requests go to server transactions, responses go to client
+	Kind = case sip_message:is_request(Msg) of
+			   true ->
 				   server;
-			   {response, _Status, _Reason} ->
+			   
+			   false ->
 				   client
-	end,
+		   end,
+	% lookup transaction by key
 	TxRef = lookup_tx(tx_key(Kind, Msg)),
-	tx_send(TxRef, Msg).
+	case tx_send(TxRef, Msg) of		
+		false when Kind =:= server ->
+			% start server transaction if existing tx not found
+			sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
+		
+		Res ->
+			Res
+	end.
 
 %% @doc
 %% Pass given message from the TU to the given transaction.

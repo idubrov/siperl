@@ -15,7 +15,6 @@
 
 %% Router callbacks
 -export([handle/3]).
--export([send_request/3, send_response/2]).
 -export([behaviour_info/1]).
 
 %% Includes
@@ -29,9 +28,7 @@
 
 -spec behaviour_info(term()) -> list() | undefined.
 behaviour_info(callbacks) ->
-    [{handle, 3}, 							% Transport layer callback
-	 {send_request, 3}, {send_response, 2}	% Transport layer API
-	];
+    [{handle, 3}]; 							% Transport layer callback
 
 behaviour_info(_) ->
     undefined.
@@ -51,21 +48,3 @@ handle(Conn, Remote, Msg) ->
 			% handled by tx layer
 			ok
 	end.
-
-%% @doc
-%% Send the request to the transport layer.
-%% @end
--spec send_request(sip_transport:connection() | undefined, #sip_endpoint{}, #sip_message{}) -> {ok, sip_transport:connection()}.
-send_request(Conn, To, Msg) ->
-	sip_transport:send_request(Conn, To, Msg).
-
-%% @doc
-%% Send the response to the transport layer.
-%% @end
--spec send_response(sip_transport:connection() | undefined, #sip_message{}) -> {ok, sip_transport:connection()}.
-send_response(Conn, Msg) ->
-	sip_transport:send_response(Conn, Msg).
-
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------

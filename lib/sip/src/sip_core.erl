@@ -39,15 +39,8 @@ start_link(Cfg) ->
 handle(_Connection, Remote, Msg) 
   when is_record(Remote, sip_endpoint), 
 	   is_record(Msg, sip_message) ->
-	
-	case sip_message:is_request(Msg) of
-		true ->
-			sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg),
-			ok;
-		
-		false ->
-			ok
-	end.
+	% FIXME: core layer implementation..
+	ok.	
 
 %%-----------------------------------------------------------------
 %% Server callbacks

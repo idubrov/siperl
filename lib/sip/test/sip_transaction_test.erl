@@ -46,6 +46,7 @@ transaction_test_() ->
 										  ?MODULE ! {response, Conn, Msg},
 										  {ok, Conn}
 								 end,
+				  % Mock transport layer calls
 				  meck:expect(sip_transport, send_request, SendRequest),
 				  meck:expect(sip_transport, send_response, SendResponse),
 				  {Pid} 
