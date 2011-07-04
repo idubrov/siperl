@@ -7,11 +7,6 @@
 %%%----------------------------------------------------------------
 -module(sip_transaction_test).
 
--behaviour(sip_router).
-
-%% Router callbacks
--export([handle/3]).
-
 %% Include files
 -include_lib("sip_message.hrl").
 -include_lib("sip_transport.hrl").
@@ -22,10 +17,6 @@
 %% Functions
 %%-----------------------------------------------------------------
 
--spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle(Conn, From, Msg) ->
-	sip_router:handle(Conn, From, Msg).
-
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -34,16 +25,16 @@ handle(Conn, From, Msg) ->
 -spec transaction_test_() -> term().
 transaction_test_() ->
 	% Listen on 15060
-	Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, sip_transaction_test}]),
+	Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, undefined}]),
 	Setup = 
 		fun () -> {ok, Pid} = sip_transaction_sup:start_link(Cfg),
 				  meck:new(sip_transport, [passthrough]),
 				  SendRequest = fun (Conn, To, Msg) ->
-										 ?MODULE ! {request, Conn, To, Msg},
+										 ?MODULE ! {transport, Conn, {request, To, Msg}},
 										 {ok, Conn}
 								end,
 				  SendResponse = fun (Conn, Msg) ->
-										  ?MODULE ! {response, Conn, Msg},
+										  ?MODULE ! {transport, Conn, {response, Msg}},
 										  {ok, Conn}
 								 end,
 				  % Mock transport layer calls
@@ -62,90 +53,99 @@ transaction_test_() ->
 							 fun client_invite_udp_err/1], 60)
 	  }.  
 
+
+tp_expect(Msg) ->
+	tp_expect(Msg, ?TIMEOUT).
+
+tp_expect(Msg, Timeout) when is_integer(Timeout) ->
+	receive
+		{transport, _Conn, Msg} -> ok
+	after Timeout -> ?fail("Message expected to be sent from transaction layer to transport layer")
+	end.
+
+tp_expect_not() ->
+	tp_expect_not(?TIMEOUT).
+
+tp_expect_not(Timeout) ->
+	receive
+		{transport, _Conn, _Msg} -> ?fail("Not expecting messages coming from transaction to transport layer!")
+	after ?TIMEOUT -> ok
+	end.
+
+tp_receive(Conn, Remote, Msg) ->
+	sip_router:handle(Conn, Remote, Msg).
+
+tu_expect(TxRef, Msg) ->
+	tu_expect(TxRef, Msg, ?TIMEOUT).
+
+tu_expect(TxRef, Msg, Timeout) ->
+	receive
+		{tx, TxRef, Msg} ->
+			ok
+		
+	after ?TIMEOUT -> ?fail("Should receive response from transaction layer!")
+	end.
+
+tu_send(TxRef, Msg) ->
+	sip_transaction:send(TxRef, Msg).
+
 client_invite_udp_err({_Tx}) ->
 	register(?MODULE, self()),
 	To = sip_test:endpoint(udp),
 	Request = sip_test:invite(udp),
 	
 	{ok, TxRef} = sip_transaction:start_tx(client, self(), To, Request),
-	% First request
-	receive
-		{request, _Conn, To, Request} -> ok
-	after ?TIMEOUT -> ?fail("Request expected to be sent by transaction layer")
-	end,
 	
-	% Retransmission (in 500 ms)
-	receive
-		{request, _Conn2, To, Request} -> ok
-	after ?TIMEOUT * 2 -> ?fail("Request expected to be retransmitted by transaction layer")
-	end,
+	% Expect first request to be sent by tx layer
+	tp_expect({request, To, Request}),
 	
-	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-	handle(undefined, To, Response),
+	% Expect retransmission (in 500 ms) to be sent by tx layer
+	tp_expect({request, To, Request}, ?TIMEOUT * 2),
 	
-	receive
-		{tx, TxRef, {response, Response}} ->
-			ok
-		
-	after ?TIMEOUT -> ?fail("Should receive response from transaction layer!")
-	end,
+	% Emulate response received by transport layer
+	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},	
+	tp_receive(undefined, To, Response),
+
+	% Expect response to be passed to TU
+	tu_expect(TxRef, {response, Response}),
 	
-	% Wait for ACK
+	% Expect ACK to be sent by tx layer
 	ACK = sip_message:create_ack(Request, Response),
-	receive
-		{request, _Conn3, _To3, ACK} -> ok	
-	after ?TIMEOUT -> ?fail("ACK should be received!")
-	end,
+	tp_expect({request, To, ACK}),
 	
-	% should terminate in 32 seconds after receiving final response
+	% Expect tx to terminate in 32 seconds after receiving final response
 	timer:sleep(32000),
-	receive
-		{tx, TxRef, {terminated, normal}} -> ok	
-	after ?TIMEOUT -> ?fail("Transaction should terminate at that moment!")
-	end,
+	tu_expect(TxRef, {terminated, normal}),
 	
 	unregister(?MODULE),
 	ok.
 
 client_invite_tcp_err({_Tx}) ->
 	register(?MODULE, self()),
-	Dest = sip_test:endpoint(tcp),
+	To = sip_test:endpoint(tcp),
 	Request = sip_test:invite(tcp),
 	
-	{ok, TxRef} = sip_transaction:start_tx(client, self(), Dest, Request),
-	% First request
-	receive
-		{request, _Conn, Dest, Request} -> ok
-	after ?TIMEOUT -> ?fail("Request expected to be sent by transaction layer")
-	end,
+	{ok, TxRef} = sip_transaction:start_tx(client, self(), To, Request),
 	
-	% Retransmission should not be sent
-	receive
-		{request, _Conn2, _To2, _Msg2} -> ?fail("Retransmissions should not be sent")
-	after ?TIMEOUT * 2 -> ok
-	end,
+	% Expect first request to be sent by tx layer
+	tp_expect({request, To, Request}),
 	
+	% Expect retransmission not to be sent by tx layer
+	tp_expect_not(?TIMEOUT * 2),
+	
+	% Emulate response received by transport layer
 	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-	handle(undefined, Dest, Response),
+	tp_receive(undefined, To, Response),
 	
-	receive
-		{tx, TxRef, {response, Response}} ->
-			ok
-	after ?TIMEOUT -> ?fail("Should receive response from transaction layer!")
-	end,
+	% Expect response to be passed to TU
+	tu_expect(TxRef, {response, Response}),
 	
-	% Wait for ACK
+	% Expect ACK to be sent by tx layer
 	ACK = sip_message:create_ack(Request, Response),
-	receive
-		{request, _Conn3, _To3, ACK} -> ok	
-	after ?TIMEOUT -> ?fail("ACK should be received!")
-	end,
+	tp_expect({request, To, ACK}),
 	
-	% should terminate in 0 seconds after receiving final response
-	receive
-		{tx, TxRef, {terminated, normal}} -> ok	
-	after ?TIMEOUT -> ?fail("Transaction should terminate at that moment!")
-	end,
+	% Expect tx to terminate in 0 seconds after receiving final response
+	tu_expect(TxRef, {terminated, normal}),
 	
 	unregister(?MODULE),
 	ok.
