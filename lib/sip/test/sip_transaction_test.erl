@@ -42,7 +42,8 @@ transaction_test_() ->
              client_timeout_proceeding,
 
              server_invite_ok,
-             server_invite_err],
+             server_invite_err,
+             server_invite_timeout],
     specs(Tests).
 
 %% @doc
@@ -576,6 +577,45 @@ server_invite_err(Transport) ->
     ?assertReceive("Expect tx to terminate after receiving final response",
                    {tx, TxRef, {terminated, normal}}),
     ?assertReceiveNot("Message queue is empty", _),
+    unregister(?REGNAME),
+    ok.
+
+%% @doc
+%% Scenario tested:
+%% - INVITE request is received
+%% - request is passed to TU
+%% - 100 Trying is sent
+%% - 500 response is sent by TU
+%% - 500 response is sent to the transport
+%% - transaction terminates due to timeout
+%% @end
+server_invite_timeout(Transport) ->
+    register(?REGNAME, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+
+    % Final response is sent by TU
+    sip_transaction:send(TxRef, Response),
+    ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
+
+    timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after timeout final response",
+                   {tx, TxRef, {terminated, timeout}}),
+    case IsReliable of
+        true -> ?assertReceiveNot("Message queue is empty", _);
+        false -> ok % we have lots of message retransmissions in message queue
+    end,
+
     unregister(?REGNAME),
     ok.
 
