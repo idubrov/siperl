@@ -48,10 +48,12 @@ trim_trailing(<<>>) ->
 trim_trailing(Bin) ->
     Sz = size(Bin) - 1,
     <<Rest:Sz/binary, C>> = Bin,
-    IsSpace = is_space_char(C),
-    if
-        IsSpace -> trim_trailing(Rest);
-        true -> Bin
+    case is_space_char(C) of
+        true ->
+            trim_trailing(Rest);
+
+        _ ->
+            Bin
     end.
 
 %% @doc
