@@ -28,7 +28,7 @@
 
 -spec behaviour_info(term()) -> list() | undefined.
 behaviour_info(callbacks) ->
-    [{handle, 3}]; 							% Transport layer callback
+    [{handle, 3}];                             % Transport layer callback
 
 behaviour_info(_) ->
     undefined.
@@ -40,11 +40,11 @@ behaviour_info(_) ->
 %% @end
 -spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
 handle(Conn, Remote, Msg) ->
-	case sip_transaction:handle(Conn, Remote, Msg) of
-		not_handled ->
-			% pass to core, transaction layer have not processed the message
-			sip_core:handle(Conn, Remote, Msg);
-		{ok, _TxRef} -> 
-			% handled by tx layer
-			ok
-	end.
+    case sip_transaction:handle(Conn, Remote, Msg) of
+        not_handled ->
+            % pass to core, transaction layer have not processed the message
+            sip_core:handle(Conn, Remote, Msg);
+       {ok, _TxRef} ->
+            % handled by tx layer
+            ok
+    end.

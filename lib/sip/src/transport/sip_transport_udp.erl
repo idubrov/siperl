@@ -43,17 +43,17 @@ start_link(Ports, Sup) when is_list(Ports), is_pid(Sup) ->
 %%-----------------------------------------------------------------
 -spec connect(#sip_endpoint{}) -> {ok, sip_transport:connection()}.
 connect(To) when is_record(To, sip_endpoint) ->
-	% UDP is connectionless, so "connection" is pair of process
-	% with UDP socket and destination
-	{ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
-	{ok, {Pid, To}}.
+    % UDP is connectionless, so "connection" is pair of process
+    % with UDP socket and destination
+    {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
+    {ok, {Pid, To}}.
 
 -spec send(sip_transport:connection(), #sip_message{}) -> {ok, sip_transport:connection()} | {error, Reason :: term()}.
-send({Pid, To}, Message) when 
+send({Pid, To}, Message) when
   is_pid(Pid),
   is_record(To, sip_endpoint),
   is_record(Message, sip_message) ->
-	sip_transport_udp_socket:send(Pid, To, Message).
+    sip_transport_udp_socket:send(Pid, To, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -62,15 +62,15 @@ send({Pid, To}, Message) when
 %% @private
 -spec init({[integer()], pid()}) -> {ok, #state{}}.
 init({Ports, Sup}) ->
-	{ok, #state{ports = Ports, supervisor = Sup}}.
+    {ok, #state{ports = Ports, supervisor = Sup}}.
 
 %% @private
--spec handle_call({lookup_socket | term(), #sip_endpoint{}}, _, #state{}) -> 
-		  {reply, #sip_endpoint{} | false, #state{}}.
+-spec handle_call({lookup_socket | term(), #sip_endpoint{}}, _, #state{}) ->
+          {reply, #sip_endpoint{} | false, #state{}}.
 handle_call({lookup_socket, _To}, _From, State) ->
-	% Consult parent supervisor for children named like {socket, _}
-	Endpoint = lookup_socket(supervisor:which_children(State#state.supervisor)),
-	{reply, Endpoint, State};
+    % Consult parent supervisor for children named like {socket, _}
+    Endpoint = lookup_socket(supervisor:which_children(State#state.supervisor)),
+    {reply, Endpoint, State};
 
 %% @private
 handle_call(Req, _From, State) ->
@@ -89,12 +89,12 @@ handle_cast(Req, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->	
-	{ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -102,10 +102,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Lookup for the first UDP transport available.
 lookup_socket([]) ->
-	false;
+    false;
 
 lookup_socket([{{socket, _}, Child, _Type, _Modules} | _]) ->
-	{ok, Child};
+    {ok, Child};
 
 lookup_socket([_|T]) ->
-	lookup_socket(T).
+    lookup_socket(T).

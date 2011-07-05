@@ -43,9 +43,9 @@ start_link(Cfg) ->
 %% @private
 -spec init(sip_config:config()) -> {ok, _}.
 init(Cfg) ->
-	Children = [?SPEC(sip_transaction_tx_sup, supervisor, [Cfg]),
-				?WORKER(sip_transaction, [Cfg])],
-	% Restart the whole layer in case any child fails
+    Children = [?SPEC(sip_transaction_tx_sup, supervisor, [Cfg]),
+                ?WORKER(sip_transaction, [Cfg])],
+    % Restart the whole layer in case any child fails
     {ok, {{one_for_all, 1000, 3600}, Children}}.
 
 %%-----------------------------------------------------------------

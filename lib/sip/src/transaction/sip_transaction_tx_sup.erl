@@ -42,19 +42,19 @@ start_link(T1) ->
 %% Start transaction FSM process.
 %% @end
 -spec start_tx({sip_transaction:tx_key(), module()}, term(), {To :: #sip_endpoint{}, Msg :: #sip_message{}}) ->
-		  supervisor:start_child_ret().
+          supervisor:start_child_ret().
 start_tx(KeyModule, TxUser, ToMsg) ->
-	supervisor:start_child(?SERVER, [KeyModule, TxUser, ToMsg]).
+    supervisor:start_child(?SERVER, [KeyModule, TxUser, ToMsg]).
 
 %% @private
 %% Start FSM implemented by given module.
--spec start_fsm_link(sip_config:config(), 
-					 {sip_transaction:tx_key(), module()}, 
-					 term(), 
-					 {To :: #sip_endpoint{}, Msg :: #sip_message{}}) ->
-		  {ok, pid()} | ignore | {error, term()}.
+-spec start_fsm_link(sip_config:config(),
+                     {sip_transaction:tx_key(), module()},
+                     term(),
+                     {To :: #sip_endpoint{}, Msg :: #sip_message{}}) ->
+          {ok, pid()} | ignore | {error, term()}.
 start_fsm_link(Cfg, {Key, Module}, TxUser, {To, Msg}) ->
-	gen_fsm:start_link(Module, {Cfg, Key, TxUser, {To, Msg}}, []).
+    gen_fsm:start_link(Module, {Cfg, Key, TxUser, {To, Msg}}, []).
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks
@@ -63,6 +63,6 @@ start_fsm_link(Cfg, {Key, Module}, TxUser, {To, Msg}) ->
 %% @private
 -spec init(sip_config:config()) -> {ok, term()}.
 init(Cfg) ->
-	Worker = {tx, {sip_transaction_tx_sup, start_fsm_link, [Cfg]}, temporary, 2000, worker, dynamic},
+    Worker = {tx, {sip_transaction_tx_sup, start_fsm_link, [Cfg]}, temporary, 2000, worker, dynamic},
     {ok, {{simple_one_for_one, 1000, 3600}, [Worker]}}.
 

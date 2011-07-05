@@ -25,21 +25,21 @@
 %% @end
 -spec t1(config()) -> integer().
 t1(Cfg) ->
-	entry(Cfg, t1, 500).
+    entry(Cfg, t1, 500).
 
 %% @doc
 %% Get T2 timer value. See RFC 3261 Appendix A.
 %% @end
 -spec t2(config()) -> integer().
 t2(Cfg) ->
-	entry(Cfg, t2, 4000).
+    entry(Cfg, t2, 4000).
 
 %% @doc
 %% Get T4 timer value. See RFC 3261 Appendix A.
 %% @end
 -spec t4(config()) -> integer().
 t4(Cfg) ->
-	entry(Cfg, t4, 5000).
+    entry(Cfg, t4, 5000).
 
 %% @doc
 %% Get ports for given transport.
@@ -50,29 +50,29 @@ ports(Cfg, tcp) -> entry(Cfg, tcp, [5060]).
 
 -spec router(config()) -> atom().
 router(Cfg) ->
-	entry(Cfg, router, no_router).
+    entry(Cfg, router, no_router).
 
 -spec app(config()) -> atom().
 app(Cfg) ->
-	entry(Cfg, app, no_app).
+    entry(Cfg, app, no_app).
 
 -spec self(config()) -> binary().
 self(Cfg) ->
-	{ok, Hostname} = inet:gethostname(),
-	entry(Cfg, self, list_to_binary(Hostname)).
+    {ok, Hostname} = inet:gethostname(),
+    entry(Cfg, self, list_to_binary(Hostname)).
 
 %% @doc
 %% Create configuration from list of options.
 %% @end
 -spec from_options([{Name :: atom(), Value :: term()}]) -> config().
 from_options(List) ->
-	List.
-	
+    List.
+
 %%%----------------------------------------------------------------
 %% Internal functions
 %%%----------------------------------------------------------------
 entry(Cfg, Param, Default) when is_list(Cfg), is_atom(Param) ->
-	case lists:keyfind(Param, 1, Cfg) of
-		{Param, Value} -> Value;
-		false -> Default
-	end.
+    case lists:keyfind(Param, 1, Cfg) of
+        {Param, Value} -> Value;
+        false -> Default
+    end.

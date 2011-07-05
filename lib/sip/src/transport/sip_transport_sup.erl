@@ -46,13 +46,13 @@ start_link(Opts) when is_list(Opts) ->
 %% @private
 -spec init(sip_config:config()) -> {ok, _}.
 init(Cfg) ->
-	% Start endpoint supervisors	
-	UDP = sip_config:ports(Cfg, udp),
-	TCP = sip_config:ports(Cfg, tcp),
-	
-	Children = [?SPEC(sip_transport_udp_sup, supervisor, [UDP]),
-				?SPEC(sip_transport_tcp_sup, supervisor, [TCP]),
-				?WORKER(sip_transport, [Cfg])],
+    % Start endpoint supervisors
+    UDP = sip_config:ports(Cfg, udp),
+    TCP = sip_config:ports(Cfg, tcp),
+
+    Children = [?SPEC(sip_transport_udp_sup, supervisor, [UDP]),
+                ?SPEC(sip_transport_tcp_sup, supervisor, [TCP]),
+                ?WORKER(sip_transport, [Cfg])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
 
 %%-----------------------------------------------------------------

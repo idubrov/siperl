@@ -47,14 +47,14 @@ start_link(Ports) when is_list(Ports) ->
 %%-----------------------------------------------------------------
 -spec connect(#sip_endpoint{}) -> {ok, sip_transport:connection()}.
 connect(To) when is_record(To, sip_endpoint) ->
-	% XXX: Actually, we may want to reuse connection...
-	sip_transport_tcp_conn_sup:start_connection(To).
+    % XXX: Actually, we may want to reuse connection...
+    sip_transport_tcp_conn_sup:start_connection(To).
 
 -spec send(sip_transport:connection(), #sip_message{}) -> {ok, sip_transport:connection()} | {error, Reason :: term()}.
 send(Pid, Message) when
   is_pid(Pid),
   is_record(Message, sip_message) ->
-	sip_transport_tcp_conn:send(Pid, Message).
+    sip_transport_tcp_conn:send(Pid, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -63,7 +63,7 @@ send(Pid, Message) when
 %% @private
 -spec init([integer()]) -> {ok, #state{}}.
 init(Ports) ->
-	{ok, #state{ports = Ports}}.
+    {ok, #state{ports = Ports}}.
 
 %% @private
 -spec handle_call(_, _, #state{}) -> {stop, {unexpected, _}, #state{}}.
@@ -83,9 +83,9 @@ handle_cast(Req, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->	
-	{ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

@@ -39,17 +39,17 @@ start_link() ->
 %% Start new connection. Socket is opened by the connection process.
 %% @end
 -spec start_connection(#sip_endpoint{} | inet:socket()) -> {ok, pid()} | {error, any()}.
-start_connection(RemoteEndpoint) 
+start_connection(RemoteEndpoint)
   when is_record(RemoteEndpoint, sip_endpoint) ->
-	supervisor:start_child(?SERVER, [RemoteEndpoint]);
+    supervisor:start_child(?SERVER, [RemoteEndpoint]);
 
 %% @doc
 %% Start worker process and transfer socket ownership to it.
 %% @end
 start_connection(Socket) ->
-	{ok, Pid} = supervisor:start_child(?SERVER, [Socket]),
-	ok = gen_tcp:controlling_process(Socket, Pid),
-	{ok, Pid}.
+    {ok, Pid} = supervisor:start_child(?SERVER, [Socket]),
+    ok = gen_tcp:controlling_process(Socket, Pid),
+    {ok, Pid}.
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks
@@ -58,8 +58,8 @@ start_connection(Socket) ->
 %% @private
 -spec init([]) -> {ok, _}.
 init([]) ->
-	% TCP connection child spec
-	Module = sip_transport_tcp_conn,
-	Worker = {Module, {Module, start_link, []}, temporary, 2000, worker, [Module]},
+    % TCP connection child spec
+    Module = sip_transport_tcp_conn,
+    Worker = {Module, {Module, start_link, []}, temporary, 2000, worker, [Module]},
     {ok, {{simple_one_for_one, 1000, 3600}, [Worker]}}.
 

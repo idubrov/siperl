@@ -34,10 +34,10 @@ start_link(Port) when is_integer(Port) ->
 %% @private
 -spec init(integer()) -> {ok, #state{}}.
 init(Port) ->
-	{ok, Socket} = gen_tcp:listen(Port, [binary, {active, false}, {reuseaddr, true}, inet]),
-	
-	% Start infinite accept cycle
-	gen_server:cast(self(), accept),
+    {ok, Socket} = gen_tcp:listen(Port, [binary, {active, false}, {reuseaddr, true}, inet]),
+
+    % Start infinite accept cycle
+    gen_server:cast(self(), accept),
     {ok, #state{socket = Socket}}.
 
 %% @private
@@ -53,16 +53,16 @@ handle_call(Req, _From, State) ->
 %% @private
 -spec handle_cast(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
 handle_cast(accept, State) ->
-	Socket = State#state.socket,
-	case gen_tcp:accept(Socket, 1000) of
-		{ok, Sock} ->
-			sip_transport_tcp_conn_sup:start_connection(Sock);
+    Socket = State#state.socket,
+    case gen_tcp:accept(Socket, 1000) of
+        {ok, Sock} ->
+            sip_transport_tcp_conn_sup:start_connection(Sock);
 
-		{error, timeout} ->
-			ok
-	end,
-	gen_server:cast(self(), accept),
-	{noreply, State};
+        {error, timeout} ->
+            ok
+    end,
+    gen_server:cast(self(), accept),
+    {noreply, State};
 
 %% @private
 handle_cast(Req, State) ->
@@ -71,9 +71,9 @@ handle_cast(Req, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
 code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
+    {ok, State}.

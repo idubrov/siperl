@@ -24,9 +24,9 @@
 %% Macros
 %%-----------------------------------------------------------------
 -define(SERVER, ?MODULE).
--define(LISTENER(Port), 
-		{{socket, Port}, {sip_transport_udp_socket, start_link, [Port]}, 
-			 permanent, 2000, worker, [sip_transport_udp_socket]}).
+-define(LISTENER(Port),
+        {{socket, Port}, {sip_transport_udp_socket, start_link, [Port]},
+             permanent, 2000, worker, [sip_transport_udp_socket]}).
 
 %%-----------------------------------------------------------------
 %% Include files
@@ -47,9 +47,9 @@ start_link(Ports) when is_list(Ports) ->
 %% @private
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
-	% Start listener
-	Children = [
-				?WORKER(sip_transport_udp, [Ports, self()]) | % UDP transport API
-				lists:map(fun (Port) when is_integer(Port) -> ?LISTENER(Port) end, Ports) % Listeners 
-				],
+    % Start listener
+    Children = [
+                ?WORKER(sip_transport_udp, [Ports, self()]) | % UDP transport API
+                lists:map(fun (Port) when is_integer(Port) -> ?LISTENER(Port) end, Ports) % Listeners
+                ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

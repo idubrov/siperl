@@ -36,11 +36,11 @@ start_link(Cfg) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Cfg, []).
 
 -spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle(_Connection, Remote, Msg) 
-  when is_record(Remote, sip_endpoint), 
-	   is_record(Msg, sip_message) ->
-	% FIXME: core layer implementation..
-	ok.	
+handle(_Connection, Remote, Msg)
+  when is_record(Remote, sip_endpoint),
+       is_record(Msg, sip_message) ->
+    % FIXME: core layer implementation..
+    ok.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -49,25 +49,25 @@ handle(_Connection, Remote, Msg)
 %% @private
 -spec init({sip_config:config(), pid()}) -> {ok, #state{}}.
 init(Cfg) ->
-	{ok, #state{config = Cfg}}.
+    {ok, #state{config = Cfg}}.
 
 %% @private
--spec handle_call(_, _, #state{}) -> 
-		  {stop, {unexpected, _}, #state{}}.
+-spec handle_call(_, _, #state{}) ->
+          {stop, {unexpected, _}, #state{}}.
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
 
 %% @private
 -spec handle_info(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
 handle_info({tx, {_, Pid}, {request, Request}}, State) ->
-	%% send response...
-	%?debugFmt("Got message from ~p data ~p~n", [Pid, Data]),
-	Response = sip_message:create_response(Request, 486, <<"Busy here">>, <<"anytag">>),
-	gen_fsm:sync_send_event(Pid, {response, 486, Response}),
-	{noreply, State};
+    %% send response...
+    %?debugFmt("Got message from ~p data ~p~n", [Pid, Data]),
+    Response = sip_message:create_response(Request, 486, <<"Busy here">>, <<"anytag">>),
+    gen_fsm:sync_send_event(Pid, {response, 486, Response}),
+    {noreply, State};
 handle_info({tx, _, _TxReq}, State) ->
-	% ignore TX messages for now..
-	{noreply, State};
+    % ignore TX messages for now..
+    {noreply, State};
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
@@ -79,9 +79,9 @@ handle_cast(Req, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->	
-	{ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

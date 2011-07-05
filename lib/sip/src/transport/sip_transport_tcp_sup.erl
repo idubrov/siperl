@@ -25,9 +25,9 @@
 %% Macros
 %%-----------------------------------------------------------------
 -define(SERVER, ?MODULE).
--define(LISTENER(Port), 
-		{{listener, Port}, {sip_transport_tcp_listener, start_link, [Port]}, 
-			 permanent, 2000, worker, [sip_transport_tcp_listener]}).
+-define(LISTENER(Port),
+        {{listener, Port}, {sip_transport_tcp_listener, start_link, [Port]},
+             permanent, 2000, worker, [sip_transport_tcp_listener]}).
 
 %%-----------------------------------------------------------------
 %% Include files
@@ -48,9 +48,9 @@ start_link(Ports) when is_list(Ports) ->
 %% @private
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
-	Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor), % Supervisor for connections
-				?WORKER(sip_transport_tcp_conn_registry), % Registry for connections
-				?WORKER(sip_transport_tcp, [Ports]) | % TCP transport API
-				lists:map(fun (Port) -> ?LISTENER(Port) end, Ports) % Listeners
-			   ],
+    Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor), % Supervisor for connections
+                ?WORKER(sip_transport_tcp_conn_registry), % Registry for connections
+                ?WORKER(sip_transport_tcp, [Ports]) | % TCP transport API
+                lists:map(fun (Port) -> ?LISTENER(Port) end, Ports) % Listeners
+               ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

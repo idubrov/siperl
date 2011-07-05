@@ -30,8 +30,8 @@
 
 %% Types
 -record(state, {config,
-				transactions = dict:new(), % Key -> pid()
-				pids = dict:new()}).       % pid() -> Key
+                transactions = dict:new(), % Key -> pid()
+                pids = dict:new()}).       % pid() -> Key
 
 -type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()}.
 -type tx_ref() :: {tx_key(), pid()}.
@@ -46,53 +46,53 @@ start_link(Cfg) ->
 
 %% @doc
 %% Start new client transaction.
-%% @end 
+%% @end
 -spec start_tx(client | server, any(), #sip_endpoint{}, #sip_message{}) -> {ok, tx_ref()}.
-start_tx(Kind, TU, Remote, Request) 
-  when (Kind =:= client orelse Kind =:= server), 
-  	   is_pid(TU),
-	   is_record(Request, sip_message),
-	   is_record(Remote, sip_endpoint) ->
-	gen_server:call(?SERVER, {start_tx, Kind, TU, Remote, Request}).
+start_tx(Kind, TU, Remote, Request)
+  when (Kind =:= client orelse Kind =:= server),
+         is_pid(TU),
+       is_record(Request, sip_message),
+       is_record(Remote, sip_endpoint) ->
+    gen_server:call(?SERVER, {start_tx, Kind, TU, Remote, Request}).
 
 -spec list_tx() -> [tx_ref()].
 list_tx() ->
-	gen_server:call(?SERVER, list_tx).
+    gen_server:call(?SERVER, list_tx).
 
 %% @doc
 %% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
 -spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> not_handled | {ok, tx_ref()}.
-handle(_Connection, Remote, Msg) 
-  when is_record(Remote, sip_endpoint), 
-	   is_record(Msg, sip_message) ->
-	
-	% requests go to server transactions, responses go to client
-	Kind = case sip_message:is_request(Msg) of
-			   true ->
-				   server;
-			   
-			   false ->
-				   client
-		   end,
-	% lookup transaction by key
-	TxRef = lookup_tx(tx_key(Kind, Msg)),
-	case tx_send(TxRef, Msg) of		
-		not_handled when Kind =:= server ->
-			% start server transaction if existing tx not found
-			sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
-		
-		Res ->
-			Res
-	end.
+handle(_Connection, Remote, Msg)
+  when is_record(Remote, sip_endpoint),
+       is_record(Msg, sip_message) ->
+
+    % requests go to server transactions, responses go to client
+    Kind = case sip_message:is_request(Msg) of
+               true ->
+                   server;
+
+               false ->
+                   client
+           end,
+    % lookup transaction by key
+    TxRef = lookup_tx(tx_key(Kind, Msg)),
+    case tx_send(TxRef, Msg) of
+        not_handled when Kind =:= server ->
+            % start server transaction if existing tx not found
+            sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
+
+        Res ->
+            Res
+    end.
 
 %% @doc
 %% Pass given message from the TU to the given transaction.
 %% @end
 -spec send(tx_ref(), #sip_message{}) -> false | ok.
 send(TxRef, Msg)  when is_record(Msg, sip_message) ->
-	tx_send(TxRef, Msg).
+    tx_send(TxRef, Msg).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -101,35 +101,35 @@ send(TxRef, Msg)  when is_record(Msg, sip_message) ->
 %% @private
 -spec init({sip_config:config(), pid()}) -> {ok, #state{}}.
 init(Cfg) ->
-	{ok, #state{config = Cfg}}.
+    {ok, #state{config = Cfg}}.
 
 %% @private
--spec handle_call(_, _, #state{}) -> 
-		  {reply, [sip_transaction:tx_ref()], #state{}} | 
-		  {reply, {ok, sip_transaction:tx_ref()} | error, #state{}} |
-		  {reply, {ok, sip_transaction:tx_ref()}, #state{}} |
-		  {stop, {unexpected, _}, #state{}}.
+-spec handle_call(_, _, #state{}) ->
+          {reply, [sip_transaction:tx_ref()], #state{}} |
+          {reply, {ok, sip_transaction:tx_ref()} | error, #state{}} |
+          {reply, {ok, sip_transaction:tx_ref()}, #state{}} |
+          {stop, {unexpected, _}, #state{}}.
 handle_call(list_tx, _From, State) ->
-	Result = dict:to_list(State#state.transactions),
+    Result = dict:to_list(State#state.transactions),
     {reply, Result, State};
 
 handle_call({lookup_tx, Key}, _From, State) ->
-	Result = case dict:find(Key, State#state.transactions) of
-				 {ok, Pid} -> {ok, {Key, Pid}};
-				 error -> error
-			 end,
+    Result = case dict:find(Key, State#state.transactions) of
+                 {ok, Pid} -> {ok, {Key, Pid}};
+                 error -> error
+             end,
     {reply, Result, State};
 
 handle_call({start_tx, Kind, TU, Remote, Msg}, _From, State) ->
-	Key = tx_key(Kind, Msg),
-	Module = tx_module(Kind, Msg),
-	
-	{ok, Pid} = sip_transaction_tx_sup:start_tx({Key, Module}, TU, {Remote, Msg}),
-	
-	% monitor transaction process
-	erlang:monitor(process, Pid),
-	Transactions = dict:store(Key, Pid, State#state.transactions),
-	Pids = dict:store(Pid, Key, State#state.pids),
+    Key = tx_key(Kind, Msg),
+    Module = tx_module(Kind, Msg),
+
+    {ok, Pid} = sip_transaction_tx_sup:start_tx({Key, Module}, TU, {Remote, Msg}),
+
+    % monitor transaction process
+    erlang:monitor(process, Pid),
+    Transactions = dict:store(Key, Pid, State#state.transactions),
+    Pids = dict:store(Pid, Key, State#state.pids),
     {reply, {ok, {Key, Pid}}, State#state{transactions = Transactions, pids = Pids}};
 
 handle_call(Req, _From, State) ->
@@ -138,13 +138,13 @@ handle_call(Req, _From, State) ->
 %% @private
 -spec handle_info(_, #state{}) -> {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({'DOWN', _MonitorRef, process, Pid, _Info}, State) ->
-	% clear pid -> key mapping
-	Key = dict:fetch(Pid, State#state.pids),
-	Pids = dict:erase(Pid, State#state.pids),
-	
-	% remove from the key -> pid mapping
-	Transactions = dict:erase(Key, State#state.transactions),
-	{noreply, State#state{transactions = Transactions, pids = Pids}};
+    % clear pid -> key mapping
+    Key = dict:fetch(Pid, State#state.pids),
+    Pids = dict:erase(Pid, State#state.pids),
+
+    % remove from the key -> pid mapping
+    Transactions = dict:erase(Key, State#state.transactions),
+    {noreply, State#state{transactions = Transactions, pids = Pids}};
 
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
@@ -157,100 +157,100 @@ handle_cast(Req, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->	
-	{ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
 tx_key(client, Msg) ->
-	% RFC 17.1.3
-	Headers = Msg#sip_message.headers,
-	case sip_headers:top_via_branch(Headers) of
-		% no branch parameter
-		undefined ->
-			undefined;
-		
-		Branch ->
-			case Msg#sip_message.start_line of
-				{request, Method, _} ->
-					{client, Branch, Method};
-				
-				{response, _, _} ->
-					{'cseq', CSeq} = lists:keyfind('cseq', 1, Headers),
-					Method = CSeq#sip_hdr_cseq.method,
-					{client, Branch, Method}
-			end
-	end;
+    % RFC 17.1.3
+    Headers = Msg#sip_message.headers,
+    case sip_headers:top_via_branch(Headers) of
+        % no branch parameter
+        undefined ->
+            undefined;
+
+        Branch ->
+            case Msg#sip_message.start_line of
+                {request, Method, _} ->
+                    {client, Branch, Method};
+
+                {response, _, _} ->
+                    {'cseq', CSeq} = lists:keyfind('cseq', 1, Headers),
+                    Method = CSeq#sip_hdr_cseq.method,
+                    {client, Branch, Method}
+            end
+    end;
 
 tx_key(server, Request) ->
-	% RFC 17.2.3
-	Headers = Request#sip_message.headers,
-	
-	% for ACK we use INVITE
-	Method = case Request#sip_message.start_line of
-				 {request, 'ACK', _} -> 'INVITE';
-				 {request, M, _} -> M
-			 end,
-	case sip_headers:top_via_branch(Headers) of
-		% Magic cookie
-		<<"z9hG4bK", _/binary>> = Branch ->
-			Via = sip_headers:top_via(Headers),
-			SentBy = Via#sip_hdr_via.sent_by,
-			{server, SentBy, Branch, Method};
-		
-		% No branch or does not start with magic cookie
-		_ ->
-			% FIXME: use procedure from 17.2.3
-			undefined
-	end.
+    % RFC 17.2.3
+    Headers = Request#sip_message.headers,
+
+    % for ACK we use INVITE
+    Method = case Request#sip_message.start_line of
+                 {request, 'ACK', _} -> 'INVITE';
+                 {request, M, _} -> M
+             end,
+    case sip_headers:top_via_branch(Headers) of
+        % Magic cookie
+        <<"z9hG4bK", _/binary>> = Branch ->
+            Via = sip_headers:top_via(Headers),
+            SentBy = Via#sip_hdr_via.sent_by,
+            {server, SentBy, Branch, Method};
+
+        % No branch or does not start with magic cookie
+        _ ->
+            % FIXME: use procedure from 17.2.3
+            undefined
+    end.
 
 lookup_tx(Key) ->
-	% RFC 17.2.3
-	case Key of
-		undefined -> undefined;
-		_ ->
-			case gen_server:call(?SERVER, {lookup_tx, Key}) of
-				{ok, Pid} -> Pid;
-				_ -> undefined
-			end
-	end.
+    % RFC 17.2.3
+    case Key of
+        undefined -> undefined;
+        _ ->
+            case gen_server:call(?SERVER, {lookup_tx, Key}) of
+                {ok, Pid} -> Pid;
+                _ -> undefined
+            end
+    end.
 
 %% @doc
 %% Get transaction key and module.
 %% @end
 tx_module(client, Request) ->
-	case Request#sip_message.start_line of
-		{request, 'INVITE', _} -> sip_transaction_client_invite;
-		{request, _, _} -> sip_transaction_client
-	end;
+    case Request#sip_message.start_line of
+        {request, 'INVITE', _} -> sip_transaction_client_invite;
+        {request, _, _} -> sip_transaction_client
+    end;
 
 %% @doc
 %% Get transaction key and module.
 %% @end
 tx_module(server, Request) ->
-	case Request#sip_message.start_line of
-		{request, 'INVITE', _} -> sip_transaction_server_invite;
-		{request, 'ACK', _} -> sip_transaction_server_invite;
-		{request, _, _} -> sip_transaction_server
-	 end.
+    case Request#sip_message.start_line of
+        {request, 'INVITE', _} -> sip_transaction_server_invite;
+        {request, 'ACK', _} -> sip_transaction_server_invite;
+        {request, _, _} -> sip_transaction_server
+     end.
 
 tx_send(TxRef, Msg) when is_record(Msg, sip_message) ->
-	
-	{Kind, Param, _} = Msg#sip_message.start_line,
-	% RFC 17.1.3/17.2.3
-	case TxRef of
-		% no transaction
-		undefined ->
-			not_handled;
-		
-		{_Key, Pid} ->
-			ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
-				 catch error:noproc -> not_handled % no transaction to handle
-				 end,
-			{ok, TxRef}
-	end.
+
+    {Kind, Param, _} = Msg#sip_message.start_line,
+    % RFC 17.1.3/17.2.3
+    case TxRef of
+        % no transaction
+        undefined ->
+            not_handled;
+
+        {_Key, Pid} ->
+            ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
+                 catch error:noproc -> not_handled % no transaction to handle
+                 end,
+            {ok, TxRef}
+    end.

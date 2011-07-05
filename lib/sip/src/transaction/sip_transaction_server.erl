@@ -30,22 +30,22 @@
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 -spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#sip_endpoint{}, #sip_message{}}}) ->
-		  {ok, atom(), #data{}}.
+          {ok, atom(), #data{}}.
 init(Opts) ->
-	Data = ?INIT(Opts),
+    Data = ?INIT(Opts),
 
-	% The request MUST be passed to the TU.
-	Data2 = ?TU(Data#data.request, Data),
-	{ok, 'TRYING', Data2}.
+    % The request MUST be passed to the TU.
+    Data2 = ?TU(Data#data.request, Data),
+    {ok, 'TRYING', Data2}.
 
--spec handle_info(term(), atom(), #data{}) -> 
-		  {stop, term(), #data{}}.
+-spec handle_info(term(), atom(), #data{}) ->
+          {stop, term(), #data{}}.
 %% @doc
 %% Handle case when we expect response from the TU, but it goes down
 %% @end
-handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State, Data) 
-  when State =:= 'TRYING'; State =:= 'PROCEEDING' ->	
-	{stop, {tu_down, Pid, Info}, Data};
+handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State, Data)
+  when State =:= 'TRYING'; State =:= 'PROCEEDING' ->
+    {stop, {tu_down, Pid, Info}, Data};
 
 %% @doc
 %% Let the base module handle the info.
@@ -60,7 +60,7 @@ handle_info(Info, State, Data) ->
 %% transaction.
 %% @end
 'TRYING'({request, _Method, _Request}, _From, Data) ->
-	{reply, ok, 'TRYING', Data};
+    {reply, ok, 'TRYING', Data};
 
 %% @doc
 %% While in the "Trying" state, if the TU passes a provisional response
@@ -68,12 +68,12 @@ handle_info(Info, State, Data) ->
 %% "Proceeding" state.  The response MUST be passed to the transport
 %% layer for transmission.
 %% @end
-'TRYING'({response, Status, Response}, _From, Data) 
+'TRYING'({response, Status, Response}, _From, Data)
   when Status >= 100, Status =< 199 ->
-	
-	Data2 = Data#data{provisional = Response},
-	Data3 = ?PROVISIONAL(Data2),
-	{reply, ok, 'PROCEEDING', Data3};
+
+    Data2 = Data#data{provisional = Response},
+    Data3 = ?PROVISIONAL(Data2),
+    {reply, ok, 'PROCEEDING', Data3};
 
 
 %% @doc
@@ -84,8 +84,8 @@ handle_info(Info, State, Data) ->
 %% @end
 'TRYING'({response, Status, Response}, From, Data)
   when Status >= 200, Status =< 699 ->
-	% Same handling as in PROCEEDING state
-	'PROCEEDING'({response, Status, Response}, From, Data).
+    % Same handling as in PROCEEDING state
+    'PROCEEDING'({response, Status, Response}, From, Data).
 
 
 -spec 'PROCEEDING'(term(), term(), #data{}) -> term().
@@ -93,12 +93,12 @@ handle_info(Info, State, Data) ->
 %% Any further provisional responses that are received from the TU while in
 %% the "Proceeding" state MUST be passed to the transport layer for transmission.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data) 
+'PROCEEDING'({response, Status, Response}, _From, Data)
   when Status >= 100, Status =< 199 ->
-	
-	Data2 = Data#data{provisional = Response},
-	Data3 = ?PROVISIONAL(Data2),
-	{reply, ok, 'PROCEEDING', Data3};
+
+    Data2 = Data#data{provisional = Response},
+    Data3 = ?PROVISIONAL(Data2),
+    {reply, ok, 'PROCEEDING', Data3};
 
 %% @doc
 %% If a retransmission of the request is received while in the "Proceeding" state,
@@ -106,11 +106,11 @@ handle_info(Info, State, Data) ->
 %% layer for retransmission.
 %% @end
 'PROCEEDING'({request, _Method, _Request}, _From, Data) ->
-	
-	% Note: we do not compare the request with original one, assuming it must
-	% be the same one.
-	Data2 = ?PROVISIONAL(Data),
-	{reply, ok, 'PROCEEDING', Data2};
+
+    % Note: we do not compare the request with original one, assuming it must
+    % be the same one.
+    Data2 = ?PROVISIONAL(Data),
+    {reply, ok, 'PROCEEDING', Data2};
 
 %% @doc
 %% If the TU passes a final response (status codes 200-699) to the server while in
@@ -123,17 +123,17 @@ handle_info(Info, State, Data) ->
 %% @end
 'PROCEEDING'({response, Status, Response}, _From, Data)
   when Status >= 200, Status =< 699 ->
-	
-	Data2 = Data#data{response = Response}, 
-	Data3 = ?RESPONSE(Data2),
-	
-	% start Timer J
-	Timeout = case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
-				  true -> 0;
-				  false -> 64 * Data3#data.t1
-			  end,
-	Data4 = ?START(timerJ, Timeout, Data3),
-	{reply, ok, 'COMPLETED', Data4}.
+
+    Data2 = Data#data{response = Response},
+    Data3 = ?RESPONSE(Data2),
+
+    % start Timer J
+    Timeout = case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
+                  true -> 0;
+                  false -> 64 * Data3#data.t1
+              end,
+    Data4 = ?START(timerJ, Timeout, Data3),
+    {reply, ok, 'COMPLETED', Data4}.
 
 -spec 'COMPLETED'(term(), term(), #data{}) -> term().
 %% @doc
@@ -146,16 +146,16 @@ handle_info(Info, State, Data) ->
 %% state.
 %% @end
 'COMPLETED'({request, _Method, _Request}, _From, Data) ->
-	Data2 = ?RESPONSE(Data),
-	{reply, ok, 'COMPLETED', Data2};
+    Data2 = ?RESPONSE(Data),
+    {reply, ok, 'COMPLETED', Data2};
 
 %% @doc
 %% Any other final responses passed by the TU to the server transaction MUST
-%% be discarded while in the "Completed" state. 
+%% be discarded while in the "Completed" state.
 %% @end
-'COMPLETED'({response, Status, _Response}, _From, Data) 
+'COMPLETED'({response, Status, _Response}, _From, Data)
   when Status >= 200, Status =< 699 ->
-	{reply, ok, 'COMPLETED', Data}.
+    {reply, ok, 'COMPLETED', Data}.
 
 -spec 'COMPLETED'(term(), #data{}) -> term().
 %% @doc
@@ -163,4 +163,4 @@ handle_info(Info, State, Data) ->
 %% point it MUST transition to the "Terminated" state.
 %% @end
 'COMPLETED'({timeout, _Ref, {timerJ, _}}, Data) ->
-	{stop, normal, Data}.
+    {stop, normal, Data}.
