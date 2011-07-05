@@ -29,7 +29,8 @@
 transaction_test_() ->
     Tests = [client_invite_ok,
              client_invite_err,
-             client_invite_timeout],
+             client_invite_timeout,
+             client_invite_timeout_proceeding],
     specs(Tests).
 
 %% @doc
@@ -84,7 +85,10 @@ for_transports(Tests, Transports) ->
 %% Scenario tested:
 %% - client INVITE transaction is created
 %% - provisional response is received
+%% - provisional response is provided to the TU
 %% - 2xx response is received
+%% - 2xx response is provided to the TU
+%% - transaction terminates
 client_invite_ok(Transport) ->
     register(?MODULE, self()),
 
@@ -120,7 +124,12 @@ client_invite_ok(Transport) ->
 
 %% Scenario tested:
 %% - client INVITE transaction is created
+%% - response is received
+%% - transaction sends ACK and provides response to TU
+%% - response retransmission is received
+%% - transaction retransmits ACK, but does not provide response to TU
 %% - 5xx response is received
+%% - transaction terminates
 client_invite_err(Transport)->
     register(?MODULE, self()),
 
@@ -156,6 +165,16 @@ client_invite_err(Transport)->
     ?assertReceive("Expect ACK to be sent by tx layer",
                    {tp, _Conn, {request, Remote, ACK}}),
 
+    % ACK should be re-transmitted, but message should not be given to TU
+    ?assertEqual({ok, TxRef},
+                 sip_transaction:handle(undefined, Remote, Response)),
+
+    ?assertReceiveNot("Expect response not to be passed to TU",
+                   {tx, TxRef, {response, Response}}),
+
+    ?assertReceive("Expect ACK to be retransmitted by tx layer",
+                   {tp, _Conn, {request, Remote, ACK}}),
+
     % wait 32 seconds for unreliable transport only
     sip_transport:is_reliable(Transport) orelse timer:sleep(32000),
 
@@ -178,6 +197,38 @@ client_invite_timeout(Transport)->
     {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Remote, Request}}),
+
+    timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after timeout",
+                   {tx, TxRef, {terminated, timeout}}),
+
+    unregister(?MODULE),
+    ok.
+
+%% Scenario tested:
+%% - client INVITE transaction is created
+%% - provisional response is received
+%% - provisional response is provided to the TU
+%% - nothing happens in 32 seconds
+%% - transaction terminates due to the timeout
+client_invite_timeout_proceeding(Transport)->
+    register(?MODULE, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+
+    {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
+    ?assertReceive("Expect first request to be sent by tx layer",
+                   {tp, _Conn, {request, Remote, Request}}),
+
+    % Emulate provisional response received by transport layer
+    ?assertEqual({ok, TxRef},
+                 sip_transaction:handle(undefined, Remote, Provisional)),
+
+    ?assertReceive("Expect provisional response to be passed to TU",
+    {tx, TxRef, {response, Provisional}}),
 
     timer:sleep(32000),
 
