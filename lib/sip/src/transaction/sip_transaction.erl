@@ -77,10 +77,12 @@ handle(_Connection, Remote, Msg)
                    client
            end,
     % lookup transaction by key
-    TxRef = lookup_tx(tx_key(Kind, Msg)),
+    TxKey = tx_key(Kind, Msg),
+    TxRef = lookup_tx(TxKey),
     case tx_send(TxRef, Msg) of
-        not_handled when Kind =:= server ->
+        not_handled when Kind =:= server, TxKey =/= undefined ->
             % start server transaction if existing tx not found
+            % FIXME: TU...
             sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
 
         Res ->
