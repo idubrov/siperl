@@ -43,6 +43,7 @@ handle(Conn, Remote, Msg) ->
     case sip_transaction:handle(Conn, Remote, Msg) of
         not_handled ->
             % pass to core, transaction layer have not processed the message
+            % core may decide to start new transaction
             sip_core:handle(Conn, Remote, Msg);
        {ok, _TxRef} ->
             % handled by tx layer

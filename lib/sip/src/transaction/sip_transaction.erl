@@ -78,15 +78,12 @@ handle(_Connection, Remote, Msg)
            end,
     % lookup transaction by key
     TxKey = tx_key(Kind, Msg),
-    TxRef = lookup_tx(TxKey),
-    case tx_send(TxRef, Msg) of
-        not_handled when Kind =:= server, TxKey =/= undefined ->
-            % start server transaction if existing tx not found
-            % FIXME: TU...
-            sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
+    case lookup_tx(TxKey) of
+        undefined ->
+            not_handled;
 
-        Res ->
-            Res
+        TxRef ->
+            tx_send(TxRef, Msg)
     end.
 
 %% @doc
@@ -252,6 +249,7 @@ tx_send(TxRef, Msg) when is_record(Msg, sip_message) ->
 
         {_Key, Pid} ->
             ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
+                 % FIXME: should differ from case when transaction does not exist at all?
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
             {ok, TxRef}

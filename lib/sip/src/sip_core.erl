@@ -40,7 +40,14 @@ handle(_Connection, Remote, Msg)
   when is_record(Remote, sip_endpoint),
        is_record(Msg, sip_message) ->
     % FIXME: core layer implementation..
-    ok.
+    % XXX: Start new transaction for requests...
+    case sip_message:is_request(Msg) of
+        true ->
+            sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg),
+            ok;
+        _ ->
+            ok
+    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
