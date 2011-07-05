@@ -28,6 +28,7 @@ transaction_test_() ->
     Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, undefined}]),
     Setup =
         fun () -> {ok, Pid} = sip_transaction_sup:start_link(Cfg),
+                  % Mock transport layer calls
                   meck:new(sip_transport, [passthrough]),
                   SendRequest = fun (Conn, To, Msg) ->
                                          ?MODULE ! {tp, Conn, {request, To, Msg}},
@@ -37,7 +38,6 @@ transaction_test_() ->
                                           ?MODULE ! {tp, Conn, {response, Msg}},
                                           {ok, Conn}
                                  end,
-                  % Mock transport layer calls
                   meck:expect(sip_transport, send_request, SendRequest),
                   meck:expect(sip_transport, send_response, SendResponse),
                   {Pid}
@@ -49,74 +49,91 @@ transaction_test_() ->
                  ok
         end,
     {foreach, Setup, Cleanup,
-      sip_test:with_timeout([tx_test(fun client_invite_tcp_err/0),
-                             tx_test(fun client_invite_udp_err/0)], 60)
-      }.
+     sip_test:with_timeout([fun(_Res) -> client_invite_ok(udp) end,
+                            fun(_Res) -> client_invite_ok(tcp) end,
+                            fun(_Res) -> client_invite_err(udp) end,
+                            fun(_Res) -> client_invite_err(tcp) end], 60)
+    }.
 
-% Boilerplate initialization code common for all transaction tests
-tx_test(Fun) ->
-    fun (_Resource) ->
-             register(?MODULE, self()),
-             Result = Fun(),
-             unregister(?MODULE),
-             Result
-    end.
+%% Scenario tested:
+%% - client INVITE transaction is created
+%% - provisional response is received
+%% - 2xx response is received
+client_invite_ok(Transport) ->
+    register(?MODULE, self()),
 
-client_invite_udp_err() ->
-    Remote = sip_test:endpoint(udp),
-    Request = sip_test:invite(udp),
-    Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-    ACK = sip_message:create_ack(Request, Response),
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
 
     {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
 
-    ?assertReceive("Expect first request to be sent by tx layer",
-                    {tp, _Conn, {request, Remote, Request}}),
-    timer:sleep(500),
-    ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                    {tp, _Conn, {request, Remote, Request}}),
+    ?assertReceive("Expect request to be sent by tx layer",
+                   {tp, _Conn, {request, Remote, Request}}),
 
-    % Emulate response received by transport layer
+    % Emulate provisional response received by transport layer
+    ?assertEqual({ok, TxRef},
+                 sip_transaction:handle(undefined, Remote, Provisional)),
 
+    ?assertReceive("Expect provisional response to be passed to TU",
+    {tx, TxRef, {response, Provisional}}),
+
+    % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
                  sip_transaction:handle(undefined, Remote, Response)),
 
-    ?assertReceive("Expect response to be passed to TU",
-                    {tx, TxRef, {response, Response}}),
+    ?assertReceive("Expect final response to be passed to TU",
+                   {tx, TxRef, {response, Response}}),
 
-    ?assertReceive("Expect ACK to be sent by tx layer",
-                    {tp, _Conn, {request, Remote, ACK}}),
+    ?assertReceive("Expect tx to terminate immediately after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
 
-    timer:sleep(32000),
-    ?assertReceive("Expect tx to terminate in 32 seconds after receiving final response",
-                    {tx, TxRef, {terminated, normal}}),
+    unregister(?MODULE),
     ok.
 
-client_invite_tcp_err() ->
-    Remote = sip_test:endpoint(tcp),
-    Request = sip_test:invite(tcp),
+client_invite_err(Transport)->
+    register(?MODULE, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
     Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
     ACK = sip_message:create_ack(Request, Response),
 
     {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
 
     ?assertReceive("Expect first request to be sent by tx layer",
-                     {tp, _Conn, {request, Remote, Request}}),
-    ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
-                        {tp, _Conn, _Msg}),
+                   {tp, _Conn, {request, Remote, Request}}),
+
+    % Should retransmit if unreliable, should not otherwise
+    case sip_transport:is_reliable(Transport) of
+        false ->
+            timer:sleep(500),
+            ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
+                           {tp, _Conn, {request, Remote, Request}});
+
+        true ->
+            ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
+                              {tp, _Conn, _Msg})
+            end,
 
     % Emulate response received by transport layer
     ?assertEqual({ok, TxRef},
                  sip_transaction:handle(undefined, Remote, Response)),
 
     ?assertReceive("Expect response to be passed to TU",
-                    {tx, TxRef, {response, Response}}),
+                   {tx, TxRef, {response, Response}}),
 
     ?assertReceive("Expect ACK to be sent by tx layer",
-                    {tp, _Conn, {request, Remote, ACK}}),
+                   {tp, _Conn, {request, Remote, ACK}}),
 
-    ?assertReceive("Expect tx to terminate in 0 seconds after receiving final response",
-                    {tx, TxRef, {terminated, normal}}),
+    % wait 32 seconds for unreliable transport only 
+    sip_transport:is_reliable(Transport) orelse timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
+
+    unregister(?MODULE),
     ok.
 
 -endif.
