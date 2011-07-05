@@ -91,6 +91,7 @@ for_transports(Tests, Transports) ->
         end,
     lists:flatmap(Fun, Transports).
 
+%% @doc
 %% Scenario tested:
 %% - client INVITE transaction is created
 %% - provisional response is received
@@ -98,6 +99,7 @@ for_transports(Tests, Transports) ->
 %% - 2xx response is received
 %% - 2xx response is provided to the TU
 %% - transaction terminates
+%% @end
 client_invite_ok(Transport) ->
     register(?REGNAME, self()),
 
@@ -149,6 +151,7 @@ client_invite_ok(Transport) ->
     unregister(?REGNAME),
     ok.
 
+%% @doc
 %% Scenario tested:
 %% - client INVITE transaction is created
 %% - response is received
@@ -157,6 +160,7 @@ client_invite_ok(Transport) ->
 %% - transaction retransmits ACK, but does not provide response to TU
 %% - 5xx response is received
 %% - transaction terminates
+%% @end
 client_invite_err(Transport)->
     register(?REGNAME, self()),
 
@@ -219,10 +223,12 @@ client_invite_err(Transport)->
     unregister(?REGNAME),
     ok.
 
+%% @doc
 %% Scenario tested:
 %% - client INVITE transaction is created
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
+%% @end
 client_invite_timeout_calling(Transport)->
     register(?REGNAME, self()),
 
@@ -249,12 +255,14 @@ client_invite_timeout_calling(Transport)->
     unregister(?REGNAME),
     ok.
 
+%% @doc
 %% Scenario tested:
 %% - client INVITE transaction is created
 %% - provisional response is received
 %% - provisional response is provided to the TU
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
+%% @end
 client_invite_timeout_proceeding(Transport)->
     register(?REGNAME, self()),
 
@@ -282,7 +290,7 @@ client_invite_timeout_proceeding(Transport)->
     unregister(?REGNAME),
     ok.
 
-
+%% @doc
 %% Scenario tested:
 %% - client non-INVITE transaction is created (')
 %% - provisional response is received
@@ -290,6 +298,7 @@ client_invite_timeout_proceeding(Transport)->
 %% - 2xx response is received
 %% - 2xx response is provided to the TU
 %% - transaction terminates
+%% @end
 client_ok(Transport) ->
     register(?REGNAME, self()),
 
@@ -371,11 +380,12 @@ client_ok(Transport) ->
     unregister(?REGNAME),
     ok.
 
-
+%% @doc
 %% Scenario tested:
 %% - client non-INVITE transaction is created
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
+%% @end
 client_timeout_trying(Transport)->
     register(?REGNAME, self()),
 
@@ -402,12 +412,14 @@ client_timeout_trying(Transport)->
     unregister(?REGNAME),
     ok.
 
+%% @doc
 %% Scenario tested:
 %% - client non-INVITE transaction is created
 %% - provisional response is received
 %% - provisional response is passed to TU
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
+%% @end
 client_timeout_proceeding(Transport)->
     register(?REGNAME, self()),
 
@@ -442,6 +454,7 @@ client_timeout_proceeding(Transport)->
     unregister(?REGNAME),
     ok.
 
+%% @doc
 %% Scenario tested:
 %% - INVITE request is received
 %% - request is passed to TU
@@ -453,6 +466,7 @@ client_timeout_proceeding(Transport)->
 %% - 2xx response is sent by TU
 %% - 2xx response is sent to the transport
 %% - transaction terminates
+%% @end
 server_invite_ok(Transport) ->
     register(?REGNAME, self()),
 
