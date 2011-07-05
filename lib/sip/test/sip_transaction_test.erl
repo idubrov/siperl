@@ -16,7 +16,9 @@
 -include_lib("sip_test.hrl").
 
 
-% FIXME: ..
+% FIXME: Register as sip_core, since for now this is the name of
+% TU process used by transaction layer. Instead, transaction layer
+% should consult router/config for TU process pid.
 -define(REGNAME, sip_core).
 
 %%-----------------------------------------------------------------
@@ -38,8 +40,9 @@ transaction_test_() ->
              client_ok,
              client_timeout_trying,
              client_timeout_proceeding,
-             
-             server_invite_ok],
+
+             server_invite_ok,
+             server_invite_err],
     specs(Tests).
 
 %% @doc
@@ -506,4 +509,74 @@ server_invite_ok(Transport) ->
     ?assertReceiveNot("Message queue is empty", _),
     unregister(?REGNAME),
     ok.
+
+%% @doc
+%% Scenario tested:
+%% - INVITE request is received
+%% - request is passed to TU
+%% - 100 Trying is sent
+%% - 500 response is sent by TU
+%% - 500 response is sent to the transport
+%% - INVITE request is received
+%% - 500 response is re-sent
+%% - sleep 500 ms
+%% - 500 response is re-sent
+%% - ACK is received
+%% - transaction terminates
+%% @end
+server_invite_err(Transport) ->
+    register(?REGNAME, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    ACK = sip_message:create_ack(Request, Response),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+
+    % Final response is sent by TU
+    sip_transaction:send(TxRef, Response),
+    ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
+
+    % Check retransmissions handling
+    case IsReliable of
+        true ->
+            % no retransmissions for reliable transports
+            ok;
+        false ->
+            % INVITE retransmission received
+            {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+            ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
+
+            % retransmission by timer
+            timer:sleep(500),
+            ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
+            ok
+    end,
+
+    % ACK is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, ACK),
+
+    % Verify buffering additional ACK retransmissions
+    case sip_transport:is_reliable(Transport) of
+        true ->
+            ok;
+
+        false ->
+            % ACK is received
+            {ok, TxRef} = sip_transaction:handle(undefined, Remote, ACK),
+            timer:sleep(5000) % T4
+    end,
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
+    ?assertReceiveNot("Message queue is empty", _),
+    unregister(?REGNAME),
+    ok.
+
 -endif.
