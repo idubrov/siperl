@@ -47,6 +47,7 @@ transaction_test_() ->
              server_invite_tu_down,
 
              server_ok,
+             server_err,
              server_tu_down],
     specs(Tests).
 
@@ -687,16 +688,26 @@ server_ok(Transport) ->
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:request('OPTIONS', Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Trying2 = sip_message:create_response(Request, 100, <<"Trying Again">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    Response2 = sip_message:create_response(Request, 200, <<"Another Ok">>, <<"sometag">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
     {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
+    % Further request retransmissions are ignored
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceiveNot("Expect request is not passed to TU", {tx, TxRef, {request, Request}}),
+
     % Provisional response is sent by TU
     sip_transaction:send(TxRef, Trying),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+
+    % Additional provisioning responses
+    sip_transaction:send(TxRef, Trying2),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying2}}),
 
     case IsReliable of
         true ->
@@ -704,7 +715,7 @@ server_ok(Transport) ->
             ok;
         false ->
             {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
-            ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Trying}}),
+            ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Trying2}}),
             ok
     end,
 
@@ -717,10 +728,48 @@ server_ok(Transport) ->
             % no retransmissions for reliable transports
             ok;
         false ->
+            % additional responses are discarded
+            sip_transaction:send(TxRef, Response2),
+
             {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
             ?assertReceive("Expect final response is re-sent", {tp, _Conn, {response, Response}}),
             ok
     end,
+
+    % wait for timer J to fire
+    IsReliable orelse timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
+
+    ?assertReceiveNot("Message queue is empty", _),
+    unregister(?REGNAME),
+    ok.
+
+
+%% @doc
+%% Scenario tested:
+%% - non-INVITE request is received
+%% - request is passed to TU
+%% - 500 response is sent by TU
+%% - 500 response is sent to the transport
+%% - transaction terminates
+%% @end
+server_err(Transport) ->
+    register(?REGNAME, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:request('OPTIONS', Transport),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
+
+    % 500 response is sent by TU
+    sip_transaction:send(TxRef, Response),
+    ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
 
     % wait for timer J to fire
     IsReliable orelse timer:sleep(32000),
