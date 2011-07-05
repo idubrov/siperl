@@ -16,6 +16,9 @@
 -include_lib("sip_test.hrl").
 
 
+% FIXME: ..
+-define(REGNAME, sip_core).
+
 %%-----------------------------------------------------------------
 %% Functions
 %%-----------------------------------------------------------------
@@ -34,7 +37,9 @@ transaction_test_() ->
 
              client_ok,
              client_timeout_trying,
-             client_timeout_proceeding],
+             client_timeout_proceeding,
+             
+             server_invite_ok],
     specs(Tests).
 
 %% @doc
@@ -57,11 +62,11 @@ setup() ->
     % Mock transport layer calls
     meck:new(sip_transport, [passthrough]),
     SendRequest = fun (Conn, To, Msg) ->
-                           ?MODULE ! {tp, Conn, {request, To, Msg}},
+                           ?REGNAME ! {tp, Conn, {request, To, Msg}},
                            {ok, Conn}
                   end,
     SendResponse = fun (Conn, Msg) ->
-                            ?MODULE ! {tp, Conn, {response, Msg}},
+                            ?REGNAME ! {tp, Conn, {response, Msg}},
                             {ok, Conn}
                    end,
     meck:expect(sip_transport, send_request, SendRequest),
@@ -94,7 +99,7 @@ for_transports(Tests, Transports) ->
 %% - 2xx response is provided to the TU
 %% - transaction terminates
 client_invite_ok(Transport) ->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:invite(Transport),
@@ -128,7 +133,7 @@ client_invite_ok(Transport) ->
                               {tp, _Conn, _Msg}),
 
     ?assertReceive("Expect provisional response to be passed to TU",
-    {tx, TxRef, {response, Provisional}}),
+                   {tx, TxRef, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
@@ -141,7 +146,7 @@ client_invite_ok(Transport) ->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 %% Scenario tested:
@@ -153,7 +158,7 @@ client_invite_ok(Transport) ->
 %% - 5xx response is received
 %% - transaction terminates
 client_invite_err(Transport)->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:invite(Transport),
@@ -211,7 +216,7 @@ client_invite_err(Transport)->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 %% Scenario tested:
@@ -219,7 +224,7 @@ client_invite_err(Transport)->
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
 client_invite_timeout_calling(Transport)->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:invite(Transport),
@@ -241,7 +246,7 @@ client_invite_timeout_calling(Transport)->
             ok % we have lots of message retransmissions in message queue
     end,
 
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 %% Scenario tested:
@@ -251,7 +256,7 @@ client_invite_timeout_calling(Transport)->
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
 client_invite_timeout_proceeding(Transport)->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:invite(Transport),
@@ -266,7 +271,7 @@ client_invite_timeout_proceeding(Transport)->
                  sip_transaction:handle(undefined, Remote, Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
-    {tx, TxRef, {response, Provisional}}),
+                   {tx, TxRef, {response, Provisional}}),
 
     timer:sleep(32000),
 
@@ -274,7 +279,7 @@ client_invite_timeout_proceeding(Transport)->
                    {tx, TxRef, {terminated, timeout}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 
@@ -286,7 +291,7 @@ client_invite_timeout_proceeding(Transport)->
 %% - 2xx response is provided to the TU
 %% - transaction terminates
 client_ok(Transport) ->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:request('OPTIONS', Transport),
@@ -315,7 +320,7 @@ client_ok(Transport) ->
                  sip_transaction:handle(undefined, Remote, Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
-    {tx, TxRef, {response, Provisional}}),
+                   {tx, TxRef, {response, Provisional}}),
 
     % Should retransmit if unreliable, should not otherwise
     timer:sleep(500),
@@ -334,7 +339,7 @@ client_ok(Transport) ->
                  sip_transaction:handle(undefined, Remote, Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
-    {tx, TxRef, {response, Provisional}}),
+                   {tx, TxRef, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
@@ -363,7 +368,7 @@ client_ok(Transport) ->
 
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 
@@ -372,7 +377,7 @@ client_ok(Transport) ->
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
 client_timeout_trying(Transport)->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:request('OPTIONS', Transport),
@@ -394,7 +399,7 @@ client_timeout_trying(Transport)->
             ok % we have lots of message retransmissions in message queue
     end,
 
-    unregister(?MODULE),
+    unregister(?REGNAME),
     ok.
 
 %% Scenario tested:
@@ -404,7 +409,7 @@ client_timeout_trying(Transport)->
 %% - nothing happens in 32 seconds
 %% - transaction terminates due to the timeout
 client_timeout_proceeding(Transport)->
-    register(?MODULE, self()),
+    register(?REGNAME, self()),
 
     Remote = sip_test:endpoint(Transport),
     Request = sip_test:request('OPTIONS', Transport),
@@ -419,7 +424,7 @@ client_timeout_proceeding(Transport)->
                  sip_transaction:handle(undefined, Remote, Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
-    {tx, TxRef, {response, Provisional}}),
+                   {tx, TxRef, {response, Provisional}}),
 
     timer:sleep(32000),
 
@@ -434,6 +439,57 @@ client_timeout_proceeding(Transport)->
             ok % we have lots of message retransmissions in message queue
     end,
 
-    unregister(?MODULE),
+    unregister(?REGNAME),
+    ok.
+
+%% Scenario tested:
+%% - INVITE request is received
+%% - request is passed to TU
+%% - 100 Trying is sent
+%% - provisional response is sent by TU
+%% - provisional response is sent to the transport
+%% - INVITE re-transmission is received
+%% - provisional response is re-sent
+%% - 2xx response is sent by TU
+%% - 2xx response is sent to the transport
+%% - transaction terminates
+server_invite_ok(Transport) ->
+    register(?REGNAME, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:invite(Transport),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Ringing = sip_message:create_response(Request, 180, <<"Ringing">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+
+    % Provisional response is sent by TU
+    sip_transaction:send(TxRef, Ringing),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Ringing}}),
+
+    case IsReliable of
+        true ->
+            % no retransmissions for reliable transports
+            ok;
+        false ->
+            {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+            ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Ringing}}),
+            ok
+    end,
+
+    % 2xx response is sent by TU
+    sip_transaction:send(TxRef, Response),
+    ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
+
+    ?assertReceive("Expect tx to terminate immediately after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
+
+    ?assertReceiveNot("Message queue is empty", _),
+    unregister(?REGNAME),
     ok.
 -endif.
