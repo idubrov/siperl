@@ -22,13 +22,16 @@ endpoint(Transport) ->
     #sip_endpoint{transport = Transport, address = "127.0.0.1", port = 5080}.
 
 invite(Transport) ->
+    request('INVITE', Transport).
+
+request(Method, Transport) ->
     Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"branch_id">>}]),
-    CSeq = sip_headers:cseq(232908, 'INVITE'),
+    CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
     To = sip_headers:to(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}]),
 
     Headers = [CSeq, Via, From, To],
-    Msg = #sip_message{start_line = sip_message:request('INVITE', <<"sip:127.0.0.1/test">>),
+    Msg = #sip_message{start_line = sip_message:request(Method, <<"sip:127.0.0.1/test">>),
                        body = <<"Hello!">>,
                        headers = Headers},
     Msg.
