@@ -105,7 +105,7 @@ handle_info(Info, State, Data) ->
 
     Data2 = Data#data{response = Response},
     Data3 = ?RESPONSE(Data2),
-    {stop, normal, Data3};
+    {stop, normal, ok, Data3};
 
 %% @doc
 %% While in the "Proceeding" state, if the TU passes a response with
