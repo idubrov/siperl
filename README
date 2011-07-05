@@ -2,7 +2,11 @@ RFC 3261 (SIP) implementation in Erlang
 
 
 Running tests:
- $ rebar eunit
+$ rebar eunit
 
 Compiling:
- $ rebar compile
+$ rebar compile
+
+Hacking the code:
+$ erl -pa lib/sip/ebin
+
