@@ -127,13 +127,15 @@ handle_info(Info, State, Data) ->
     Data2 = Data#data{response = Response},
     Data3 = ?RESPONSE(Data2),
 
-    % start Timer J
-    Timeout = case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
-                  true -> 0;
-                  false -> 64 * Data3#data.t1
-              end,
-    Data4 = ?START(timerJ, Timeout, Data3),
-    {reply, ok, 'COMPLETED', Data4}.
+    % start timer J (only for unreliable)
+    case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
+        true ->
+            % skip COMPLETED state and proceed immediately to TERMINATED state
+            {stop, normal, ok, Data3};
+        false ->
+            Data4 = ?START(timerJ, 64 * Data3#data.t1, Data3),
+            {reply, ok, 'COMPLETED', Data4}
+    end.
 
 -spec 'COMPLETED'(term(), term(), #data{}) -> term().
 %% @doc

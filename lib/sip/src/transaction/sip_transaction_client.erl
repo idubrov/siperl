@@ -79,17 +79,20 @@ init(Opts) ->
     %% Final response, transition to COMPLETED state.
 
     ?TU(Response, Data),
-    % start timer K
-    Timeout = case sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport) of
-                  true -> 0;
-                  false -> Data#data.t4
-              end,
-    Data2 = ?START(timerK, Timeout, Data),
 
     % cancel the timers E and F
-    Data3 = ?CANCEL(timerE, Data2),
-    Data4 = ?CANCEL(timerF, Data3),
-    {reply, ok, 'COMPLETED', Data4}.
+    Data2 = ?CANCEL(timerE, Data),
+    Data3 = ?CANCEL(timerF, Data2),
+
+    % start timer K
+    case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
+        true ->
+            % skip COMPLETED state and proceed immediately to TERMINATED state
+            {stop, normal, ok, Data3};
+        false ->
+            Data4 = ?START(timerK, Data3#data.t4, Data3),
+            {reply, ok, 'COMPLETED', Data4}
+    end.
 
 %% @doc
 %% In 'PROCEEDING' state, act the same way as in 'TRYING' state.

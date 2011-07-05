@@ -58,7 +58,6 @@ start_timer(TimerName, TimerIdx, Interval, Data) ->
     Timer = gen_fsm:start_timer(Interval, {TimerName, Interval}),
     setelement(TimerIdx, Data, Timer).
 
-
 -spec send_ack(#sip_message{}, #data{}) -> #data{}.
 send_ack(Response, Data) ->
     ACK = sip_message:create_ack(Data#data.request, Response),

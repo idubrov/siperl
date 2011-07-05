@@ -84,16 +84,20 @@ init(Opts) ->
 
     ?TU(Response, Data),
     Data2 = ?ACK(Response, Data),
-    % start timer D
-    Timeout = case sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport) of
-                  true -> 0;
-                  false -> 32000
-              end,
-    Data3 = ?START(timerD, Timeout, Data2),
+
     % cancel the timers A and B
-    Data4 = ?CANCEL(timerA, Data3),
-    Data5 = ?CANCEL(timerB, Data4),
-    {reply, ok, 'COMPLETED', Data5};
+    Data3 = ?CANCEL(timerA, Data2),
+    Data4 = ?CANCEL(timerB, Data3),
+
+    % start timer D (for unreliable)
+    case sip_transport:is_reliable(Data4#data.remote#sip_endpoint.transport) of
+        true ->
+            % skip COMPLETED state and proceed immediately to TERMINATED state
+            {stop, normal, ok, Data4};
+        false ->
+            Data5 = ?START(timerD, 32000, Data4),
+            {reply, ok, 'COMPLETED', Data5}
+    end;
 
 
 'CALLING'({response, Status, Response}, _From, Data)

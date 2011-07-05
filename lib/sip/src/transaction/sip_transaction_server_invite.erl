@@ -166,13 +166,16 @@ handle_info(Info, State, Data) ->
 'COMPLETED'({request, 'ACK', _Request}, _From, Data) ->
     % cancel timerG
     Data2 = ?CANCEL(timerG, Data),
-    % start timer I
-    Timeout = case sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport) of
-                  true -> 0;
-                  false -> Data#data.t4
-              end,
-    Data3 = ?START(timerI, Timeout, Data2),
-    {reply, ok, 'CONFIRMED', Data3};
+
+    % start timer I (only for unreliable)
+    case sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport) of
+        true ->
+            % skip CONFIRMED state and proceed immediately to TERMINATED state
+            {stop, normal, ok, Data2};
+        false ->
+            Data3 = ?START(timerI, Data#data.t4, Data2),
+            {reply, ok, 'CONFIRMED', Data3}
+    end;
 
 %% @doc
 %% Furthermore, while in the "Completed" state, if a request retransmission
