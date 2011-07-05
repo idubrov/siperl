@@ -44,7 +44,10 @@ transaction_test_() ->
              server_invite_ok,
              server_invite_err,
              server_invite_timeout,
-             server_invite_tu_down],
+             server_invite_tu_down,
+
+             server_ok,
+             server_tu_down],
     specs(Tests).
 
 %% @doc
@@ -645,6 +648,109 @@ server_invite_tu_down(Transport) ->
                  TxRef = receive {proceed, Ref} -> Ref end,
                  ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
                  ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+                 unregister(?REGNAME),
+                 % exit from TU, this should force transaction to terminate
+                 ok
+         end,
+    TU = erlang:spawn_link(TUFun),
+    erlang:monitor(process, TU),
+    receive proceed -> ok end, % wait until TU register itself
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+
+    ?assertEqual([TxRef], sip_transaction:list_tx()), % have transaction in list
+    TU ! {proceed, TxRef}, % notify TU about transaction
+
+    % wait for TU to exit and transaction layer to process the 'DOWN' event
+    timer:sleep(500),
+    ?assertEqual([], sip_transaction:list_tx()), % do not have transaction in list
+    ok.
+
+%% @doc
+%% Scenario tested:
+%% - non-INVITE request is received
+%% - request is passed to TU
+%% - provisional response is sent by TU
+%% - provisional response is sent to the transport
+%% - request re-transmission is received
+%% - provisional response is re-sent
+%% - 2xx response is sent by TU
+%% - 2xx response is sent to the transport
+%% - request re-transmission is received
+%% - 2xx response is re-sent
+%% - transaction terminates
+%% @end
+server_ok(Transport) ->
+    register(?REGNAME, self()),
+
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:request('OPTIONS', Transport),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Request is received
+    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
+
+    % Provisional response is sent by TU
+    sip_transaction:send(TxRef, Trying),
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
+
+    case IsReliable of
+        true ->
+            % no retransmissions for reliable transports
+            ok;
+        false ->
+            {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+            ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Trying}}),
+            ok
+    end,
+
+    % 2xx response is sent by TU
+    sip_transaction:send(TxRef, Response),
+    ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
+
+    case IsReliable of
+        true ->
+            % no retransmissions for reliable transports
+            ok;
+        false ->
+            {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+            ?assertReceive("Expect final response is re-sent", {tp, _Conn, {response, Response}}),
+            ok
+    end,
+
+    % wait for timer J to fire
+    IsReliable orelse timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {tx, TxRef, {terminated, normal}}),
+
+    ?assertReceiveNot("Message queue is empty", _),
+    unregister(?REGNAME),
+    ok.
+
+%% @doc
+%% Scenario tested:
+%% - non-INVITE request is received
+%% - transaction is in the list
+%% - TU process goes down
+%% - transaction is not in the list of transactions
+%% @end
+server_tu_down(Transport) ->
+    Remote = sip_test:endpoint(Transport),
+    Request = sip_test:request('OPTIONS', Transport),
+
+    % Prepare TU
+    Pid = self(),
+    TUFun =
+        fun () ->
+                 register(?REGNAME, self()),
+                 Pid ! proceed,
+                 TxRef = receive {proceed, Ref} -> Ref end,
+                 ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
                  unregister(?REGNAME),
                  % exit from TU, this should force transaction to terminate
                  ok
