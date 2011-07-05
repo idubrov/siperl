@@ -318,7 +318,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 %% 8.2.6.1 Sending a Provisional Response
 %% FIXME: adding tag...
 %% @end
--spec create_response(#sip_message{}, integer(), binary(), binary()) -> #sip_message{}.
+-spec create_response(#sip_message{}, integer(), binary(), undefined | binary()) -> #sip_message{}.
 create_response(Request, Status, Reason, Tag) ->
     Headers = [if Name =:= 'to' -> add_tag({Name, Value}, Tag);
                   true -> {Name, Value}
