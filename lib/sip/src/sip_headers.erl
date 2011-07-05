@@ -316,7 +316,7 @@ top_via_branch(Headers) ->
 	Via = sip_headers:top_via(Headers),
 	case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
 		{branch, Branch} -> Branch;
-		false -> false
+		false -> undefined
 	end.
 
 %% @doc
@@ -478,7 +478,7 @@ parse_test_() ->
 				   top_via_branch([via([{udp, {<<"127.0.0.1">>, 15060}, [{branch, <<"z9hG4bK776asdhds">>}]},
 										{tcp, {<<"pc33.atlanta.com">>, undefined}, []}]),
 								   via(udp, {<<"sip.biloxi.com">>, undefined}, [])])),
-	 ?_assertEqual(false, top_via_branch([via(udp, {<<"sip.biloxi.com">>, undefined}, [])])),
+	 ?_assertEqual(undefined, top_via_branch([via(udp, {<<"sip.biloxi.com">>, undefined}, [])])),
 	 % Formatting
 	 ?_assertEqual(<<"subject: I know you're there, pick up the phone and talk to me!\r\n">>,
 		format_header({'subject', <<"I know you're there, pick up the phone and talk to me!">>}))

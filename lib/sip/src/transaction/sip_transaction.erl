@@ -60,10 +60,10 @@ list_tx() ->
 	gen_server:call(?SERVER, list_tx).
 
 %% @doc
-%% Handle the given request/response on the transaction layer. Returns false
+%% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
--spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> false | ok.
+-spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> not_handled | {ok, tx_ref()}.
 handle(_Connection, Remote, Msg) 
   when is_record(Remote, sip_endpoint), 
 	   is_record(Msg, sip_message) ->
@@ -79,7 +79,7 @@ handle(_Connection, Remote, Msg)
 	% lookup transaction by key
 	TxRef = lookup_tx(tx_key(Kind, Msg)),
 	case tx_send(TxRef, Msg) of		
-		false when Kind =:= server ->
+		not_handled when Kind =:= server ->
 			% start server transaction if existing tx not found
 			sip_transaction:start_tx(server, whereis(sip_core), Remote, Msg);
 		
@@ -172,8 +172,8 @@ tx_key(client, Msg) ->
 	Headers = Msg#sip_message.headers,
 	case sip_headers:top_via_branch(Headers) of
 		% no branch parameter
-		false ->
-			false;
+		undefined ->
+			undefined;
 		
 		Branch ->
 			case Msg#sip_message.start_line of
@@ -206,17 +206,17 @@ tx_key(server, Request) ->
 		% No branch or does not start with magic cookie
 		_ ->
 			% FIXME: use procedure from 17.2.3
-			false
+			undefined
 	end.
 
 lookup_tx(Key) ->
 	% RFC 17.2.3
 	case Key of
-		false -> false;
+		undefined -> undefined;
 		_ ->
 			case gen_server:call(?SERVER, {lookup_tx, Key}) of
 				{ok, Pid} -> Pid;
-				_ -> false
+				_ -> undefined
 			end
 	end.
 
@@ -245,11 +245,12 @@ tx_send(TxRef, Msg) when is_record(Msg, sip_message) ->
 	% RFC 17.1.3/17.2.3
 	case TxRef of
 		% no transaction
-		false ->
-			false;
+		undefined ->
+			not_handled;
 		
 		{_Key, Pid} ->
-			try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
-			catch error:noproc -> false % no transaction to handle
-			end
+			ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
+				 catch error:noproc -> not_handled % no transaction to handle
+				 end,
+			{ok, TxRef}
 	end.

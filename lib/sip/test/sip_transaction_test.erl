@@ -30,11 +30,11 @@ transaction_test_() ->
 		fun () -> {ok, Pid} = sip_transaction_sup:start_link(Cfg),
 				  meck:new(sip_transport, [passthrough]),
 				  SendRequest = fun (Conn, To, Msg) ->
-										 ?MODULE ! {transport, Conn, {request, To, Msg}},
+										 ?MODULE ! {tp, Conn, {request, To, Msg}},
 										 {ok, Conn}
 								end,
 				  SendResponse = fun (Conn, Msg) ->
-										  ?MODULE ! {transport, Conn, {response, Msg}},
+										  ?MODULE ! {tp, Conn, {response, Msg}},
 										  {ok, Conn}
 								 end,
 				  % Mock transport layer calls
@@ -49,105 +49,74 @@ transaction_test_() ->
 				 ok
 		end,
 	{foreach, Setup, Cleanup, 
-	  sip_test:with_timeout([fun client_invite_tcp_err/1,
-							 fun client_invite_udp_err/1], 60)
+	  sip_test:with_timeout([tx_test(fun client_invite_tcp_err/0),
+							 tx_test(fun client_invite_udp_err/0)], 60)
 	  }.  
 
-
-tp_expect(Msg) ->
-	tp_expect(Msg, ?TIMEOUT).
-
-tp_expect(Msg, Timeout) when is_integer(Timeout) ->
-	receive
-		{transport, _Conn, Msg} -> ok
-	after Timeout -> ?fail("Message expected to be sent from transaction layer to transport layer")
+% Boilerplate initialization code common for all transaction tests
+tx_test(Fun) ->
+	fun (_Resource) ->
+			 register(?MODULE, self()),
+			 Result = Fun(),
+			 unregister(?MODULE),
+			 Result
 	end.
 
-tp_expect_not() ->
-	tp_expect_not(?TIMEOUT).
-
-tp_expect_not(Timeout) ->
-	receive
-		{transport, _Conn, _Msg} -> ?fail("Not expecting messages coming from transaction to transport layer!")
-	after ?TIMEOUT -> ok
-	end.
-
-tp_receive(Conn, Remote, Msg) ->
-	sip_router:handle(Conn, Remote, Msg).
-
-tu_expect(TxRef, Msg) ->
-	tu_expect(TxRef, Msg, ?TIMEOUT).
-
-tu_expect(TxRef, Msg, Timeout) ->
-	receive
-		{tx, TxRef, Msg} ->
-			ok
-		
-	after ?TIMEOUT -> ?fail("Should receive response from transaction layer!")
-	end.
-
-tu_send(TxRef, Msg) ->
-	sip_transaction:send(TxRef, Msg).
-
-client_invite_udp_err({_Tx}) ->
-	register(?MODULE, self()),
-	To = sip_test:endpoint(udp),
+client_invite_udp_err() ->
+	Remote = sip_test:endpoint(udp),
 	Request = sip_test:invite(udp),
+	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
+	ACK = sip_message:create_ack(Request, Response),
 	
-	{ok, TxRef} = sip_transaction:start_tx(client, self(), To, Request),
+	{ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
 	
-	% Expect first request to be sent by tx layer
-	tp_expect({request, To, Request}),
-	
-	% Expect retransmission (in 500 ms) to be sent by tx layer
-	tp_expect({request, To, Request}, ?TIMEOUT * 2),
+	?assertReceive("Expect first request to be sent by tx layer", 
+					{tp, _Conn, {request, Remote, Request}}),
+	timer:sleep(500),
+	?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer", 
+					{tp, _Conn, {request, Remote, Request}}),
 	
 	% Emulate response received by transport layer
-	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},	
-	tp_receive(undefined, To, Response),
+		
+	?assertEqual({ok, TxRef},
+				 sip_transaction:handle(undefined, Remote, Response)),
 
-	% Expect response to be passed to TU
-	tu_expect(TxRef, {response, Response}),
+	?assertReceive("Expect response to be passed to TU", 
+					{tx, TxRef, {response, Response}}),
 	
-	% Expect ACK to be sent by tx layer
-	ACK = sip_message:create_ack(Request, Response),
-	tp_expect({request, To, ACK}),
+	?assertReceive("Expect ACK to be sent by tx layer",
+					{tp, _Conn, {request, Remote, ACK}}),
 	
-	% Expect tx to terminate in 32 seconds after receiving final response
 	timer:sleep(32000),
-	tu_expect(TxRef, {terminated, normal}),
-	
-	unregister(?MODULE),
+	?assertReceive("Expect tx to terminate in 32 seconds after receiving final response", 
+					{tx, TxRef, {terminated, normal}}),
 	ok.
 
-client_invite_tcp_err({_Tx}) ->
-	register(?MODULE, self()),
-	To = sip_test:endpoint(tcp),
+client_invite_tcp_err() ->
+	Remote = sip_test:endpoint(tcp),
 	Request = sip_test:invite(tcp),
+	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
+	ACK = sip_message:create_ack(Request, Response),
 	
-	{ok, TxRef} = sip_transaction:start_tx(client, self(), To, Request),
+	{ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
 	
-	% Expect first request to be sent by tx layer
-	tp_expect({request, To, Request}),
-	
-	% Expect retransmission not to be sent by tx layer
-	tp_expect_not(?TIMEOUT * 2),
+	?assertReceive("Expect first request to be sent by tx layer",
+					 {tp, _Conn, {request, Remote, Request}}),
+	?assertReceiveNot("Expect retransmission not to be sent by tx layer",
+						{tp, _Conn, _Msg}),
 	
 	% Emulate response received by transport layer
-	Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
-	tp_receive(undefined, To, Response),
+	?assertEqual({ok, TxRef}, 
+				 sip_transaction:handle(undefined, Remote, Response)),
 	
-	% Expect response to be passed to TU
-	tu_expect(TxRef, {response, Response}),
+	?assertReceive("Expect response to be passed to TU", 
+					{tx, TxRef, {response, Response}}),
 	
-	% Expect ACK to be sent by tx layer
-	ACK = sip_message:create_ack(Request, Response),
-	tp_expect({request, To, ACK}),
+	?assertReceive("Expect ACK to be sent by tx layer", 
+					{tp, _Conn, {request, Remote, ACK}}),
 	
-	% Expect tx to terminate in 0 seconds after receiving final response
-	tu_expect(TxRef, {terminated, normal}),
-	
-	unregister(?MODULE),
+	?assertReceive("Expect tx to terminate in 0 seconds after receiving final response", 
+					{tx, TxRef, {terminated, normal}}),
 	ok.
 
 -endif.

@@ -41,10 +41,10 @@ behaviour_info(_) ->
 -spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
 handle(Conn, Remote, Msg) ->
 	case sip_transaction:handle(Conn, Remote, Msg) of
-		false ->
+		not_handled ->
 			% pass to core, transaction layer have not processed the message
 			sip_core:handle(Conn, Remote, Msg);
-		_ -> 
+		{ok, _TxRef} -> 
 			% handled by tx layer
 			ok
 	end.
