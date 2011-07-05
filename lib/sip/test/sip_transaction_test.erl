@@ -16,10 +16,7 @@
 -include_lib("sip_test.hrl").
 
 
-% FIXME: Register as sip_core, since for now this is the name of
-% TU process used by transaction layer. Instead, transaction layer
-% should consult router/config for TU process pid.
--define(REGNAME, sip_core).
+-define(REGNAME, ?MODULE).
 
 %%-----------------------------------------------------------------
 %% Functions
@@ -491,7 +488,7 @@ server_invite_ok(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, self(), Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -545,7 +542,7 @@ server_invite_err(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, self(), Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -608,7 +605,7 @@ server_invite_timeout(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, self(), Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -658,7 +655,7 @@ server_invite_tu_down(Transport) ->
     receive proceed -> ok end, % wait until TU register itself
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, TU, Remote, Request),
 
     ?assertEqual([TxRef], sip_transaction:list_tx()), % have transaction in list
     TU ! {proceed, TxRef}, % notify TU about transaction
@@ -694,7 +691,7 @@ server_ok(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, self(), Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % Further request retransmissions are ignored
@@ -764,7 +761,7 @@ server_err(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, self(), Remote, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % 500 response is sent by TU
@@ -809,7 +806,7 @@ server_tu_down(Transport) ->
     receive proceed -> ok end, % wait until TU register itself
 
     % Request is received
-    {ok, TxRef} = sip_transaction:handle(undefined, Remote, Request),
+    {ok, TxRef} = sip_transaction:start_tx(server, TU, Remote, Request),
 
     ?assertEqual([TxRef], sip_transaction:list_tx()), % have transaction in list
     TU ! {proceed, TxRef}, % notify TU about transaction
