@@ -159,6 +159,7 @@ client_invite_err(Transport)->
     Request = sip_test:invite(Transport),
     Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
     ACK = sip_message:create_ack(Request, Response),
+    IsReliable = sip_transport:is_reliable(Transport),
 
     {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
 
@@ -175,22 +176,25 @@ client_invite_err(Transport)->
     ?assertReceive("Expect ACK to be sent by tx layer",
                    {tp, _Conn, {request, Remote, ACK}}),
 
-    % ACK should be re-transmitted, but message should not be given to TU
-    ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(undefined, Remote, Response)),
 
-    ?assertReceiveNot("Expect response not to be passed to TU",
-                   {tx, TxRef, {response, Response}}),
-
-    ?assertReceive("Expect ACK to be retransmitted by tx layer",
-                   {tp, _Conn, {request, Remote, ACK}}),
+    case IsReliable of
+        true ->
+            % no retransmissions for reliable transports
+            ok;
+        false ->
+            % ACK should be re-transmitted, but message should not be passed to TU
+            ?assertEqual({ok, TxRef},
+                         sip_transaction:handle(undefined, Remote, Response)),
+            ?assertReceiveNot("Expect response not to be passed to TU",
+                              {tx, TxRef, {response, Response}}),
+            ?assertReceive("Expect ACK to be retransmitted by tx layer",
+                           {tp, _Conn, {request, Remote, ACK}})
+    end,
 
     % Buffer any retransmissions (unreliable only)
     % Verify buffering additional response retransmissions
-    case sip_transport:is_reliable(Transport) of
-        true ->
-            ok;
-
+    case IsReliable of
+        true -> ok;
         false ->
             % Emulate final response retransmission received by transport layer
             ?assertEqual({ok, TxRef},
