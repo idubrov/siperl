@@ -101,8 +101,7 @@ init(Opts) ->
     %% 2xx response, transition to the 'TERMINATED' state
 
     ?TU(Response, Data),
-    Reason = {terminated, Status, Response},
-    {stop, normal, Reason, Data}.
+    {stop, normal, ok, Data}.
 
 %% @doc
 %% In 'PROCEEDING' state, act the same way as in 'CALLING' state.
