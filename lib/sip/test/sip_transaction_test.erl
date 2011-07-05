@@ -27,8 +27,8 @@
 
 -spec transaction_test_() -> term().
 transaction_test_() ->
-    Tests = [client_invite_ok, 
-             client_invite_err, 
+    Tests = [client_invite_ok,
+             client_invite_err,
              client_invite_timeout],
     specs(Tests).
 
@@ -47,7 +47,7 @@ specs(Tests) ->
 setup() ->
     % Listen on 15060
     Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, undefined}]),
-    
+
     {ok, Pid} = sip_transaction_sup:start_link(Cfg),
     % Mock transport layer calls
     meck:new(sip_transport, [passthrough]),
