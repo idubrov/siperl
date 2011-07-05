@@ -25,7 +25,7 @@ invite(Transport) ->
     request('INVITE', Transport).
 
 request(Method, Transport) ->
-    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"branch_id">>}]),
+    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"z9hG4bK_somebranchid">>}]),
     CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
     To = sip_headers:to(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}]),
