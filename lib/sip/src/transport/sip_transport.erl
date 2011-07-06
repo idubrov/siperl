@@ -127,12 +127,8 @@ send_response(Endpoint, Message) when is_record(Message, sip_message) ->
 %% @end
 %% @private
 -spec dispatch(term(), #sip_endpoint{}, #sip_message{} | [#sip_message{}]) -> ok.
-dispatch(_Connection, _Remote, []) ->
-    ok;
-
-dispatch(Connection, Remote, [Head | Msgs]) ->
-    dispatch(Connection, Remote, Head),
-    dispatch(Connection, Remote, Msgs);
+dispatch(Connection, Remote, Msgs) when is_list(Msgs) ->
+    lists:foreach(fun (Msg) -> dispatch(Connection, Remote, Msg) end, Msgs);
 
 dispatch(Connection, Remote, Msg)
   when is_record(Remote, sip_endpoint),
