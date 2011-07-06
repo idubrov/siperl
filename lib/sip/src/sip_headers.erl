@@ -311,7 +311,7 @@ top_via(Headers) when is_list(Headers) ->
     {'via', [Via2 | _]} = sip_headers:parse_header('via', Via),
     Via2.
 
--spec top_via_branch([header()]) -> binary() | false.
+-spec top_via_branch([header()]) -> binary() | undefined.
 top_via_branch(Headers) ->
     Via = sip_headers:top_via(Headers),
     case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of

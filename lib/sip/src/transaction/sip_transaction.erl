@@ -45,7 +45,7 @@ start_link(Cfg) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Cfg, []).
 
 %% @doc
-%% Start new client transaction.
+%% Start new client or server transaction.
 %% @end
 -spec start_tx(client | server, any(), #sip_endpoint{}, #sip_message{}) -> {ok, tx_ref()}.
 start_tx(Kind, TU, Remote, Request)
@@ -70,26 +70,20 @@ handle(_Connection, Remote, Msg)
 
     % requests go to server transactions, responses go to client
     Kind = case sip_message:is_request(Msg) of
-               true ->
-                   server;
-
-               false ->
-                   client
+               true ->  server;
+               false -> client
            end,
     % lookup transaction by key
     TxKey = tx_key(Kind, Msg),
     case lookup_tx(TxKey) of
-        undefined ->
-            not_handled;
-
-        TxRef ->
-            tx_send(TxRef, Msg)
+        undefined -> not_handled;
+        TxRef -> tx_send(TxRef, Msg)
     end.
 
 %% @doc
 %% Pass given message from the TU to the given transaction.
 %% @end
--spec send(tx_ref(), #sip_message{}) -> false | ok.
+-spec send(tx_ref(), #sip_message{}) -> not_handled | {ok, tx_ref()}.
 send(TxRef, Msg)  when is_record(Msg, sip_message) ->
     tx_send(TxRef, Msg).
 
@@ -249,7 +243,6 @@ tx_send(TxRef, Msg) when is_record(Msg, sip_message) ->
 
         {_Key, Pid} ->
             ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
-                 % FIXME: should differ from case when transaction does not exist at all?
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
             {ok, TxRef}
