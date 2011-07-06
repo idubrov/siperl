@@ -19,10 +19,6 @@
 -define(REGNAME, ?MODULE).
 
 %%-----------------------------------------------------------------
-%% Functions
-%%-----------------------------------------------------------------
-
-%%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
 -ifdef(EUNIT).
@@ -62,10 +58,10 @@ specs(Tests) ->
 
 setup() ->
     % Listen on 15060
-    Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}, {router, undefined}]),
+    Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}]),
 
     {ok, Pid} = sip_transaction_sup:start_link(Cfg),
-    % Mock transport layer calls
+    % Mock transport layer calls to intercept messages coming from transaction layer
     meck:new(sip_transport, [passthrough]),
     SendRequest = fun (Conn, To, Msg) ->
                            ?REGNAME ! {tp, Conn, {request, To, Msg}},

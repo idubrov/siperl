@@ -10,6 +10,5 @@
    {env, [
 		  {udp, [5060]},
 		  {tcp, [5060]},
-		  {router, sip_router},
 		  {t1, 500}
 		 ]}]}.

@@ -141,8 +141,11 @@ dispatch(Connection, Remote, Msg)
 
 dispatch_request(Connection, From, Msg) ->
     Msg2 = add_via_received(From, Msg),
-    Router = gen_server:call(?SERVER, get_router),
-    Router:handle(Connection, From, Msg2).
+    % 18.1.2: route to client transaction or to core
+    case sip_transaction:handle(Connection, From, Msg2) of
+        not_handled -> sip_core:handle(Connection, From, Msg2);
+        {ok, _TxRef} -> ok
+    end.
 
 dispatch_response(Connection, From, Msg) ->
     % When a response is received, the client transport examines the top
@@ -152,8 +155,11 @@ dispatch_response(Connection, From, Msg) ->
     % MUST be silently discarded.
     case check_sent_by(From#sip_endpoint.transport, Msg) of
         true ->
-            Router = gen_server:call(?SERVER, get_router),
-            Router:handle(Connection, From, Msg);
+            % 18.2.1: route to server transaction or to core
+            case sip_transaction:handle(Connection, From, Msg) of
+                not_handled -> sip_core:handle(Connection, From, Msg);
+                {ok, _TxRef} -> ok
+            end;
 
         {ExpectedSentBy, SentBy} ->
             error_logger:warning_report(['message_discarded',
@@ -313,8 +319,6 @@ init(Cfg) ->
 
 %% @private
 -spec handle_call(_, _, #state{}) -> {reply, atom(), #state{}} | {stop, _, #state{}}.
-handle_call(get_router, _From, State) ->
-    {reply, sip_config:router(State#state.config), State};
 handle_call({get_sentby, Transport}, _From, State) ->
     Self = sip_config:self(State#state.config),
     [Port | _] = sip_config:ports(State#state.config, Transport),

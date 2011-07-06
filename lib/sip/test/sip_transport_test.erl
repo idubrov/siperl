@@ -7,13 +7,8 @@
 %%%----------------------------------------------------------------
 -module(sip_transport_test).
 
--behaviour(sip_router).
-
 %% Exports
 -compile(export_all).
-
-%% Router callbacks
--export([handle/3]).
 
 %% Include files
 -include_lib("sip_message.hrl").
@@ -21,51 +16,61 @@
 -include_lib("sip_test.hrl").
 
 
-%%-----------------------------------------------------------------
-%% Functions
-%%-----------------------------------------------------------------
-%% Router implementation
--spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
-handle(Conn, From, Msg) ->
-    {Kind, _ , _} = Msg#sip_message.start_line,
-    ?MODULE ! {Kind, Conn, From, Msg},
-    ok.
+-define(REGNAME, ?MODULE).
 
+%%-----------------------------------------------------------------
 %% Tests
+%%-----------------------------------------------------------------
 -ifdef(EUNIT).
 
 -spec transport_test_() -> term().
 transport_test_() ->
-    % Listen on 15060
-    Config = [{udp, [15060]},
-              {tcp, [15060]},
-              {router, sip_transport_test}],
-    Setup =
-        fun () -> {ok, Pid} = sip_transport_sup:start_link(Config),
-                  {ok, UDP} = gen_udp:open(25060,
-                                           [inet, binary,
-                                            {active, false}]),
-                  {ok, TCP} = gen_tcp:listen(25060,
-                                             [inet, binary,
-                                              {active, false},
-                                              {packet, raw},
-                                              {reuseaddr, true}]),
-                  {Pid, UDP, TCP}
-        end,
-    Cleanup =
-        fun ({Pid, UDP, TCP}) ->
-                 gen_tcp:close(TCP),
-                 gen_udp:close(UDP),
-                 sip_test:shutdown_sup(Pid),
-                 ok
-        end,
-    {foreach, Setup, Cleanup,
+    {foreach, fun setup/0, fun cleanup/1,
      [{with, [
               fun send_request/1,
               fun receive_response/1,
               fun receive_request/1,
               fun send_response/1
              ]}]}.
+
+setup() ->
+    % Listen on 15060
+    Config = [{udp, [15060]},
+              {tcp, [15060]}],
+
+    {ok, Pid} = sip_transport_sup:start_link(Config),
+    {ok, UDP} = gen_udp:open(25060,
+                             [inet, binary,
+                             {active, false}]),
+    {ok, TCP} = gen_tcp:listen(25060,
+                               [inet, binary,
+                               {active, false},
+                               {packet, raw},
+                               {reuseaddr, true}]),
+
+    % Transport will pass request/response to transaction layer first
+    % So, override it with meck to intercept incoming and route them
+    % to the test process
+    meck:new(sip_transaction),
+    Handle =
+        fun (Conn, From, Msg) ->
+                 {Kind, _ , _} = Msg#sip_message.start_line,
+                 ?MODULE ! {Kind, Conn, From, Msg},
+                 {ok, undefined}
+        end,
+    meck:expect(sip_transaction, handle, Handle),
+    {Pid, UDP, TCP}.
+
+cleanup({Pid, UDP, TCP}) ->
+    case whereis(?REGNAME) of
+        undefined -> ok;
+        _ -> unregister(?REGNAME)
+    end,
+    gen_tcp:close(TCP),
+    gen_udp:close(UDP),
+    sip_test:shutdown_sup(Pid),
+    meck:unload(sip_transaction),
+    ok.
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request({_Transport, UDP, TCP}) ->

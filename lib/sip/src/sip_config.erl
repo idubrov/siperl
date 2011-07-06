@@ -8,7 +8,7 @@
 -module(sip_config).
 
 %% Exports
--export([t1/1, t2/1, t4/1, ports/2, router/1, app/1, self/1, from_options/1]).
+-export([t1/1, t2/1, t4/1, ports/2, app/1, self/1, from_options/1]).
 
 %% Includes
 -include_lib("sip_common.hrl").
@@ -47,10 +47,6 @@ t4(Cfg) ->
 -spec ports(config(), atom()) -> [integer()].
 ports(Cfg, udp) -> entry(Cfg, udp, [5060]);
 ports(Cfg, tcp) -> entry(Cfg, tcp, [5060]).
-
--spec router(config()) -> atom().
-router(Cfg) ->
-    entry(Cfg, router, no_router).
 
 -spec app(config()) -> atom().
 app(Cfg) ->
