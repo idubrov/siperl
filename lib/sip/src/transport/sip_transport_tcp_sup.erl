@@ -51,6 +51,6 @@ init(Ports) ->
     Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor), % Supervisor for connections
                 ?WORKER(sip_transport_tcp_conn_registry), % Registry for connections
                 ?WORKER(sip_transport_tcp, [Ports]) | % TCP transport API
-                lists:map(fun (Port) -> ?LISTENER(Port) end, Ports) % Listeners
+                [?LISTENER(Port) || Port <- Ports] % Listeners
                ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

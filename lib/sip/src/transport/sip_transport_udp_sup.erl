@@ -50,6 +50,6 @@ init(Ports) ->
     % Start listener
     Children = [
                 ?WORKER(sip_transport_udp, [Ports, self()]) | % UDP transport API
-                lists:map(fun (Port) when is_integer(Port) -> ?LISTENER(Port) end, Ports) % Listeners
+                [?LISTENER(Port) || Port <- Ports] % Listeners
                 ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

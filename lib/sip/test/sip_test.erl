@@ -48,9 +48,7 @@ generate_body(Bin, Repeat, Count) ->
 %% Generate list of tests with timeouts for {foreach, ...} EUnit construct.
 %% @end
 with_timeout(Funs, Timeout) ->
-    lists:map(fun (Fun) ->
-                       fun (R) -> {timeout, Timeout, fun() -> Fun(R) end} end
-              end, Funs).
+    [fun (R) -> {timeout, Timeout, fun() -> Fun(R) end} end || Fun <- Funs].
 
 %% @doc
 %% Shutdown given linked supervisor.

@@ -80,7 +80,7 @@ to_binary(Message) ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
-    Headers = lists:map(fun sip_headers:format_header/1, Message#sip_message.headers),
+    Headers = [sip_headers:format_header(Hdr) || Hdr <- Message#sip_message.headers],
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 -spec parse_datagram(Datagram :: binary()) ->

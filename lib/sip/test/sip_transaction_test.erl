@@ -52,8 +52,8 @@ transaction_test_() ->
 -spec specs([atom()]) -> term().
 specs(Tests) ->
     Transports = [tcp, udp],
-    TestFuns = lists:map(fun (Test) -> fun(T) -> sip_transaction_test:Test(T) end end, Tests),
-    {foreach, fun setup/0, fun cleanup/1, sip_test:with_timeout(for_transports(TestFuns, Transports), 60)}.
+    Tests = [fun (_Res) -> sip_transaction_test:Test(Transport) end || Test <- Tests, Transport <- Transports],
+    {foreach, fun setup/0, fun cleanup/1, sip_test:with_timeout(Tests, 60)}.
 
 setup() ->
     {ok, Pid} = sip_transaction_sup:start_link(),
@@ -84,14 +84,7 @@ cleanup({Pid}) ->
 %% for every possible combination of test function and transport. Each test function
 %% from the list accepts single transport parameter.
 for_transports(Tests, Transports) ->
-    Fun =
-        fun (Transport) ->
-                 ApplyTest = fun(Test) ->
-                                     fun(_Res) -> Test(Transport) end
-                             end,
-                 lists:map(ApplyTest, Tests)
-        end,
-    lists:flatmap(Fun, Transports).
+    [fun (_Res) -> Test(Transport) end || Test <- Tests, Transport <- Transports].
 
 %% @doc
 %% Scenario tested:
