@@ -23,7 +23,6 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
 -include_lib("sip_transaction.hrl").
 -include_lib("sip_message.hrl").
 

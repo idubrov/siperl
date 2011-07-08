@@ -25,7 +25,6 @@
 			   request,     % Original request
 			   provisional, % Most recent provisional response
 			   response,    % Final response
-			   remote,		% Remote address
 			   connection = undefined
   			  }).
 

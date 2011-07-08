@@ -22,7 +22,7 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Transport callbacks
--export([connect/1, send/2]).
+-export([send/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -45,16 +45,14 @@ start_link(Ports) when is_list(Ports) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec connect(#conn_key{}) -> {ok, sip_transport:connection()}.
-connect(To) when is_record(To, conn_key) ->
-    % XXX: Actually, we may want to reuse connection...
-    sip_transport_tcp_conn_sup:start_connection(To).
-
--spec send(sip_transport:connection(), #sip_message{}) -> {ok, sip_transport:connection()} | {error, Reason :: term()}.
-send(Pid, Message) when
-  is_pid(Pid),
+-spec send(#conn_key{}, pid() | undefined, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
+send(ConnKey, undefined, Message) ->
+    {ok, ConnProc} = sip_transport_tcp_conn_sup:start_connection(ConnKey),
+    send(ConnKey, ConnProc, Message);
+send(_ConnKey, ConnProc, Message) when
+  is_pid(ConnProc),
   is_record(Message, sip_message) ->
-    sip_transport_tcp_conn:send(Pid, Message).
+    sip_transport_tcp_conn:send(ConnProc, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks

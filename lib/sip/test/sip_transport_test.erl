@@ -12,7 +12,6 @@
 
 %% Include files
 -include_lib("sip_message.hrl").
--include_lib("sip_transport.hrl").
 -include_lib("sip_test.hrl").
 
 
@@ -52,9 +51,9 @@ setup() ->
     % to the test process
     meck:new(sip_transaction),
     Handle =
-        fun (Conn, From, Msg) ->
+        fun (Connection, Msg) ->
                  {Kind, _ , _} = Msg#sip_message.start_line,
-                 ?MODULE ! {Kind, Conn, From, Msg},
+                 ?MODULE ! {Kind, Connection, Msg},
                  {ok, undefined}
         end,
     meck:expect(sip_transaction, handle, Handle),
@@ -74,7 +73,10 @@ cleanup({Pid, UDP, TCP}) ->
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request({_Transport, UDP, TCP}) ->
-    To = #conn_key{transport = udp, address = "127.0.0.1", port = 25060},
+    To = sip_transport:connection("127.0.0.1", 25060, udp),
+    MAddr = {239, 0, 0, 100},
+    MTo = sip_transport:connection(MAddr, 25060, udp), % Multicast To:
+    
     Via1 = #sip_hdr_via{},
     Via2 = #sip_hdr_via{sent_by = {<<"127.0.0.1">>, 25060}, transport = udp},
     Request = #sip_message{start_line = {request, 'INVITE', <<"sip:127.0.0.1/test">>},
@@ -89,14 +91,14 @@ send_request({_Transport, UDP, TCP}) ->
     ExpectedRequestBin = sip_message:to_binary(Request#sip_message{headers = Headers}),
 
     % RFC 3261, 18.1.1: Sending Requests
-    sip_transport:send_request(undefined, To, Request),
+    sip_transport:send_request(To, Request),
     {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
     ?assertEqual(ExpectedRequestBin, Packet),
 
     % RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
     LongBody = sip_test:generate_body(<<$A>>, 1300),
     LongRequest = Request#sip_message{body = LongBody},
-    sip_transport:send_request(undefined, To, LongRequest),
+    sip_transport:send_request(To, LongRequest),
     {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
     LongExpected = <<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",
                      "Via: SIP/2.0/TCP ", (sip_binary:any_to_binary(Hostname))/binary, ":15060\r\n",
@@ -107,12 +109,10 @@ send_request({_Transport, UDP, TCP}) ->
     gen_tcp:close(RecvSocket),
 
     % RFC 3261, 18.1.1: Sending Requests (sending to multicast addr)
-    MAddr = {239, 0, 0, 100},
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    MTo = To#conn_key{address = MAddr},
 
     % Send request
-    sip_transport:send_request(undefined, MTo, Request, {ttl, 4}),
+    sip_transport:send_request(MTo, Request, [{ttl, 4}]),
 
     {ok, {_, 15060, MPacket}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
     ?assertEqual(<<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",
@@ -138,9 +138,9 @@ receive_response({_Transport, UDP, _TCP}) ->
     % RFC 3261, 18.1.2: Receiving Responses
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Response)),
     receive
-        {request, _Conn, _From, _Msg} ->
+        {request, _Conn, _Msg} ->
             ?fail("Request is not expected here");
-        {response, _Conn, _From, Msg} ->
+        {response, _Conn, Msg} ->
             ?assertEqual(Response, sip_message:parse_whole(Msg))
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
@@ -152,8 +152,8 @@ receive_response({_Transport, UDP, _TCP}) ->
 
     gen_udp:send(UDP, "127.0.0.1", 15060, WrongResponse),
     receive
-        {request, _Conn2, _From2, _Msg2} -> ?fail("Request is not expected here");
-        {response, _Conn2, _From2, _Msg2} -> ?fail("Response must be discarded (wrong sent-by)")
+        {request, _Conn2, _Msg2} -> ?fail("Request is not expected here");
+        {response, _Conn2, _Msg2} -> ?fail("Response must be discarded (wrong sent-by)")
         after ?TIMEOUT -> ok
     end,
 
@@ -173,10 +173,10 @@ receive_request({_Transport, UDP, _TCP}) ->
     % RFC 3261, 18.2.1: Receiving Requests
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request)),
     receive
-        {request, _Conn, _From, Msg} ->
+        {request, _Conn, Msg} ->
             ?assertEqual(Request, sip_message:parse_whole(Msg));
 
-        {response, _Conn, _From, _Msg} -> ?fail("Response is not expected here")
+        {response, _Conn, _Msg} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
 
@@ -186,12 +186,12 @@ receive_request({_Transport, UDP, _TCP}) ->
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request2)),
 
     receive
-        {request, _Conn2, _From2, Msg2} ->
+        {request, _Conn2, Msg2} ->
             Via3 = Via2#sip_hdr_via{params = [{'received', <<"127.0.0.1">>}]},
             ExpectedRequest2 = Request2#sip_message{headers = [{'via', [Via3]}]},
             ?assertEqual(ExpectedRequest2, Msg2);
 
-        {response, _Conn2, _From2, _Msg2} -> ?fail("Response is not expected here")
+        {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
 
@@ -218,14 +218,14 @@ send_response({_Transport, UDP, TCP}) ->
 
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
-        {request, Conn, _From, Msg} ->
+        {request, {_ConnKey, ConnProc}, Msg} ->
             ?assertEqual(Request, sip_message:parse_whole(Msg)),
             % Send response
-            sip_transport:send_response(Conn, Response),
+            sip_transport:send_response(ConnProc, Response),
             {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
             ?assertEqual(ActualResponse, ResponseBin);
 
-        {response, _Conn, _From, _Msg} ->
+        {response, _Conn, _Msg} ->
             ?fail("Response is not expected here")
         after ?TIMEOUT ->
             ?fail("Message expected to be received by transport layer")
@@ -239,13 +239,13 @@ send_response({_Transport, UDP, TCP}) ->
 
     gen_tcp:send(Socket2, sip_message:to_binary(Request)),
     receive
-        {request, Conn2, _From2, Msg2} ->
+        {request, Connection, Msg2} ->
             ?assertEqual(Request, sip_message:parse_whole(Msg2)),
             % Close connection
             gen_tcp:close(Socket2),
             timer:sleep(?TIMEOUT),
             % Send response
-            sip_transport:send_response(Conn2, Response),
+            sip_transport:send_response(Connection, Response),
 
             % Server should retry by opening connection to received:sent-by-port
             {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
@@ -253,7 +253,7 @@ send_response({_Transport, UDP, TCP}) ->
             ?assertEqual(ActualResponse2, ResponseBin),
             gen_tcp:close(RecvSocket);
 
-        {response, _Conn2, _From2, _Msg2} -> ?fail("Response is not expected here")
+        {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
 

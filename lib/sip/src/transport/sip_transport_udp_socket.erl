@@ -41,7 +41,7 @@
 %% @doc
 %% Send SIP message through the given socket.
 %% @end
--spec send(pid(), #conn_key{}, #sip_message{}) -> {ok, {pid(), #conn_key{}}} | {error, Reason :: term()}.
+-spec send(pid(), #conn_key{}, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
 send(Pid, To, Message) when is_pid(Pid),
                                  is_record(To, conn_key),
                                  is_record(Message, sip_message) ->
@@ -69,9 +69,9 @@ init(Port) ->
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
           {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
-    RemoteEndpoint = #conn_key{transport = udp, address = SrcAddress, port = SrcPort},
+    Remote = #conn_key{transport = udp, address = SrcAddress, port = SrcPort},
     {ok, Msg} = sip_message:parse_datagram(Packet),
-    sip_transport:dispatch(self(), RemoteEndpoint, Msg),
+    sip_transport:dispatch(Remote, self(), Msg),
     {noreply, State};
 
 handle_info(Req, State) ->
@@ -92,7 +92,7 @@ handle_call({send, To, Message}, _From, State) ->
             {reply, {error, too_big}, State};
         true ->
             ok = gen_udp:send(State#state.socket, To#conn_key.address, To#conn_key.port, Packet),
-            {reply, {ok, {self(), To}}, State}
+            {reply, {ok, self()}, State}
     end;
 
 handle_call(Req, _From, State) ->

@@ -16,7 +16,6 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip_transaction.hrl").
 -include_lib("sip_message.hrl").
--include_lib("sip_transport.hrl").
 
 %%-----------------------------------------------------------------
 %% Exports
@@ -29,10 +28,9 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#conn_key{}, #sip_message{}}}) ->
-          {ok, atom(), #data{}}.
-init(Opts) ->
-    Data = ?INIT(Opts),
+-spec init(#params{}) -> {ok, atom(), #data{}}.
+init(Params) ->
+    Data = ?INIT(Params),
 
     % The request MUST be passed to the TU.
     Data2 = ?TU(Data#data.request, Data),
@@ -128,7 +126,7 @@ handle_info(Info, State, Data) ->
     Data3 = ?RESPONSE(Data2),
 
     % start timer J (only for unreliable)
-    case sip_transport:is_reliable(Data3#data.remote#conn_key.transport) of
+    case sip_transport:is_reliable(Data3#data.connection) of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
             {stop, normal, ok, Data3};

@@ -19,7 +19,8 @@
 
 %% API
 -export([start_link/0]).
--export([send_request/3, send_request/4, send_response/2, is_reliable/1]).
+-export([connection/3]).
+-export([send_request/2, send_request/3, send_response/2, is_reliable/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -37,9 +38,7 @@
 -include_lib("sip_message.hrl").
 
 %% Types
--opaque proc() :: term().
-
--type connection() :: {Remote :: #conn_key{}, Proc :: proc()} | #conn_key{}.
+-opaque connection() :: {Remote :: #conn_key{}, Proc :: pid() | undefined}.
 -export_type([connection/0]).
 
 -record(state, {}).
@@ -52,71 +51,82 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @doc
-%% Check if given transport is reliable
+%% Check if given transport is reliable.
 %% @end
--spec is_reliable(atom()) -> boolean().
+-spec is_reliable(atom() | connection()) -> boolean().
+is_reliable(#conn_key{transport = Transport}) ->
+    is_reliable(Transport);
+is_reliable({#conn_key{transport = Transport}, _ConnProc}) ->
+    is_reliable(Transport);
 is_reliable(udp) -> false;
 is_reliable(tcp) -> true.
 
 %% @doc
-%% Send message to the specified endpoint. This function returns
-%% connection that should be used to send subsequent messages via send/3.
+%% Create connection to the given address/port via specified transport.
 %% @end
--spec send_request(#conn_key{}, #sip_message{}, [term()]) -> {ok, connection()} | {error, Reason :: term()}.
-send_request(To, Message, Opts) ->
-    send_request(undefined, To, Message, Opts).
+-spec connection(term(), integer(), atom()) -> connection().
+connection(Address, Port, Transport) ->
+    {#conn_key{address = Address, port = Port, transport = Transport}, undefined}.
 
 %% @doc
 %% Send packet via the specified connection. Returns connection that
-%% should be used for subsequent send/3 calls.
+%% should be used for subsequent send_* calls.
 %% @end
--spec send_request(connection() | undefined, #conn_key{}, #sip_message{}, integer()) ->
+-spec send_request(connection() | #conn_key{}, #sip_message{}) ->
           {ok, connection()} | {error, Reason :: term()}.
-send_request(undefined, To, Message, Opts) ->
-    {ok, Endpoint} = endpoint(To),
-    send_request(Endpoint, To, Message, Opts);
+send_request(Connection, Message) ->
+    send_request(Connection, Message, []).
 
-send_request(Endpoint, To, Message, Opts) when
-  is_record(To, conn_key),
+%% @doc
+%% Send packet via the specified connection. Returns connection that
+%% should be used for subsequent send_* calls.
+%% Opts = [term()]. The only supported option is {ttl, TTL} used
+%% for sending multicast requests.
+%% @end
+-spec send_request(connection(), #sip_message{}, [term()]) ->
+          {ok, connection()} | {error, Reason :: term()}.
+send_request({ConnKey, ConnProc}, Message, Opts) when
+  is_record(ConnKey, conn_key),
   is_record(Message, sip_message) ->
     true = sip_message:is_request(Message),
 
     % Update top Via header
     TTL = proplists:get_value(ttl, Opts, 1),
-    NewMessage = add_via_sentby(Message, sent_by(To#conn_key.transport), To, TTL),
+    NewMessage = add_via_sentby(Message, ConnKey, TTL),
 
-     case send(Endpoint, To#conn_key.transport, NewMessage) of
+     case send(ConnKey, ConnProc, NewMessage) of
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
             error_logger:warning_msg("Message is too big, re-sending using TCP"),
-            send_request(To#conn_key{transport = tcp}, Message, Opts);
+            
+            ConnKey2 = ConnKey#conn_key{transport = tcp},
+            send_request(connection(ConnKey2, undefined), Message, Opts);
 
-        Result -> Result
+        {ok, ConnProc2} -> {ok, {ConnKey, ConnProc2}};
+        {error, Reason} -> {error, Reason}
      end.
 
 %% @doc
-%% Try to send reply by following RFC 3261 18.2.2. Connection is either opaque
-%% value returned by request/response or 'false'.
+%% Try to send reply by following RFC 3261 18.2.2.
 %% @end
--spec send_response(connection() | undefined, #sip_message{}) -> {ok, connection()}.
-%% Reply to address specified in 'received' parameter
-send_response(undefined, Message) when is_record(Message, sip_message) ->
+-spec send_response(undefined | connection(), #sip_message{}) -> {ok, connection()} | {error, Reason :: term()}.
+send_response({_ConnKey, ConnProc}, Message) ->
+    send_response(ConnProc, Message);
+send_response(ConnProc, Message)
+  when (is_pid(ConnProc) orelse ConnProc =:= undefined), is_record(Message, sip_message) ->
     true = sip_message:is_response(Message),
 
     Via = sip_headers:top_via(Message#sip_message.headers),
     To = reply_address(Via),
-    {ok, Endpoint} = endpoint(To),
-    send_response(Endpoint, Message);
-
-%% Reply on given connection
-send_response(Endpoint, Message) when is_record(Message, sip_message) ->
-    true = sip_message:is_response(Message),
-
-    Via = sip_headers:top_via(Message#sip_message.headers),
-    try send(Endpoint, Via#sip_hdr_via.transport, Message)
-    catch exit:{noproc, _Reason} ->
-              % Try to send again to the address in "received" and port in sent-by
-              send_response(undefined, Message)
+    Result = 
+        try send(To, ConnProc, Message)
+        catch exit:{noproc, _Reason} ->
+                  % Try to send again to the address in "received" and port in sent-by
+                  send_response(connection(To, undefined), Message)
+        end,
+    case Result of
+        {ok, ConnProc2} -> {ok, {To, ConnProc2}};
+        {error, Reason} -> {error, Reason}
     end.
 
 %%-----------------------------------------------------------------
@@ -128,28 +138,31 @@ send_response(Endpoint, Message) when is_record(Message, sip_message) ->
 %% is called by concrete transport implementations.
 %% @end
 %% @private
--spec dispatch(term(), #conn_key{}, #sip_message{} | [#sip_message{}]) -> ok.
-dispatch(Connection, Remote, Msgs) when is_list(Msgs) ->
-    lists:foreach(fun (Msg) -> dispatch(Connection, Remote, Msg) end, Msgs);
+-spec dispatch(#conn_key{}, pid(), #sip_message{} | [#sip_message{}]) -> ok.
+dispatch(Remote, ConnProc, Msgs) when is_list(Msgs) ->
+    lists:foreach(fun (Msg) -> dispatch(Remote, ConnProc, Msg) end, Msgs);
 
-dispatch(Connection, Remote, Msg)
+dispatch(Remote, ConnProc, Msg)
   when is_record(Remote, conn_key),
+       is_pid(ConnProc),
        is_record(Msg, sip_message) ->
 
+    Connection = connection(Remote, ConnProc),
     case sip_message:is_request(Msg) of
-        true -> dispatch_request(Connection, Remote, Msg);
-        false -> dispatch_response(Connection, Remote, Msg)
+        true -> dispatch_request(Connection, Msg);
+        false -> dispatch_response(Connection, Msg)
     end.
 
-dispatch_request(Connection, From, Msg) ->
+-spec dispatch_request(connection(), #sip_message{}) -> ok.
+dispatch_request({From, _ConnProc} = Connection, Msg) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
-    case sip_transaction:handle(Connection, From, Msg2) of
-        not_handled -> sip_core:handle(Connection, From, Msg2);
+    case sip_transaction:handle(Connection, Msg2) of
+        not_handled -> sip_core:handle(Connection, Msg2);
         {ok, _TxRef} -> ok
     end.
 
-dispatch_response(Connection, From, Msg) ->
+dispatch_response({From, _ConnProc} = Connection, Msg) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -158,8 +171,8 @@ dispatch_response(Connection, From, Msg) ->
     case check_sent_by(From#conn_key.transport, Msg) of
         true ->
             % 18.2.1: route to server transaction or to core
-            case sip_transaction:handle(Connection, From, Msg) of
-                not_handled -> sip_core:handle(Connection, From, Msg);
+            case sip_transaction:handle(Connection, Msg) of
+                not_handled -> sip_core:handle(Connection, Msg);
                 {ok, _TxRef} -> ok
             end;
 
@@ -173,9 +186,9 @@ dispatch_response(Connection, From, Msg) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
--spec add_via_sentby(#sip_message{}, SentBy :: {binary(), integer() | undefined}, #conn_key{}, integer()) ->
-          #sip_message{}.
-add_via_sentby(Message, SentBy, #conn_key{address = Addr, transport = Transport}, TTL) ->
+-spec add_via_sentby(#sip_message{}, #conn_key{}, integer()) -> #sip_message{}.
+add_via_sentby(Message, #conn_key{address = Addr, transport = Transport}, TTL) ->
+    SentBy = sent_by(Transport),
     % XXX: Only ipv4 for now.
     {ok, To} = inet:getaddr(Addr, inet),
 
@@ -300,15 +313,15 @@ sent_by(Transport) ->
 %% @doc
 %% Send the message through the transport.
 %% @end
-send(Endpoint, udp, Message) -> sip_transport_udp:send(Endpoint, Message);
-send(Endpoint, tcp, Message) -> sip_transport_tcp:send(Endpoint, Message).
+send(#conn_key{transport = udp} = ConnKey, ConnProc, Message) -> sip_transport_udp:send(ConnKey, ConnProc, Message);
+send(#conn_key{transport = tcp} = ConnKey, ConnProc, Message) -> sip_transport_tcp:send(ConnKey, ConnProc, Message).
 
 %% @doc
-%% Lookup endpoint to send message through for the transport.
+%% Internal function to create opaque connection() terms.
 %% @end
--spec endpoint(#conn_key{}) -> {ok, connection()}.
-endpoint(To) when To#conn_key.transport =:= udp -> sip_transport_udp:connect(To);
-endpoint(To) when To#conn_key.transport =:= tcp -> sip_transport_tcp:connect(To).
+-spec connection(#conn_key{}, pid() | undefined) -> connection().
+connection(ConnKey, ConnProc) ->
+    {ConnKey, ConnProc}.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -320,7 +333,7 @@ init({}) ->
     {ok, #state{}}.
 
 %% @private
--spec handle_call(_, _, #state{}) -> {reply, atom(), #state{}} | {stop, _, #state{}}.
+-spec handle_call(_, _, #state{}) -> {reply, {term(), integer()}, #state{}} | {stop, _, #state{}}.
 handle_call({get_sentby, Transport}, _From, State) ->
     Self = sip_config:self(),
     [Port | _] = sip_config:ports(Transport),

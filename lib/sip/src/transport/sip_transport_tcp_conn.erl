@@ -30,7 +30,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {socket, endpoint, parse_state = none}).
+-record(state, {socket, remote, parse_state = none}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -76,14 +76,14 @@ init(Socket) ->
 
     % Enable one time delivery
     ok = inet:setopts(Socket, [{active, once}]),
-    {ok, #state{socket = Socket, endpoint = Remote}}.
+    {ok, #state{socket = Socket, remote = Remote}}.
 
 %% @private
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->
           {noreply, #state{}} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({tcp, _Socket, Packet}, State) ->
     {ok, ParseState, Msgs} = sip_message:parse_stream(Packet, State#state.parse_state),
-    sip_transport:dispatch(self(), State#state.endpoint, Msgs),
+    sip_transport:dispatch(State#state.remote, self(), Msgs),
     ok = inet:setopts(State#state.socket, [{active, once}]),
     {noreply, State#state{parse_state = ParseState}};
 

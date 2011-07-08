@@ -12,14 +12,13 @@
 
 %% Include files
 -include_lib("sip_message.hrl").
--include_lib("sip_transport.hrl").
 -include_lib("sip_test.hrl").
 
 %%-----------------------------------------------------------------
 %% Functions
 %%-----------------------------------------------------------------
-endpoint(Transport) ->
-    #conn_key{transport = Transport, address = "127.0.0.1", port = 5080}.
+connection(Transport) ->
+    sip_transport:connection("127.0.0.1", 5060, Transport).
 
 invite(Transport) ->
     request('INVITE', Transport).

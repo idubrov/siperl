@@ -11,7 +11,6 @@
 %% Include files
 -include_lib("../sip_common.hrl").
 -include_lib("sip_transaction.hrl").
--include_lib("sip_transport.hrl").
 -include_lib("sip_message.hrl").
 
 %% Exports
@@ -28,8 +27,8 @@
 %%-----------------------------------------------------------------
 
 -spec init(#params{}) -> #data{}.
-init(#params{connection = Connection, key = Key, remote = Remote, request = Request, tx_user = TxUser})
-  when is_record(Remote, conn_key), is_record(Request, sip_message) ->
+init(#params{connection = Connection, key = Key, request = Request, tx_user = TxUser})
+  when is_record(Request, sip_message) ->
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
@@ -38,7 +37,6 @@ init(#params{connection = Connection, key = Key, remote = Remote, request = Requ
           t4 = sip_config:t4(),
           connection = Connection,
           tx_user = TxUser,
-          remote = Remote,
           request = Request,
           tx_ref = {Key, self()}}.
 
@@ -66,7 +64,7 @@ send_ack(Response, Data) ->
 
 -spec send_request(#sip_message{}, #data{}) -> #data{}.
 send_request(Msg, Data) ->
-    {ok, Conn} = sip_transport:send_request(Data#data.connection, Data#data.remote, Msg),
+    {ok, Conn} = sip_transport:send_request(Data#data.connection, Msg),
     Data#data{connection = Conn}.
 
 -spec send_response(#sip_message{}, #data{}) -> #data{}.

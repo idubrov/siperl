@@ -17,7 +17,7 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Transport callbacks
--export([connect/1, send/2]).
+-export([send/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -41,19 +41,16 @@ start_link(Ports, Sup) when is_list(Ports), is_pid(Sup) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec connect(#conn_key{}) -> {ok, sip_transport:connection()}.
-connect(To) when is_record(To, conn_key) ->
-    % UDP is connectionless, so "connection" is pair of process
-    % with UDP socket and destination
-    {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
-    {ok, {Pid, To}}.
-
--spec send(sip_transport:connection(), #sip_message{}) -> {ok, sip_transport:connection()} | {error, Reason :: term()}.
-send({Pid, To}, Message) when
-  is_pid(Pid),
-  is_record(To, conn_key),
+-spec send(#conn_key{}, pid() | undefined, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
+send(ConnKey, undefined, Message) ->
+    % Lookup the socket to handle the request
+    {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, ConnKey}),
+    send(ConnKey, Pid, Message);
+send(ConnKey, ConnProc, Message) when
+  is_pid(ConnProc),
+  is_record(ConnKey, conn_key),
   is_record(Message, sip_message) ->
-    sip_transport_udp_socket:send(Pid, To, Message).
+    sip_transport_udp_socket:send(ConnProc, ConnKey, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
