@@ -35,9 +35,9 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
--spec handle(sip_transport:connection(), #conn_idx{}, #sip_message{}) -> ok.
+-spec handle(sip_transport:connection(), #conn_key{}, #sip_message{}) -> ok.
 handle(_Connection, Remote, Msg)
-  when is_record(Remote, conn_idx),
+  when is_record(Remote, conn_key),
        is_record(Msg, sip_message) ->
     % FIXME: core layer implementation..
     % XXX: Start new transaction for requests...

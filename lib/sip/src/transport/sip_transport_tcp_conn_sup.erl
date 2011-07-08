@@ -38,8 +38,8 @@ start_link() ->
 %% @doc
 %% Start new connection. Socket is opened by the connection process.
 %% @end
--spec start_connection(#conn_idx{} | inet:socket()) -> {ok, pid()} | {error, any()}.
-start_connection(Remote) when is_record(Remote, conn_idx) ->
+-spec start_connection(#conn_key{} | inet:socket()) -> {ok, pid()} | {error, any()}.
+start_connection(Remote) when is_record(Remote, conn_key) ->
     supervisor:start_child(?SERVER, [Remote]);
 
 %% @doc

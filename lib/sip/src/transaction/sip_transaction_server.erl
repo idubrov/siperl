@@ -29,7 +29,7 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#sip_endpoint{}, #sip_message{}}}) ->
+-spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#conn_key{}, #sip_message{}}}) ->
           {ok, atom(), #data{}}.
 init(Opts) ->
     Data = ?INIT(Opts),
@@ -128,7 +128,7 @@ handle_info(Info, State, Data) ->
     Data3 = ?RESPONSE(Data2),
 
     % start timer J (only for unreliable)
-    case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
+    case sip_transport:is_reliable(Data3#data.remote#conn_key.transport) of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
             {stop, normal, ok, Data3};

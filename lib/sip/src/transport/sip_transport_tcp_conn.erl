@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
--spec start_link(#conn_idx{} | inet:socket()) -> {ok, pid()}.
+-spec start_link(#conn_key{} | inet:socket()) -> {ok, pid()}.
 start_link(Remote) ->
     gen_server:start_link(?MODULE, Remote, []).
 
@@ -51,12 +51,12 @@ send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init(inet:socket() | #conn_idx{}) -> {ok, #state{}}.
+-spec init(inet:socket() | #conn_key{}) -> {ok, #state{}}.
 init(Remote)
-  when is_record(Remote, conn_idx) ->
+  when is_record(Remote, conn_key) ->
     % New connection
-    To = Remote#conn_idx.address,
-    Port = Remote#conn_idx.port,
+    To = Remote#conn_key.address,
+    Port = Remote#conn_key.port,
     % FIXME: Opts...
     {ok, Socket} = gen_tcp:connect(To, Port, [binary, {active, false}]),
     init(Socket);
@@ -66,10 +66,10 @@ init(Socket) ->
     % These connections are indexed by the tuple formed from the address,
     % port, and transport protocol at the far end of the connection.
     {ok, {RemoteAddress, RemotePort}} = inet:peername(Socket),
-    Remote = #conn_idx{transport = tcp, address = RemoteAddress, port = RemotePort},
+    Remote = #conn_key{transport = tcp, address = RemoteAddress, port = RemotePort},
 
     {ok, {LocalAddress, LocalPort}} = inet:sockname(Socket),
-    Local = #conn_idx{transport = tcp, address = LocalAddress, port = LocalPort},
+    Local = #conn_key{transport = tcp, address = LocalAddress, port = LocalPort},
 
     % Register itself
     sip_transport_tcp_conn_registry:register(Local, Remote, self()),

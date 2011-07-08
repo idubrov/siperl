@@ -14,4 +14,4 @@
 %% formed from the address, port, and transport protocol at the far end
 %% of the connection
 %% @end
--record(conn_idx, {address, port, transport}).
+-record(conn_key, {address, port, transport}).

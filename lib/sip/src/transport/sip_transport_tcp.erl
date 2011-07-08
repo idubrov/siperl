@@ -45,8 +45,8 @@ start_link(Ports) when is_list(Ports) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec connect(#conn_idx{}) -> {ok, sip_transport:connection()}.
-connect(To) when is_record(To, conn_idx) ->
+-spec connect(#conn_key{}) -> {ok, sip_transport:connection()}.
+connect(To) when is_record(To, conn_key) ->
     % XXX: Actually, we may want to reuse connection...
     sip_transport_tcp_conn_sup:start_connection(To).
 

@@ -48,12 +48,12 @@ start_link() ->
 %% @doc
 %% Start new client or server transaction.
 %% @end
--spec start_tx(client | server, any(), sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> {ok, tx_ref()}.
+-spec start_tx(client | server, any(), sip_transport:connection(), #conn_key{}, #sip_message{}) -> {ok, tx_ref()}.
 start_tx(Kind, TU, Connection, Remote, Request)
   when (Kind =:= client orelse Kind =:= server),
        is_pid(TU),
        is_record(Request, sip_message),
-       is_record(Remote, sip_endpoint) ->
+       is_record(Remote, conn_key) ->
     
     Key = tx_key(Kind, Request),
     Module = tx_module(Kind, Request),
@@ -72,9 +72,9 @@ list_tx() ->
 %% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
--spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> not_handled | {ok, tx_ref()}.
+-spec handle(sip_transport:connection(), #conn_key{}, #sip_message{}) -> not_handled | {ok, tx_ref()}.
 handle(_Connection, Remote, Msg)
-  when is_record(Remote, sip_endpoint),
+  when is_record(Remote, conn_key),
        is_record(Msg, sip_message) ->
 
     % requests go to server transactions, responses go to client

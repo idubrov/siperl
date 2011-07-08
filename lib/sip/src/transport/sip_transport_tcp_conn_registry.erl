@@ -36,8 +36,8 @@
 %% Records
 %%-----------------------------------------------------------------
 
-%% connections is mapping from Remote :: #conn_idx{} -> {pid(), Local :: #conn_idx{}}
-%% pids is mapping from pid() -> Remote :: #conn_idx{}
+%% connections is mapping from Remote :: #conn_key{} -> {pid(), Local :: #conn_key{}}
+%% pids is mapping from pid() -> Remote :: #conn_key{}
 -record(state, {connections = dict:new(), pids = dict:new()}).
 
 %%-----------------------------------------------------------------
@@ -47,19 +47,19 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec register(#conn_idx{}, #conn_idx{}, pid()) -> ok.
+-spec register(#conn_key{}, #conn_key{}, pid()) -> ok.
 register(Local, Remote, Pid)
-  when is_record(Local, conn_idx),
-       is_record(Remote, conn_idx),
+  when is_record(Local, conn_key),
+       is_record(Remote, conn_key),
        is_pid(Pid) ->
     gen_server:call(?SERVER, {monitor, Local, Remote, Pid}).
 
--spec lookup(Remote :: #conn_idx{}) ->
-          {ok, [{Pid :: pid(), Local :: #conn_idx{}}]} | error.
-lookup(Remote) when is_record(Remote, conn_idx) ->
+-spec lookup(Remote :: #conn_key{}) ->
+          {ok, [{Pid :: pid(), Local :: #conn_key{}}]} | error.
+lookup(Remote) when is_record(Remote, conn_key) ->
     gen_server:call(?SERVER, {lookup, Remote}).
 
--spec list() -> [Remote :: #conn_idx{}].
+-spec list() -> [Remote :: #conn_key{}].
 list() ->
     gen_server:call(?SERVER, list).
 

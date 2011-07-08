@@ -41,8 +41,8 @@ start_link(Ports, Sup) when is_list(Ports), is_pid(Sup) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec connect(#conn_idx{}) -> {ok, sip_transport:connection()}.
-connect(To) when is_record(To, conn_idx) ->
+-spec connect(#conn_key{}) -> {ok, sip_transport:connection()}.
+connect(To) when is_record(To, conn_key) ->
     % UDP is connectionless, so "connection" is pair of process
     % with UDP socket and destination
     {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
@@ -51,7 +51,7 @@ connect(To) when is_record(To, conn_idx) ->
 -spec send(sip_transport:connection(), #sip_message{}) -> {ok, sip_transport:connection()} | {error, Reason :: term()}.
 send({Pid, To}, Message) when
   is_pid(Pid),
-  is_record(To, conn_idx),
+  is_record(To, conn_key),
   is_record(Message, sip_message) ->
     sip_transport_udp_socket:send(Pid, To, Message).
 
@@ -65,8 +65,8 @@ init({Ports, Sup}) ->
     {ok, #state{ports = Ports, supervisor = Sup}}.
 
 %% @private
--spec handle_call({lookup_socket | term(), #conn_idx{}}, _, #state{}) ->
-          {reply, #conn_idx{} | false, #state{}}.
+-spec handle_call({lookup_socket | term(), #conn_key{}}, _, #state{}) ->
+          {reply, #conn_key{} | false, #state{}}.
 handle_call({lookup_socket, _To}, _From, State) ->
     % Consult parent supervisor for children named like {socket, _}
     Endpoint = lookup_socket(supervisor:which_children(State#state.supervisor)),

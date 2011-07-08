@@ -39,7 +39,7 @@
 %% Types
 -opaque proc() :: term().
 
--type connection() :: {Remote :: #conn_idx{}, Proc :: proc()} | #conn_idx{}.
+-type connection() :: {Remote :: #conn_key{}, Proc :: proc()} | #conn_key{}.
 -export_type([connection/0]).
 
 -record(state, {}).
@@ -62,7 +62,7 @@ is_reliable(tcp) -> true.
 %% Send message to the specified endpoint. This function returns
 %% connection that should be used to send subsequent messages via send/3.
 %% @end
--spec send_request(#conn_idx{}, #sip_message{}, [term()]) -> {ok, connection()} | {error, Reason :: term()}.
+-spec send_request(#conn_key{}, #sip_message{}, [term()]) -> {ok, connection()} | {error, Reason :: term()}.
 send_request(To, Message, Opts) ->
     send_request(undefined, To, Message, Opts).
 
@@ -70,26 +70,26 @@ send_request(To, Message, Opts) ->
 %% Send packet via the specified connection. Returns connection that
 %% should be used for subsequent send/3 calls.
 %% @end
--spec send_request(connection() | undefined, #conn_idx{}, #sip_message{}, integer()) ->
+-spec send_request(connection() | undefined, #conn_key{}, #sip_message{}, integer()) ->
           {ok, connection()} | {error, Reason :: term()}.
 send_request(undefined, To, Message, Opts) ->
     {ok, Endpoint} = endpoint(To),
     send_request(Endpoint, To, Message, Opts);
 
 send_request(Endpoint, To, Message, Opts) when
-  is_record(To, conn_idx),
+  is_record(To, conn_key),
   is_record(Message, sip_message) ->
     true = sip_message:is_request(Message),
 
     % Update top Via header
     TTL = proplists:get_value(ttl, Opts, 1),
-    NewMessage = add_via_sentby(Message, sent_by(To#conn_idx.transport), To, TTL),
+    NewMessage = add_via_sentby(Message, sent_by(To#conn_key.transport), To, TTL),
 
-     case send(Endpoint, To#conn_idx.transport, NewMessage) of
+     case send(Endpoint, To#conn_key.transport, NewMessage) of
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
             error_logger:warning_msg("Message is too big, re-sending using TCP"),
-            send_request(To#conn_idx{transport = tcp}, Message, Opts);
+            send_request(To#conn_key{transport = tcp}, Message, Opts);
 
         Result -> Result
      end.
@@ -128,12 +128,12 @@ send_response(Endpoint, Message) when is_record(Message, sip_message) ->
 %% is called by concrete transport implementations.
 %% @end
 %% @private
--spec dispatch(term(), #conn_idx{}, #sip_message{} | [#sip_message{}]) -> ok.
+-spec dispatch(term(), #conn_key{}, #sip_message{} | [#sip_message{}]) -> ok.
 dispatch(Connection, Remote, Msgs) when is_list(Msgs) ->
     lists:foreach(fun (Msg) -> dispatch(Connection, Remote, Msg) end, Msgs);
 
 dispatch(Connection, Remote, Msg)
-  when is_record(Remote, conn_idx),
+  when is_record(Remote, conn_key),
        is_record(Msg, sip_message) ->
 
     case sip_message:is_request(Msg) of
@@ -155,7 +155,7 @@ dispatch_response(Connection, From, Msg) ->
     % that header field value does not correspond to a value that the
     % client transport is configured to insert into requests, the response
     % MUST be silently discarded.
-    case check_sent_by(From#conn_idx.transport, Msg) of
+    case check_sent_by(From#conn_key.transport, Msg) of
         true ->
             % 18.2.1: route to server transaction or to core
             case sip_transaction:handle(Connection, From, Msg) of
@@ -173,9 +173,9 @@ dispatch_response(Connection, From, Msg) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
--spec add_via_sentby(#sip_message{}, SentBy :: {binary(), integer() | undefined}, #conn_idx{}, integer()) ->
+-spec add_via_sentby(#sip_message{}, SentBy :: {binary(), integer() | undefined}, #conn_key{}, integer()) ->
           #sip_message{}.
-add_via_sentby(Message, SentBy, #conn_idx{address = Addr, transport = Transport}, TTL) ->
+add_via_sentby(Message, SentBy, #conn_key{address = Addr, transport = Transport}, TTL) ->
     % XXX: Only ipv4 for now.
     {ok, To} = inet:getaddr(Addr, inet),
 
@@ -225,7 +225,7 @@ check_sent_by(Transport, Msg) ->
 % it contains an IP address that differs from the packet source address, the
 % server MUST add a "received" parameter to that Via header field value.
 % RFC 3261, 18.2.1
-add_via_received(#conn_idx{address = Src}, Msg) ->
+add_via_received(#conn_key{address = Src}, Msg) ->
     Fun = fun ('via', Value) ->
                    {'via', [TopVia|Rest]} = sip_headers:parse_header('via', Value),
 
@@ -280,7 +280,7 @@ reply_address(Via) ->
                {_, undefined} -> default_port(Transport);
                {_, P} -> P
            end,
-    #conn_idx{address = Addr,
+    #conn_key{address = Addr,
                   port = Port,
                   transport = Transport}.
 
@@ -306,9 +306,9 @@ send(Endpoint, tcp, Message) -> sip_transport_tcp:send(Endpoint, Message).
 %% @doc
 %% Lookup endpoint to send message through for the transport.
 %% @end
--spec endpoint(#conn_idx{}) -> {ok, connection()}.
-endpoint(To) when To#conn_idx.transport =:= udp -> sip_transport_udp:connect(To);
-endpoint(To) when To#conn_idx.transport =:= tcp -> sip_transport_tcp:connect(To).
+-spec endpoint(#conn_key{}) -> {ok, connection()}.
+endpoint(To) when To#conn_key.transport =:= udp -> sip_transport_udp:connect(To);
+endpoint(To) when To#conn_key.transport =:= tcp -> sip_transport_tcp:connect(To).
 
 %%-----------------------------------------------------------------
 %% Server callbacks

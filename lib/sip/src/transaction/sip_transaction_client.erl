@@ -33,7 +33,7 @@ init(Params) ->
     Data = ?INIT(Params),
 
     % start Timer E only for unreliable transports
-    IsReliable = sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport),
+    IsReliable = sip_transport:is_reliable(Data#data.remote#conn_key.transport),
     Data2 = case IsReliable of
                 true -> Data;
                 false -> ?START(timerE, Data#data.t1, Data)
@@ -84,7 +84,7 @@ init(Params) ->
     Data3 = ?CANCEL(timerF, Data2),
 
     % start timer K
-    case sip_transport:is_reliable(Data3#data.remote#sip_endpoint.transport) of
+    case sip_transport:is_reliable(Data3#data.remote#conn_key.transport) of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
             {stop, normal, ok, Data3};

@@ -29,7 +29,7 @@
 
 -spec init(#params{}) -> #data{}.
 init(#params{connection = Connection, key = Key, remote = Remote, request = Request, tx_user = TxUser})
-  when is_record(Remote, sip_endpoint), is_record(Request, sip_message) ->
+  when is_record(Remote, conn_key), is_record(Request, sip_message) ->
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),

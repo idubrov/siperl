@@ -74,7 +74,7 @@ cleanup({Pid, UDP, TCP}) ->
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request({_Transport, UDP, TCP}) ->
-    To = #conn_idx{transport = udp, address = "127.0.0.1", port = 25060},
+    To = #conn_key{transport = udp, address = "127.0.0.1", port = 25060},
     Via1 = #sip_hdr_via{},
     Via2 = #sip_hdr_via{sent_by = {<<"127.0.0.1">>, 25060}, transport = udp},
     Request = #sip_message{start_line = {request, 'INVITE', <<"sip:127.0.0.1/test">>},
@@ -109,7 +109,7 @@ send_request({_Transport, UDP, TCP}) ->
     % RFC 3261, 18.1.1: Sending Requests (sending to multicast addr)
     MAddr = {239, 0, 0, 100},
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    MTo = To#conn_idx{address = MAddr},
+    MTo = To#conn_key{address = MAddr},
 
     % Send request
     sip_transport:send_request(undefined, MTo, Request, {ttl, 4}),
