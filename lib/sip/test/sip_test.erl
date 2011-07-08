@@ -19,7 +19,7 @@
 %% Functions
 %%-----------------------------------------------------------------
 endpoint(Transport) ->
-    #sip_endpoint{transport = Transport, address = "127.0.0.1", port = 5080}.
+    #conn_idx{transport = Transport, address = "127.0.0.1", port = 5080}.
 
 invite(Transport) ->
     request('INVITE', Transport).

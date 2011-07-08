@@ -57,10 +57,7 @@ specs(Tests) ->
     {foreach, fun setup/0, fun cleanup/1, sip_test:with_timeout(for_transports(TestFuns, Transports), 60)}.
 
 setup() ->
-    % Listen on 15060
-    Cfg = sip_config:from_options([{udp, [15060]}, {tcp, [15060]}]),
-
-    {ok, Pid} = sip_transaction_sup:start_link(Cfg),
+    {ok, Pid} = sip_transaction_sup:start_link(),
     % Mock transport layer calls to intercept messages coming from transaction layer
     meck:new(sip_transport, [passthrough]),
     SendRequest = fun (Conn, To, Msg) ->
@@ -114,21 +111,22 @@ client_invite_ok(Transport) ->
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Remote, Request),
+    Connection = dummy,
+    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Remote, Request),
 
     ?assertReceive("Expect request to be sent by tx layer",
-                   {tp, _Conn, {request, Remote, Request}}),
+                   {tp, Connection, {request, Remote, Request}}),
 
     % Should retransmit if unreliable, should not otherwise
     timer:sleep(500),
     case sip_transport:is_reliable(Transport) of
         false ->
             ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                           {tp, _Conn, {request, Remote, Request}});
+                           {tp, Connection, {request, Remote, Request}});
 
         true ->
             ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
-                              {tp, _Conn, _Msg})
+                              {tp, Connection, _Msg})
     end,
 
     % Emulate provisional response received by transport layer
@@ -138,7 +136,7 @@ client_invite_ok(Transport) ->
     % Should not retransmit while in PROCEEDING state
     timer:sleep(1000),
     ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
-                              {tp, _Conn, _Msg}),
+                              {tp, Connection, _Msg}),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),

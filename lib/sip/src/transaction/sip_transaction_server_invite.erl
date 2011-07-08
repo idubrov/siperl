@@ -28,10 +28,9 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#sip_endpoint{}, #sip_message{}}}) ->
-          {ok, atom(), #data{}}.
-init(Opts) ->
-    Data = ?INIT(Opts),
+-spec init(#params{}) -> {ok, atom(), #data{}}.
+init(Params) ->
+    Data = ?INIT(Params),
 
     % notify self to send provisional response
     % (not to block initialization)

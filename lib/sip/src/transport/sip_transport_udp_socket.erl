@@ -41,9 +41,9 @@
 %% @doc
 %% Send SIP message through the given socket.
 %% @end
--spec send(pid(), #sip_endpoint{}, #sip_message{}) -> {ok, {pid(), #sip_endpoint{}}} | {error, Reason :: term()}.
+-spec send(pid(), #conn_idx{}, #sip_message{}) -> {ok, {pid(), #conn_idx{}}} | {error, Reason :: term()}.
 send(Pid, To, Message) when is_pid(Pid),
-                                 is_record(To, sip_endpoint),
+                                 is_record(To, conn_idx),
                                  is_record(Message, sip_message) ->
     gen_server:call(Pid, {send, To, Message}).
 
@@ -69,7 +69,7 @@ init(Port) ->
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
           {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
-    RemoteEndpoint = #sip_endpoint{transport = udp, address = SrcAddress, port = SrcPort},
+    RemoteEndpoint = #conn_idx{transport = udp, address = SrcAddress, port = SrcPort},
     {ok, Msg} = sip_message:parse_datagram(Packet),
     sip_transport:dispatch(self(), RemoteEndpoint, Msg),
     {noreply, State};
@@ -78,9 +78,9 @@ handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
 %% @private
--spec handle_call({send, #sip_endpoint{}, #sip_message{}}, _, #state{}) ->
+-spec handle_call({send, #conn_idx{}, #sip_message{}}, _, #state{}) ->
           {reply, {error, too_big}, #state{}} |
-          {reply, {ok, {pid(), #sip_endpoint{}}}, #state{}}.
+          {reply, {ok, {pid(), #conn_idx{}}}, #state{}}.
 handle_call({send, To, Message}, _From, State) ->
     Packet = sip_message:to_binary(Message),
     %% If a request is within 200 bytes of the path MTU, or if it is larger
@@ -91,7 +91,7 @@ handle_call({send, To, Message}, _From, State) ->
         size(Packet) > 1300 ->
             {reply, {error, too_big}, State};
         true ->
-            ok = gen_udp:send(State#state.socket, To#sip_endpoint.address, To#sip_endpoint.port, Packet),
+            ok = gen_udp:send(State#state.socket, To#conn_idx.address, To#conn_idx.port, Packet),
             {reply, {ok, {self(), To}}, State}
     end;
 

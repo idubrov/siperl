@@ -28,10 +28,9 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init({sip_config:config(), sip_transaction:tx_key(), term(), {#sip_endpoint{}, #sip_message{}}}) ->
-          {ok, atom(), #data{}}.
-init(Opts) ->
-    Data = ?INIT(Opts),
+-spec init(#params{}) -> {ok, atom(), #data{}}.
+init(Params) ->
+    Data = ?INIT(Params),
 
     % start Timer E only for unreliable transports
     IsReliable = sip_transport:is_reliable(Data#data.remote#sip_endpoint.transport),

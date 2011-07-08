@@ -14,10 +14,11 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip_message.hrl").
 -include_lib("sip_transport.hrl").
+-include_lib("sip_transaction.hrl").
 
 %% API
--export([start_link/1]).
--export([start_tx/4, list_tx/0]).
+-export([start_link/0]).
+-export([start_tx/5, list_tx/0]).
 -export([handle/3, send/2]).
 
 %% Server callbacks
@@ -29,31 +30,39 @@
 -define(TX_SUP(Name, TxModule), ?SPEC(Name, sip_transaction_tx_sup, supervisor, [TxModule])).
 
 %% Types
--record(state, {config,
-                transactions = dict:new(), % Key -> pid()
+-record(state, {transactions = dict:new(), % Key -> pid()
                 pids = dict:new()}).       % pid() -> Key
 
--type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()}.
+-type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} | 
+                  {server, SentBy :: sip_headers:via_sent_by(), Branch :: binary(), Method :: sip_message:method()}.
 -type tx_ref() :: {tx_key(), pid()}.
 -export_type([tx_key/0, tx_ref/0]).
 
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
--spec start_link(sip_config:config()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Cfg) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Cfg, []).
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @doc
 %% Start new client or server transaction.
 %% @end
--spec start_tx(client | server, any(), #sip_endpoint{}, #sip_message{}) -> {ok, tx_ref()}.
-start_tx(Kind, TU, Remote, Request)
+-spec start_tx(client | server, any(), sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> {ok, tx_ref()}.
+start_tx(Kind, TU, Connection, Remote, Request)
   when (Kind =:= client orelse Kind =:= server),
-         is_pid(TU),
+       is_pid(TU),
        is_record(Request, sip_message),
        is_record(Remote, sip_endpoint) ->
-    gen_server:call(?SERVER, {start_tx, Kind, TU, Remote, Request}).
+    
+    Key = tx_key(Kind, Request),
+    Module = tx_module(Kind, Request),
+    Params = #params{connection = Connection,
+                     key = Key,
+                     remote = Remote,
+                     tx_user = TU,
+                     request = Request},
+    gen_server:call(?SERVER, {start_tx, Module, Params}).
 
 -spec list_tx() -> [tx_ref()].
 list_tx() ->
@@ -92,9 +101,9 @@ send(TxRef, Msg)  when is_record(Msg, sip_message) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init({sip_config:config(), pid()}) -> {ok, #state{}}.
-init(Cfg) ->
-    {ok, #state{config = Cfg}}.
+-spec init({}) -> {ok, #state{}}.
+init({}) ->
+    {ok, #state{}}.
 
 %% @private
 -spec handle_call(_, _, #state{}) ->
@@ -113,11 +122,9 @@ handle_call({lookup_tx, Key}, _From, State) ->
              end,
     {reply, Result, State};
 
-handle_call({start_tx, Kind, TU, Remote, Msg}, _From, State) ->
-    Key = tx_key(Kind, Msg),
-    Module = tx_module(Kind, Msg),
-
-    {ok, Pid} = sip_transaction_tx_sup:start_tx({Key, Module}, TU, {Remote, Msg}),
+handle_call({start_tx, Module, Params}, _From, State) ->   
+    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    Key = Params#params.key,
 
     % monitor transaction process
     erlang:monitor(process, Pid),

@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
--spec start_link(#sip_endpoint{} | term()) -> {ok, pid()}.
+-spec start_link(#conn_idx{} | inet:socket()) -> {ok, pid()}.
 start_link(Remote) ->
     gen_server:start_link(?MODULE, Remote, []).
 
@@ -51,12 +51,12 @@ send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init(inet:socket() | #sip_endpoint{}) -> {ok, #state{}}.
-init(RemoteEndpoint)
-  when is_record(RemoteEndpoint, sip_endpoint) ->
+-spec init(inet:socket() | #conn_idx{}) -> {ok, #state{}}.
+init(Remote)
+  when is_record(Remote, conn_idx) ->
     % New connection
-    To = RemoteEndpoint#sip_endpoint.address,
-    Port = RemoteEndpoint#sip_endpoint.port,
+    To = Remote#conn_idx.address,
+    Port = Remote#conn_idx.port,
     % FIXME: Opts...
     {ok, Socket} = gen_tcp:connect(To, Port, [binary, {active, false}]),
     init(Socket);
@@ -66,17 +66,17 @@ init(Socket) ->
     % These connections are indexed by the tuple formed from the address,
     % port, and transport protocol at the far end of the connection.
     {ok, {RemoteAddress, RemotePort}} = inet:peername(Socket),
-    RemoteEndpoint = #sip_endpoint{transport = tcp, address = RemoteAddress, port = RemotePort},
+    Remote = #conn_idx{transport = tcp, address = RemoteAddress, port = RemotePort},
 
     {ok, {LocalAddress, LocalPort}} = inet:sockname(Socket),
-    LocalEndpoint = #sip_endpoint{transport = tcp, address = LocalAddress, port = LocalPort},
+    Local = #conn_idx{transport = tcp, address = LocalAddress, port = LocalPort},
 
     % Register itself
-    sip_transport_tcp_conn_registry:register(LocalEndpoint, RemoteEndpoint, self()),
+    sip_transport_tcp_conn_registry:register(Local, Remote, self()),
 
     % Enable one time delivery
     ok = inet:setopts(Socket, [{active, once}]),
-    {ok, #state{socket = Socket, endpoint = RemoteEndpoint}}.
+    {ok, #state{socket = Socket, endpoint = Remote}}.
 
 %% @private
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->

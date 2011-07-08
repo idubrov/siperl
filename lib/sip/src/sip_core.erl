@@ -15,7 +15,7 @@
 -include_lib("sip_transport.hrl").
 
 %% API
--export([start_link/1]).
+-export([start_link/0]).
 -export([handle/3]).
 
 %% Macros
@@ -26,18 +26,18 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Types
--record(state, {config}).
+-record(state, {}).
 
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
--spec start_link(sip_config:config()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Cfg) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Cfg, []).
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
--spec handle(sip_transport:connection(), #sip_endpoint{}, #sip_message{}) -> ok.
+-spec handle(sip_transport:connection(), #conn_idx{}, #sip_message{}) -> ok.
 handle(_Connection, Remote, Msg)
-  when is_record(Remote, sip_endpoint),
+  when is_record(Remote, conn_idx),
        is_record(Msg, sip_message) ->
     % FIXME: core layer implementation..
     % XXX: Start new transaction for requests...
@@ -54,9 +54,9 @@ handle(_Connection, Remote, Msg)
 %%-----------------------------------------------------------------
 
 %% @private
--spec init({sip_config:config(), pid()}) -> {ok, #state{}}.
-init(Cfg) ->
-    {ok, #state{config = Cfg}}.
+-spec init({}) -> {ok, #state{}}.
+init({}) ->
+    {ok, #state{}}.
 
 %% @private
 -spec handle_call(_, _, #state{}) ->

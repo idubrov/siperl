@@ -29,6 +29,14 @@
 			   connection = undefined
   			  }).
 
+% Initial transaction parameters
+-record(params, {request,   % Request that initiated the transaction
+                 key,       % Transaction key
+                 tx_user,   % Transaction user (TU)
+                 remote,    % Remote endpoint that transaction communicates with
+                 connection % Transport layer connection
+                }).
+
 -define(CANCEL(Timer, Data), sip_transaction_base:cancel_timer(#data.Timer, Data)).
 -define(START(Timer, Interval, Data), sip_transaction_base:start_timer(Timer, #data.Timer, Interval, Data)).
 -define(ACK(Response, Data), sip_transaction_base:send_ack(Response, Data)).

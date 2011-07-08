@@ -43,10 +43,9 @@ start_link() ->
 %% @private
 -spec init(list()) -> {ok, _}.
 init([]) ->
-    Cfg = application:get_all_env(),
-    Children = [?WORKER(sip_core, [Cfg]),
-                ?SPEC(sip_transport_sup, supervisor, [Cfg]),
-                ?SPEC(sip_transaction_sup, supervisor, [Cfg])
+    Children = [?WORKER(sip_core, []),
+                ?SPEC(sip_transport_sup, supervisor, []),
+                ?SPEC(sip_transaction_sup, supervisor, [])
                 ],
 
     {ok, {{one_for_one, 1000, 3600}, Children}}.

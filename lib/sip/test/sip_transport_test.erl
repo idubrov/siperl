@@ -35,10 +35,9 @@ transport_test_() ->
 
 setup() ->
     % Listen on 15060
-    Config = [{udp, [15060]},
-              {tcp, [15060]}],
-
-    {ok, Pid} = sip_transport_sup:start_link(Config),
+    meck:new(sip_config, [passthrough]),
+    meck:expect(sip_config, ports, fun (udp) -> [15060]; (tcp) -> [15060] end),
+    {ok, Pid} = sip_transport_sup:start_link(),
     {ok, UDP} = gen_udp:open(25060,
                              [inet, binary,
                              {active, false}]),
@@ -70,11 +69,12 @@ cleanup({Pid, UDP, TCP}) ->
     gen_udp:close(UDP),
     sip_test:shutdown_sup(Pid),
     meck:unload(sip_transaction),
+    meck:unload(sip_config),
     ok.
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request({_Transport, UDP, TCP}) ->
-    To = #sip_endpoint{transport = udp, address = "127.0.0.1", port = 25060},
+    To = #conn_idx{transport = udp, address = "127.0.0.1", port = 25060},
     Via1 = #sip_hdr_via{},
     Via2 = #sip_hdr_via{sent_by = {<<"127.0.0.1">>, 25060}, transport = udp},
     Request = #sip_message{start_line = {request, 'INVITE', <<"sip:127.0.0.1/test">>},
@@ -109,10 +109,10 @@ send_request({_Transport, UDP, TCP}) ->
     % RFC 3261, 18.1.1: Sending Requests (sending to multicast addr)
     MAddr = {239, 0, 0, 100},
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    MTo = To#sip_endpoint{address = MAddr, ttl = 4},
+    MTo = To#conn_idx{address = MAddr},
 
     % Send request
-    sip_transport:send_request(undefined, MTo, Request),
+    sip_transport:send_request(undefined, MTo, Request, {ttl, 4}),
 
     {ok, {_, 15060, MPacket}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
     ?assertEqual(<<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",

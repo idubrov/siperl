@@ -14,7 +14,7 @@
 %%-----------------------------------------------------------------
 
 %% API
--export([start_link/1]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -33,18 +33,18 @@
 %% API functions
 %%-----------------------------------------------------------------
 
--spec start_link(sip_config:config()) -> {ok, pid()} | ignore | {error, _}.
-start_link(Cfg) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, Cfg).
+-spec start_link() -> {ok, pid()} | ignore | {error, _}.
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks
 %%-----------------------------------------------------------------
 %% @private
--spec init(sip_config:config()) -> {ok, _}.
-init(Cfg) ->
-    Children = [?SPEC(sip_transaction_tx_sup, supervisor, [Cfg]),
-                ?WORKER(sip_transaction, [Cfg])],
+-spec init({}) -> {ok, _}.
+init({}) ->
+    Children = [?SPEC(sip_transaction_tx_sup, supervisor, []),
+                ?WORKER(sip_transaction, [])],
     % Restart the whole layer in case any child fails
     {ok, {{one_for_all, 1000, 3600}, Children}}.
 

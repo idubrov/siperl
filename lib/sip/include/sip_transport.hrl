@@ -13,6 +13,5 @@
 %% According to the RFC 3261 18, connections are indexed by the tuple
 %% formed from the address, port, and transport protocol at the far end
 %% of the connection
-%% ttl is TTL for multicasts (only used when address is multicast address)
 %% @end
--record(sip_endpoint, {address, port, transport, ttl = 1}).
+-record(conn_idx, {address, port, transport}).

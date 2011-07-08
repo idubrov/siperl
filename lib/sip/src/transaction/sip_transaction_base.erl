@@ -27,15 +27,16 @@
 %% API
 %%-----------------------------------------------------------------
 
--spec init({sip_config:config(), sip_transaction:tx_key(),
-            term(), {#sip_endpoint{}, #sip_message{}}}) -> #data{}.
-init({Cfg, Key, TxUser, {Remote, Request}}) when is_record(Remote, sip_endpoint), is_record(Request, sip_message) ->
+-spec init(#params{}) -> #data{}.
+init(#params{connection = Connection, key = Key, remote = Remote, request = Request, tx_user = TxUser})
+  when is_record(Remote, sip_endpoint), is_record(Request, sip_message) ->
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
-    #data{t1 = sip_config:t1(Cfg),
-          t2 = sip_config:t2(Cfg),
-          t4 = sip_config:t4(Cfg),
+    #data{t1 = sip_config:t1(),
+          t2 = sip_config:t2(),
+          t4 = sip_config:t4(),
+          connection = Connection,
           tx_user = TxUser,
           remote = Remote,
           request = Request,

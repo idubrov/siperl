@@ -14,7 +14,7 @@
 %%-----------------------------------------------------------------
 
 %% API
--export([start_link/1]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -35,24 +35,24 @@
 %% API functions
 %%-----------------------------------------------------------------
 
--spec start_link([{Transport :: atom(), [Opts :: term()]}]) -> 'ignore' | {'error', _} | {'ok', pid()}.
-start_link(Opts) when is_list(Opts) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, Opts).
+-spec start_link() -> 'ignore' | {'error', _} | {'ok', pid()}.
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks
 %%-----------------------------------------------------------------
 
 %% @private
--spec init(sip_config:config()) -> {ok, _}.
-init(Cfg) ->
+-spec init({}) -> {ok, _}.
+init({}) ->
     % Start endpoint supervisors
-    UDP = sip_config:ports(Cfg, udp),
-    TCP = sip_config:ports(Cfg, tcp),
+    UDP = sip_config:ports(udp),
+    TCP = sip_config:ports(tcp),
 
     Children = [?SPEC(sip_transport_udp_sup, supervisor, [UDP]),
                 ?SPEC(sip_transport_tcp_sup, supervisor, [TCP]),
-                ?WORKER(sip_transport, [Cfg])],
+                ?WORKER(sip_transport, [])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
 
 %%-----------------------------------------------------------------

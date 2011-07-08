@@ -2,7 +2,7 @@
 %%% @author Ivan Dubrov <wfragg@gmail.com>
 %%% @doc
 %%% Registry that tracks active TCP connections and indexes them
-%%% by the {address, port, transport} tuple.
+%%% by the {address, port, transport} connection index tuple.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
@@ -36,8 +36,8 @@
 %% Records
 %%-----------------------------------------------------------------
 
-%% connections is mapping from RemoteEndpoint :: #sip_endpoint{} -> {pid(), LocalEndpoint :: #sip_endpoint{}}
-%% pids is mapping from pid() -> RemoteEndpoint :: #sip_endpoint{}
+%% connections is mapping from Remote :: #conn_idx{} -> {pid(), Local :: #conn_idx{}}
+%% pids is mapping from pid() -> Remote :: #conn_idx{}
 -record(state, {connections = dict:new(), pids = dict:new()}).
 
 %%-----------------------------------------------------------------
@@ -47,20 +47,19 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec register(#sip_endpoint{}, #sip_endpoint{}, pid()) -> ok.
-register(LocalEndpoint, RemoteEndpoint, Pid)
-  when is_record(LocalEndpoint, sip_endpoint),
-       is_record(RemoteEndpoint, sip_endpoint),
+-spec register(#conn_idx{}, #conn_idx{}, pid()) -> ok.
+register(Local, Remote, Pid)
+  when is_record(Local, conn_idx),
+       is_record(Remote, conn_idx),
        is_pid(Pid) ->
-    gen_server:call(?SERVER, {monitor, LocalEndpoint, RemoteEndpoint, Pid}).
+    gen_server:call(?SERVER, {monitor, Local, Remote, Pid}).
 
--spec lookup(RemoteEndpoint :: #sip_endpoint{}) ->
-          {ok, [{Pid :: pid(), LocalEndpoint :: #sip_endpoint{}}]} | error.
-lookup(RemoteEndpoint) when is_record(RemoteEndpoint, sip_endpoint) ->
-    gen_server:call(?SERVER, {lookup, RemoteEndpoint}).
+-spec lookup(Remote :: #conn_idx{}) ->
+          {ok, [{Pid :: pid(), Local :: #conn_idx{}}]} | error.
+lookup(Remote) when is_record(Remote, conn_idx) ->
+    gen_server:call(?SERVER, {lookup, Remote}).
 
--spec list() ->
-    [RemoteEndpoint :: #sip_endpoint{}].
+-spec list() -> [Remote :: #conn_idx{}].
 list() ->
     gen_server:call(?SERVER, list).
 
@@ -75,16 +74,16 @@ init([]) ->
 
 %% @private
 -spec handle_call(_, _, #state{}) -> {reply, _, #state{}} | {stop, _, #state{}}.
-handle_call({monitor, LocalEndpoint, RemoteEndpoint, Pid}, _From, State) ->
+handle_call({monitor, Local, Remote, Pid}, _From, State) ->
     erlang:monitor(process, Pid),
     % Could be several connections for same remote endpoint
-    Conns = dict:append(RemoteEndpoint, {Pid, LocalEndpoint}, State#state.connections),
+    Conns = dict:append(Remote, {Pid, Local}, State#state.connections),
     % One pid - one connection
-    Pids = dict:store(Pid, RemoteEndpoint, State#state.pids),
+    Pids = dict:store(Pid, Remote, State#state.pids),
     {reply, ok, State#state{connections = Conns, pids = Pids}};
 
-handle_call({lookup, RemoteEndpoint}, _From, State) ->
-    Result = dict:find(RemoteEndpoint, State#state.connections),
+handle_call({lookup, Remote}, _From, State) ->
+    Result = dict:find(Remote, State#state.connections),
     {reply, Result, State};
 
 handle_call(list, _From, State) ->
@@ -99,17 +98,17 @@ handle_call(Req, _From, State) ->
           {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({'DOWN', _MonitorRef, process, Pid, _Info}, State) ->
     % clear pid -> remote index mapping
-    RemoteEndpoint = dict:fetch(Pid, State#state.pids),
+    Remote = dict:fetch(Pid, State#state.pids),
     Pids = dict:erase(Pid, State#state.pids),
 
     % remove from the remote index -> data mapping
-    List = dict:fetch(RemoteEndpoint, State#state.connections),
+    List = dict:fetch(Remote, State#state.connections),
     Conns = case lists:keydelete(Pid, 1, List) of
                 [] ->
-                    dict:erase(RemoteEndpoint, State#state.connections);
+                    dict:erase(Remote, State#state.connections);
 
                 List2 ->
-                    dict:store(RemoteEndpoint, List2, State#state.connections)
+                    dict:store(Remote, List2, State#state.connections)
     end,
     {noreply, State#state{connections = Conns, pids = Pids}};
 
