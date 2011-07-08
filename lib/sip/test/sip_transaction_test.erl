@@ -14,9 +14,6 @@
 -include_lib("sip_message.hrl").
 -include_lib("sip_test.hrl").
 
-
--define(REGNAME, ?MODULE).
-
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -50,21 +47,22 @@ transaction_test_() ->
 %% eunit:test(sip_transaction_test:test_([client_invite_ok]))
 %% @end
 -spec specs([atom()]) -> term().
-specs(Tests) ->
+specs(Funs) ->
     Transports = [tcp, udp],
-    Tests = [fun (_Res) -> sip_transaction_test:Test(Transport) end || Test <- Tests, Transport <- Transports],
-    {foreach, fun setup/0, fun cleanup/1, sip_test:with_timeout(Tests, 60)}.
+    Tests = [{timeout, 60, fun () -> sip_transaction_test:Test(Transport) end} || Test <- Funs, Transport <- Transports],
+    {setup, fun setup/0, fun cleanup/1, {inparallel, Tests}}.
 
 setup() ->
     {ok, Pid} = sip_transaction_sup:start_link(),
     % Mock transport layer calls to intercept messages coming from transaction layer
+    % See sip_test:connection
     meck:new(sip_transport, [passthrough]),
-    SendRequest = fun (Conn, Msg) ->
-                           ?REGNAME ! {tp, Conn, {request, Msg}},
+    SendRequest = fun ({_ConnKey, ConnProc} = Conn, Msg) ->
+                           ConnProc ! {tp, Conn, {request, Msg}},
                            {ok, Conn}
                   end,
-    SendResponse = fun (Conn, Msg) ->
-                            ?REGNAME ! {tp, Conn, {response, Msg}},
+    SendResponse = fun ({_ConnKey, ConnProc} = Conn, Msg) ->
+                            ConnProc ! {tp, Conn, {response, Msg}},
                             {ok, Conn}
                    end,
     meck:expect(sip_transport, send_request, SendRequest),
@@ -72,10 +70,6 @@ setup() ->
     {Pid}.
 
 cleanup({Pid}) ->
-    case whereis(?REGNAME) of
-        undefined -> ok;
-        _ -> unregister(?REGNAME)
-    end,
     meck:unload(sip_transport),
     sip_test:shutdown_sup(Pid),
     ok.
@@ -96,8 +90,6 @@ for_transports(Tests, Transports) ->
 %% - transaction terminates
 %% @end
 client_invite_ok(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -143,7 +135,6 @@ client_invite_ok(Transport) ->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -157,8 +148,6 @@ client_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 client_invite_err(Transport)->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
@@ -215,7 +204,6 @@ client_invite_err(Transport)->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -225,8 +213,6 @@ client_invite_err(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_calling(Transport)->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
 
@@ -246,8 +232,6 @@ client_invite_timeout_calling(Transport)->
         false ->
             ok % we have lots of message retransmissions in message queue
     end,
-
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -259,8 +243,6 @@ client_invite_timeout_calling(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_proceeding(Transport)->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -282,7 +264,6 @@ client_invite_timeout_proceeding(Transport)->
                    {tx, TxRef, {terminated, timeout}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -295,8 +276,6 @@ client_invite_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 client_ok(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -372,7 +351,6 @@ client_ok(Transport) ->
 
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -382,8 +360,6 @@ client_ok(Transport) ->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_trying(Transport)->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:request('OPTIONS', Transport),
 
@@ -403,8 +379,6 @@ client_timeout_trying(Transport)->
         false ->
             ok % we have lots of message retransmissions in message queue
     end,
-
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -416,8 +390,6 @@ client_timeout_trying(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_proceeding(Transport)->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -445,8 +417,6 @@ client_timeout_proceeding(Transport)->
         false ->
             ok % we have lots of message retransmissions in message queue
     end,
-
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -463,8 +433,6 @@ client_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 server_invite_ok(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -499,7 +467,6 @@ server_invite_ok(Transport) ->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -517,8 +484,6 @@ server_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_invite_err(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -568,7 +533,6 @@ server_invite_err(Transport) ->
     ?assertReceive("Expect tx to terminate after receiving final response",
                    {tx, TxRef, {terminated, normal}}),
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -581,8 +545,6 @@ server_invite_err(Transport) ->
 %% - transaction terminates due to timeout
 %% @end
 server_invite_timeout(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -606,8 +568,6 @@ server_invite_timeout(Transport) ->
         true -> ?assertReceiveNot("Message queue is empty", _);
         false -> ok % we have lots of message retransmissions in message queue
     end,
-
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -623,31 +583,26 @@ server_invite_tu_down(Transport) ->
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
     % Prepare TU
-    Pid = self(),
     TUFun =
         fun () ->
-                 register(?REGNAME, self()),
-                 Pid ! proceed,
                  TxRef = receive {proceed, Ref} -> Ref end,
                  ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
-                 ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
-                 unregister(?REGNAME),
+                 
                  % exit from TU, this should force transaction to terminate
                  ok
          end,
     TU = erlang:spawn_link(TUFun),
-    erlang:monitor(process, TU),
-    receive proceed -> ok end, % wait until TU register itself
 
     % Request is received
     {ok, TxRef} = sip_transaction:start_tx(server, TU, Connection, Request),
 
-    ?assertEqual([TxRef], sip_transaction:list_tx()), % have transaction in list
-    TU ! {proceed, TxRef}, % notify TU about transaction
+    ?assertEqual([TxRef], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % have transaction in list
+    TU ! {proceed, TxRef}, % notify TU about transaction    
+    ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % wait for TU to exit and transaction layer to process the 'DOWN' event
     timer:sleep(500),
-    ?assertEqual([], sip_transaction:list_tx()), % do not have transaction in list
+    ?assertEqual([], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % do not have transaction in list
     ok.
 
 %% @doc
@@ -665,8 +620,6 @@ server_invite_tu_down(Transport) ->
 %% - transaction terminates
 %% @end
 server_ok(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:request('OPTIONS', Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
@@ -725,7 +678,6 @@ server_ok(Transport) ->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 
@@ -738,8 +690,6 @@ server_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_err(Transport) ->
-    register(?REGNAME, self()),
-
     Connection = sip_test:connection(Transport),
     Request = sip_test:request('OPTIONS', Transport),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
@@ -760,7 +710,6 @@ server_err(Transport) ->
                    {tx, TxRef, {terminated, normal}}),
 
     ?assertReceiveNot("Message queue is empty", _),
-    unregister(?REGNAME),
     ok.
 
 %% @doc
@@ -775,30 +724,24 @@ server_tu_down(Transport) ->
     Request = sip_test:request('OPTIONS', Transport),
 
     % Prepare TU
-    Pid = self(),
     TUFun =
         fun () ->
-                 register(?REGNAME, self()),
-                 Pid ! proceed,
                  TxRef = receive {proceed, Ref} -> Ref end,
                  ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
-                 unregister(?REGNAME),
                  % exit from TU, this should force transaction to terminate
                  ok
          end,
     TU = erlang:spawn_link(TUFun),
-    erlang:monitor(process, TU),
-    receive proceed -> ok end, % wait until TU register itself
 
     % Request is received
     {ok, TxRef} = sip_transaction:start_tx(server, TU, Connection, Request),
 
-    ?assertEqual([TxRef], sip_transaction:list_tx()), % have transaction in list
+    ?assertEqual([TxRef], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % have transaction in list
     TU ! {proceed, TxRef}, % notify TU about transaction
 
     % wait for TU to exit and transaction layer to process the 'DOWN' event
     timer:sleep(500),
-    ?assertEqual([], sip_transaction:list_tx()), % do not have transaction in list
+    ?assertEqual([], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % do not have transaction in list
     ok.
 
 -endif.

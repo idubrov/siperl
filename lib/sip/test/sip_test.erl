@@ -17,14 +17,24 @@
 %%-----------------------------------------------------------------
 %% Functions
 %%-----------------------------------------------------------------
+connection(Transport, Pid) ->
+    Connection = sip_transport:connection("127.0.0.1", 5060, Transport),
+    % Break into opaque type sip_transport:connection() for test purposes
+    % Make "transport" connection process to be self, so we can mock
+    % sip_transport send_* methods and route messages back to given
+    % Pid.
+    setelement(2, Connection, Pid).
+
 connection(Transport) ->
-    sip_transport:connection("127.0.0.1", 5060, Transport).
+    connection(Transport, self()).
 
 invite(Transport) ->
     request('INVITE', Transport).
 
 request(Method, Transport) ->
-    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"z9hG4bK_somebranchid">>}]),
+    Id = [case C of $< -> $_; $> -> $_; $. -> $_; _ -> C end || C <- pid_to_list(self())],
+    Bin = sip_binary:any_to_binary(Id),    
+    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"z9hG4bK_", Bin/binary>>}]),
     CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
     To = sip_headers:to(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}]),
