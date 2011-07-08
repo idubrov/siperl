@@ -76,7 +76,7 @@ send_request({_Transport, UDP, TCP}) ->
     To = sip_transport:connection("127.0.0.1", 25060, udp),
     MAddr = {239, 0, 0, 100},
     MTo = sip_transport:connection(MAddr, 25060, udp), % Multicast To:
-    
+
     Via1 = #sip_hdr_via{},
     Via2 = #sip_hdr_via{sent_by = {<<"127.0.0.1">>, 25060}, transport = udp},
     Request = #sip_message{start_line = {request, 'INVITE', <<"sip:127.0.0.1/test">>},

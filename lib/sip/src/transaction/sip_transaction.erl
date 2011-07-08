@@ -32,7 +32,7 @@
 -record(state, {transactions = dict:new(), % Key -> pid()
                 pids = dict:new()}).       % pid() -> Key
 
--type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} | 
+-type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} |
                   {server, SentBy :: sip_headers:via_sent_by(), Branch :: binary(), Method :: sip_message:method()}.
 -type tx_ref() :: {tx_key(), pid()}.
 -export_type([tx_key/0, tx_ref/0]).
@@ -52,7 +52,7 @@ start_tx(Kind, TU, Connection, Request)
   when (Kind =:= client orelse Kind =:= server),
        is_pid(TU),
        is_record(Request, sip_message) ->
-    
+
     Key = tx_key(Kind, Request),
     Module = tx_module(Kind, Request),
     Params = #params{connection = Connection,
@@ -118,7 +118,7 @@ handle_call({lookup_tx, Key}, _From, State) ->
              end,
     {reply, Result, State};
 
-handle_call({start_tx, Module, Params}, _From, State) ->   
+handle_call({start_tx, Module, Params}, _From, State) ->
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
     Key = Params#params.key,
 

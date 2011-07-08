@@ -33,7 +33,7 @@ invite(Transport) ->
 
 request(Method, Transport) ->
     Id = [case C of $< -> $_; $> -> $_; $. -> $_; _ -> C end || C <- pid_to_list(self())],
-    Bin = sip_binary:any_to_binary(Id),    
+    Bin = sip_binary:any_to_binary(Id),
     Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"z9hG4bK_", Bin/binary>>}]),
     CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),

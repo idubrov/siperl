@@ -98,7 +98,7 @@ send_request({ConnKey, ConnProc}, Message, Opts) when
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
             error_logger:warning_msg("Message is too big, re-sending using TCP"),
-            
+
             ConnKey2 = ConnKey#conn_key{transport = tcp},
             send_request(connection(ConnKey2, undefined), Message, Opts);
 
@@ -118,7 +118,7 @@ send_response(ConnProc, Message)
 
     Via = sip_headers:top_via(Message#sip_message.headers),
     To = reply_address(Via),
-    Result = 
+    Result =
         try send(To, ConnProc, Message)
         catch exit:{noproc, _Reason} ->
                   % Try to send again to the address in "received" and port in sent-by

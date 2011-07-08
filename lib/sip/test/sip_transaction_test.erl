@@ -94,7 +94,7 @@ client_invite_ok(Transport) ->
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
-    
+
     {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
 
     ?assertReceive("Expect request to be sent by tx layer",
@@ -587,7 +587,7 @@ server_invite_tu_down(Transport) ->
         fun () ->
                  TxRef = receive {proceed, Ref} -> Ref end,
                  ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
-                 
+
                  % exit from TU, this should force transaction to terminate
                  ok
          end,
@@ -597,7 +597,7 @@ server_invite_tu_down(Transport) ->
     {ok, TxRef} = sip_transaction:start_tx(server, TU, Connection, Request),
 
     ?assertEqual([TxRef], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % have transaction in list
-    TU ! {proceed, TxRef}, % notify TU about transaction    
+    TU ! {proceed, TxRef}, % notify TU about transaction
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % wait for TU to exit and transaction layer to process the 'DOWN' event
