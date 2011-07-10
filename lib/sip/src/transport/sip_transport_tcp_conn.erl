@@ -71,7 +71,7 @@ init(Socket) ->
     Local = #sip_destination{transport = tcp, address = LocalAddress, port = LocalPort},
 
     % Register itself
-    sip_transport_tcp_conn_registry:register(Local, Remote, self()),
+    %gproc:add_local_property({to, Remote}, Local),
 
     % Enable one time delivery
     ok = inet:setopts(Socket, [{active, once}]),

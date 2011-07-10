@@ -8,15 +8,11 @@
 %%%----------------------------------------------------------------
 -module(sip_transaction).
 
--behaviour(gen_server).
-
 %% Include files
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 -include_lib("sip_transaction.hrl").
 
-%% gen server API
--export([start_link/0]).
 % Client API
 -export([start_client_tx/3, start_server_tx/3, send_response/2]).
 % Management API
@@ -24,18 +20,11 @@
 % API for transport layer
 -export([handle_request/1, handle_response/1]).
 
-%% Server callbacks
--export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2]).
-
 %% Macros
 -define(SERVER, ?MODULE).
 -define(TX_SUP(Name, TxModule), ?SPEC(Name, sip_transaction_tx_sup, supervisor, [TxModule])).
 
 %% Types
--record(state, {transactions = dict:new(), % Key -> pid()
-                pids = dict:new()}).       % pid() -> Key
-
 -type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} |
                   {server, SentBy :: sip_headers:via_sent_by(), Branch :: binary(), Method :: sip_message:method()}.
 -type tx_ref() :: {tx_key(), pid()}.
@@ -44,10 +33,6 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
-
 %% @doc
 %% Start new client transaction.
 %% @end
@@ -63,7 +48,8 @@ start_client_tx(TU, To, Request)
                      key = Key,
                      tx_user = TU,
                      request = Request},
-    gen_server:call(?SERVER, {start_tx, Module, Params}).
+    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    {ok, {Key, Pid}}.
 
 %% @doc
 %% Start new server transaction.
@@ -79,11 +65,21 @@ start_server_tx(TU, Connection, Request)
                      key = Key,
                      tx_user = TU,
                      request = Request},
-    gen_server:call(?SERVER, {start_tx, Module, Params}).
+    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    {ok, {Key, Pid}}.
 
 -spec list_tx() -> [tx_ref()].
 list_tx() ->
-    gen_server:call(?SERVER, list_tx).
+    gproc:select(all, 
+                 [{{'$1','$2','$3'},
+                   % Match {n, l, {tx, Key}}
+                   [{'andalso', 
+                     {'andalso', 
+                      {'=:=', n, {element, 1, '$1'}}, 
+                      {'=:=', l, {element, 2, '$1'}}}, 
+                     {'=:=', tx, {element, 1, {element, 3, '$1'}}}}],
+                   % Return {Key, Pid}
+                   [{{{element, 2, {element, 3, '$1'}}, '$2'}}]}]).
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled
@@ -114,76 +110,9 @@ send_response(TxRef, Msg) ->
     tx_send(TxRef, Msg).
 
 %%-----------------------------------------------------------------
-%% Server callbacks
-%%-----------------------------------------------------------------
-
-%% @private
--spec init({}) -> {ok, #state{}}.
-init({}) ->
-    {ok, #state{}}.
-
-%% @private
--spec handle_call(_, _, #state{}) ->
-          {reply, [sip_transaction:tx_ref()], #state{}} |
-          {reply, {ok, sip_transaction:tx_ref()} | error, #state{}} |
-          {reply, {ok, sip_transaction:tx_ref()}, #state{}} |
-          {stop, {unexpected, _}, #state{}}.
-handle_call(list_tx, _From, State) ->
-    Result = dict:to_list(State#state.transactions),
-    {reply, Result, State};
-
-handle_call({lookup_tx, Key}, _From, State) ->
-    Result = case dict:find(Key, State#state.transactions) of
-                 {ok, Pid} -> {ok, {Key, Pid}};
-                 error -> error
-             end,
-    {reply, Result, State};
-
-handle_call({start_tx, Module, Params}, _From, State) ->
-    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
-    Key = Params#params.key,
-
-    % monitor transaction process
-    erlang:monitor(process, Pid),
-    Transactions = dict:store(Key, Pid, State#state.transactions),
-    Pids = dict:store(Pid, Key, State#state.pids),
-    {reply, {ok, {Key, Pid}}, State#state{transactions = Transactions, pids = Pids}};
-
-handle_call(Req, _From, State) ->
-    {stop, {unexpected, Req}, State}.
-
-%% @private
--spec handle_info(_, #state{}) -> {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
-handle_info({'DOWN', _MonitorRef, process, Pid, _Info}, State) ->
-    % clear pid -> key mapping
-    Key = dict:fetch(Pid, State#state.pids),
-    Pids = dict:erase(Pid, State#state.pids),
-
-    % remove from the key -> pid mapping
-    Transactions = dict:erase(Key, State#state.transactions),
-    {noreply, State#state{transactions = Transactions, pids = Pids}};
-
-handle_info(Req, State) ->
-    {stop, {unexpected, Req}, State}.
-
-%% @private
--spec handle_cast(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
-handle_cast(Req, State) ->
-    {stop, {unexpected, Req}, State}.
-
-%% @private
--spec terminate(term(), #state{}) -> ok.
-terminate(_Reason, _State) ->
-    ok.
-
-%% @private
--spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+
 %% @doc
 %% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
@@ -191,7 +120,7 @@ code_change(_OldVsn, State, _Extra) ->
 handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
     % lookup transaction by key
     TxKey = tx_key(Kind, Msg),
-    case lookup_tx(TxKey) of
+    case tx_lookup(TxKey) of
         undefined -> not_handled;
         TxRef -> tx_send(TxRef, Msg)
     end.
@@ -238,14 +167,14 @@ tx_key(server, Request) ->
             undefined
     end.
 
-lookup_tx(Key) ->
+tx_lookup(Key) ->
     % RFC 17.2.3
     case Key of
         undefined -> undefined;
         _ ->
-            case gen_server:call(?SERVER, {lookup_tx, Key}) of
-                {ok, Pid} -> Pid;
-                _ -> undefined
+            case gproc:lookup_local_name({tx, Key}) of
+                Pid when is_pid(Pid) -> {Key, Pid};
+                undefined -> undefined
             end
     end.
 

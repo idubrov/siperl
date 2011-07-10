@@ -53,6 +53,7 @@ specs(Funs) ->
     {setup, fun setup/0, fun cleanup/1, {inparallel, Tests}}.
 
 setup() ->
+    application:start(gproc),
     {ok, Pid} = sip_transaction_sup:start_link(),
     % Mock transport layer calls to intercept messages coming from transaction layer
     meck:new(sip_transport, [passthrough]),
@@ -71,6 +72,7 @@ setup() ->
 cleanup({Pid}) ->
     meck:unload(sip_transport),
     sip_test:shutdown_sup(Pid),
+    application:stop(gproc),
     ok.
 
 %% Generate list of test functions with single parameter (resource created by setup)

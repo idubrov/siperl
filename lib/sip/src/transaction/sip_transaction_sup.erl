@@ -43,8 +43,7 @@ start_link() ->
 %% @private
 -spec init({}) -> {ok, _}.
 init({}) ->
-    Children = [?SPEC(sip_transaction_tx_sup, supervisor, []),
-                ?WORKER(sip_transaction, [])],
+    Children = [?SPEC(sip_transaction_tx_sup, supervisor, [])],
     % Restart the whole layer in case any child fails
     {ok, {{one_for_all, 1000, 3600}, Children}}.
 

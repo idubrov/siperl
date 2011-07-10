@@ -49,7 +49,6 @@ start_link(Ports) when is_list(Ports) ->
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
     Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor), % Supervisor for connections
-                ?WORKER(sip_transport_tcp_conn_registry), % Registry for connections
                 ?WORKER(sip_transport_tcp, [Ports]) | % TCP transport API
                 [?LISTENER(Port) || Port <- Ports] % Listeners
                ],

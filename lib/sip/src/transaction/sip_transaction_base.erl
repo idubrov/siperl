@@ -33,6 +33,9 @@ init(#params{to = To, connection = Connection, key = Key, request = Request, tx_
     % If message was received via reliable connection
     Via = sip_headers:top_via(Request#sip_message.headers),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
+    
+    % Register transaction under its key
+    gproc:add_local_name({tx, Key}),
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
