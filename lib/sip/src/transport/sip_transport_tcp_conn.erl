@@ -82,7 +82,7 @@ init(Socket) ->
           {noreply, #state{}} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({tcp, _Socket, Packet}, State) ->
     {ok, ParseState, Msgs} = sip_message:parse_stream(Packet, State#state.parse_state),
-    
+
     % Dispatch to transport layer
     Dispatch =
         fun (Msg) ->
@@ -92,7 +92,7 @@ handle_info({tcp, _Socket, Packet}, State) ->
                  end
         end,
     lists:foreach(Dispatch, Msgs),
-    
+
     ok = inet:setopts(State#state.socket, [{active, once}]),
     {noreply, State#state{parse_state = ParseState}};
 

@@ -76,7 +76,7 @@ send_request(Msg, Data) ->
 
 -spec send_response(#sip_message{}, #data{}) -> #data{}.
 send_response(Msg, Data) ->
-    % Send response using the connection of original request 
+    % Send response using the connection of original request
     sip_transport:send_response(Data#data.connection, Msg),
     Data.
 

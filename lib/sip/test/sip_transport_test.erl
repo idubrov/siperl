@@ -49,17 +49,17 @@ setup() ->
     % Transport will pass request/response to transaction layer first,
     % then to the sip_core. So, override sip_transaction to always
     % return 'not_handled' and route message back to the test process
-    % in mocked sip_core:handle    
+    % in mocked sip_core:handle
     meck:new(sip_core),
     Handle =
         fun (_From, Connection, Msg) ->
                  {Kind, _ , _} = Msg#sip_message.start_line,
                  ?MODULE ! {Kind, Connection, Msg},
                  {ok, undefined}
-        end,    
+        end,
     meck:expect(sip_core, handle_request, Handle),
     meck:expect(sip_core, handle_response, Handle),
-    
+
     meck:new(sip_transaction),
     meck:expect(sip_transaction, handle_request, fun (_Msg) -> not_handled end),
     meck:expect(sip_transaction, handle_response, fun (_Msg) -> not_handled end),
