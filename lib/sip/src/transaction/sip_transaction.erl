@@ -15,10 +15,14 @@
 -include_lib("sip.hrl").
 -include_lib("sip_transaction.hrl").
 
-%% API
+%% gen server API
 -export([start_link/0]).
--export([start_client_tx/3, start_server_tx/3, list_tx/0]).
--export([handle/1, send/2]).
+% Client API
+-export([start_client_tx/3, start_server_tx/3, send_response/2]).
+% Management API
+-export([list_tx/0]).
+% API for transport layer
+-export([handle_request/1, handle_response/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -82,29 +86,31 @@ list_tx() ->
     gen_server:call(?SERVER, list_tx).
 
 %% @doc
-%% Handle the given request/response on the transaction layer. Returns not_handled
+%% Handle the given request on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
--spec handle(#sip_message{}) -> not_handled | {ok, tx_ref()}.
-handle(Msg) when is_record(Msg, sip_message) ->
-
-    % requests go to server transactions, responses go to client
-    Kind = case sip_message:is_request(Msg) of
-               true ->  server;
-               false -> client
-           end,
-    % lookup transaction by key
-    TxKey = tx_key(Kind, Msg),
-    case lookup_tx(TxKey) of
-        undefined -> not_handled;
-        TxRef -> tx_send(TxRef, Msg)
-    end.
+%% @private
+-spec handle_request(#sip_message{}) -> not_handled | {ok, tx_ref()}.
+handle_request(Msg) when is_record(Msg, sip_message) ->
+    true = sip_message:is_request(Msg),
+    handle_internal(server, Msg).
 
 %% @doc
-%% Pass given message from the TU to the given transaction.
+%% Handle the given response on the transaction layer. Returns not_handled
+%% if no transaction to handle the message is found.
 %% @end
--spec send(tx_ref(), #sip_message{}) -> not_handled | {ok, tx_ref()}.
-send(TxRef, Msg)  when is_record(Msg, sip_message) ->
+%% @private
+-spec handle_response(#sip_message{}) -> not_handled | {ok, tx_ref()}.
+handle_response(Msg) ->
+    true = sip_message:is_response(Msg),
+    handle_internal(client, Msg).
+
+%% @doc
+%% Pass given response from the TU to the given transaction.
+%% @end
+-spec send_response(tx_ref(), #sip_message{}) -> not_handled | {ok, tx_ref()}.
+send_response(TxRef, Msg) ->
+    true = sip_message:is_response(Msg),
     tx_send(TxRef, Msg).
 
 %%-----------------------------------------------------------------
@@ -178,6 +184,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+%% @doc
+%% Handle the given request/response on the transaction layer. Returns not_handled
+%% if no transaction to handle the message is found.
+%% @end
+handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
+    % lookup transaction by key
+    TxKey = tx_key(Kind, Msg),
+    case lookup_tx(TxKey) of
+        undefined -> not_handled;
+        TxRef -> tx_send(TxRef, Msg)
+    end.
+
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Headers = Msg#sip_message.headers,

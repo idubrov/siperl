@@ -113,7 +113,7 @@ client_invite_ok(Transport) ->
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Provisional)),
+                 sip_transaction:handle_response(Provisional)),
 
     % Should not retransmit while in PROCEEDING state
     timer:sleep(1000),
@@ -125,7 +125,7 @@ client_invite_ok(Transport) ->
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Response)),
+                 sip_transaction:handle_response(Response)),
 
     ?assertReceive("Expect final response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -160,7 +160,7 @@ client_invite_err(Transport)->
 
     % Emulate response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Response)),
+                 sip_transaction:handle_response(Response)),
 
     ?assertReceive("Expect response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -176,7 +176,7 @@ client_invite_err(Transport)->
         false ->
             % ACK should be re-transmitted, but message should not be passed to TU
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Response)),
+                         sip_transaction:handle_response(Response)),
             ?assertReceiveNot("Expect response not to be passed to TU",
                               {tx, TxRef, {response, Response}}),
             ?assertReceive("Expect ACK to be retransmitted by tx layer",
@@ -190,7 +190,7 @@ client_invite_err(Transport)->
         false ->
             % Emulate final response retransmission received by transport layer
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Response)),
+                         sip_transaction:handle_response(Response)),
 
             ?assertReceiveNot("Expect final response not to be passed to TU",
                            {tx, TxRef, {response, Response}}),
@@ -252,7 +252,7 @@ client_invite_timeout_proceeding(Transport)->
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Provisional)),
+                 sip_transaction:handle_response(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -299,7 +299,7 @@ client_ok(Transport) ->
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Provisional)),
+                 sip_transaction:handle_response(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -318,14 +318,14 @@ client_ok(Transport) ->
 
     % Emulate provisional response retransmission received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Provisional)),
+                 sip_transaction:handle_response(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Response)),
+                 sip_transaction:handle_response(Response)),
 
     ?assertReceive("Expect final response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -338,7 +338,7 @@ client_ok(Transport) ->
         false ->
             % Emulate final 2xx response retransmission received by transport layer
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Response)),
+                         sip_transaction:handle_response(Response)),
 
             ?assertReceiveNot("Expect final response not to be passed to TU",
                            {tx, TxRef, {response, Response}}),
@@ -399,7 +399,7 @@ client_timeout_proceeding(Transport)->
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Provisional)),
+                 sip_transaction:handle_response(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -445,7 +445,7 @@ server_invite_ok(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % Provisional response is sent by TU
-    sip_transaction:send(TxRef, Ringing),
+    sip_transaction:send_response(TxRef, Ringing),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Ringing}}),
 
     case IsReliable of
@@ -453,13 +453,13 @@ server_invite_ok(Transport) ->
             % no retransmissions for reliable transports
             ok;
         false ->
-            {ok, TxRef} = sip_transaction:handle(Request),
+            {ok, TxRef} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Ringing}}),
             ok
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send(TxRef, Response),
+    sip_transaction:send_response(TxRef, Response),
     ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
 
     ?assertReceive("Expect tx to terminate immediately after receiving final response",
@@ -496,7 +496,7 @@ server_invite_err(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % Final response is sent by TU
-    sip_transaction:send(TxRef, Response),
+    sip_transaction:send_response(TxRef, Response),
     ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
 
     % Check retransmissions handling
@@ -506,7 +506,7 @@ server_invite_err(Transport) ->
             ok;
         false ->
             % INVITE retransmission received
-            {ok, TxRef} = sip_transaction:handle(Request),
+            {ok, TxRef} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
 
             % retransmission by timer
@@ -516,7 +516,7 @@ server_invite_err(Transport) ->
     end,
 
     % ACK is received
-    {ok, TxRef} = sip_transaction:handle(ACK),
+    {ok, TxRef} = sip_transaction:handle_request(ACK),
 
     % Verify buffering additional ACK retransmissions
     case sip_transport:is_reliable(Transport) of
@@ -525,7 +525,7 @@ server_invite_err(Transport) ->
 
         false ->
             % ACK is received
-            {ok, TxRef} = sip_transaction:handle(ACK),
+            {ok, TxRef} = sip_transaction:handle_request(ACK),
             timer:sleep(5000) % T4
     end,
 
@@ -556,7 +556,7 @@ server_invite_timeout(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % Final response is sent by TU
-    sip_transaction:send(TxRef, Response),
+    sip_transaction:send_response(TxRef, Response),
     ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
 
     timer:sleep(32000),
@@ -632,15 +632,15 @@ server_ok(Transport) ->
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % Further request retransmissions are ignored
-    {ok, TxRef} = sip_transaction:handle(Request),
+    {ok, TxRef} = sip_transaction:handle_request(Request),
     ?assertReceiveNot("Expect request is not passed to TU", {tx, TxRef, {request, Request}}),
 
     % Provisional response is sent by TU
-    sip_transaction:send(TxRef, Trying),
+    sip_transaction:send_response(TxRef, Trying),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
     % Additional provisioning responses
-    sip_transaction:send(TxRef, Trying2),
+    sip_transaction:send_response(TxRef, Trying2),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying2}}),
 
     case IsReliable of
@@ -648,13 +648,13 @@ server_ok(Transport) ->
             % no retransmissions for reliable transports
             ok;
         false ->
-            {ok, TxRef} = sip_transaction:handle(Request),
+            {ok, TxRef} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Trying2}}),
             ok
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send(TxRef, Response),
+    sip_transaction:send_response(TxRef, Response),
     ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
 
     case IsReliable of
@@ -663,9 +663,9 @@ server_ok(Transport) ->
             ok;
         false ->
             % additional responses are discarded
-            sip_transaction:send(TxRef, Response2),
+            sip_transaction:send_response(TxRef, Response2),
 
-            {ok, TxRef} = sip_transaction:handle(Request),
+            {ok, TxRef} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect final response is re-sent", {tp, _Conn, {response, Response}}),
             ok
     end,
@@ -699,7 +699,7 @@ server_err(Transport) ->
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % 500 response is sent by TU
-    sip_transaction:send(TxRef, Response),
+    sip_transaction:send_response(TxRef, Response),
     ?assertReceive("Expect 2xx response is sent", {tp, _Conn, {response, Response}}),
 
     % wait for timer J to fire

@@ -106,8 +106,8 @@ send_response(Connection, Message) ->
 dispatch_request(From, Connection, Msg) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
-    case sip_transaction:handle(Msg2) of
-        not_handled -> sip_core:handle(From, Connection, Msg2);
+    case sip_transaction:handle_request(Msg2) of
+        not_handled -> sip_core:handle_request(From, Connection, Msg2);
         {ok, _TxRef} -> ok
     end.
 
@@ -126,8 +126,8 @@ dispatch_response(From, Connection, Msg) ->
     case check_sent_by(From#sip_destination.transport, Msg) of
         true ->
             % 18.2.1: route to server transaction or to core
-            case sip_transaction:handle(Msg) of
-                not_handled -> sip_core:handle(From, Connection, Msg);
+            case sip_transaction:handle_response(Msg) of
+                not_handled -> sip_core:handle_response(From, Connection, Msg);
                 {ok, _TxRef} -> ok
             end;
 

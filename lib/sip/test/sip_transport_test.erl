@@ -57,10 +57,12 @@ setup() ->
                  ?MODULE ! {Kind, Connection, Msg},
                  {ok, undefined}
         end,    
-    meck:expect(sip_core, handle, Handle),
+    meck:expect(sip_core, handle_request, Handle),
+    meck:expect(sip_core, handle_response, Handle),
     
     meck:new(sip_transaction),
-    meck:expect(sip_transaction, handle, fun (_Msg) -> not_handled end),
+    meck:expect(sip_transaction, handle_request, fun (_Msg) -> not_handled end),
+    meck:expect(sip_transaction, handle_response, fun (_Msg) -> not_handled end),
     {Pid, UDP, TCP}.
 
 cleanup({Pid, UDP, TCP}) ->

@@ -15,7 +15,7 @@
 
 %% API
 -export([start_link/0]).
--export([handle/3]).
+-export([handle_request/3, handle_response/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -34,18 +34,14 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
--spec handle(#sip_destination{}, sip_transport:connection(), #sip_message{}) -> ok.
-handle(From, Connection, Msg)
-  when is_record(Msg, sip_message) ->
-    % FIXME: core layer implementation..
-    % XXX: Start new transaction for requests...
-    case sip_message:is_request(Msg) of
-        true ->
-            sip_transaction:start_server_tx(whereis(sip_core), Connection, Msg),
-            ok;
-        _ ->
-            ok
-    end.
+-spec handle_request(#sip_destination{}, sip_transport:connection(), #sip_message{}) -> ok.
+handle_request(_From, Connection, Msg) when is_record(Msg, sip_message) ->
+    sip_transaction:start_server_tx(whereis(sip_core), Connection, Msg),
+    ok.
+
+-spec handle_response(#sip_destination{}, sip_transport:connection(), #sip_message{}) -> ok.
+handle_response(_From, _Connection, Msg) when is_record(Msg, sip_message) ->
+    ok.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
