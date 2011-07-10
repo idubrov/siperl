@@ -7,6 +7,9 @@ $ rebar eunit
 Compiling:
 $ rebar compile
 
+Running tests without deps:
+$ rebar eunit skip_deps=true
+
 Hacking the code:
-$ erl -pa lib/sip/ebin
+$ rebare compile & erl -pa lib/sip/ebin
 
