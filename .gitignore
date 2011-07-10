@@ -3,3 +3,4 @@ _build
 .eunit
 lib/sip/ebin/sip.app
 rel/sipnode
+deps

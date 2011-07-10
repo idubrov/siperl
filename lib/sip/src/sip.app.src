@@ -4,7 +4,7 @@
   [{description, "SIP support"},
    {vsn, "0.1.0"},
    {registered,[sip_sup]},
-   {applications, [kernel, stdlib]},
+   {applications, [kernel, stdlib, gproc]},
    {mod, {sip_app,[]}},
    {start_phases, []},
    {env, [
