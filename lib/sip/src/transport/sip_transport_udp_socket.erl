@@ -70,7 +70,11 @@ init(Port) ->
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
     {ok, Msg} = sip_message:parse_datagram(Packet),
-    sip_transport:dispatch(Remote, undefined, Msg),
+    
+    case sip_message:is_request(Msg) of
+        true -> sip_transport:dispatch_request(Remote, undefined, Msg);
+        false -> sip_transport:dispatch_response(Remote, undefined, Msg)
+    end,
     {noreply, State};
 
 handle_info(Req, State) ->

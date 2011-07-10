@@ -19,14 +19,14 @@
 
 %% API
 -export([start_link/0]).
--export([send/2, send/3, is_reliable/1]).
+-export([send_request/3, send_response/2, is_reliable/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Internal API
--export([dispatch/3]).
+-export([dispatch_request/3, dispatch_response/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -51,8 +51,7 @@ start_link() ->
 %% @doc
 %% Check if given transport is reliable.
 %% @end
--spec is_reliable(atom() | connection()) -> boolean().
-is_reliable(#sip_destination{transport = Transport}) -> is_reliable(Transport);
+-spec is_reliable(atom()) -> boolean().
 is_reliable(udp) -> false;
 is_reliable(tcp) -> true.
 
@@ -81,34 +80,17 @@ send_request(To, Message, Opts) when is_record(To, sip_destination) ->
 %% @doc
 %% Try to send reply by following RFC 3261 18.2.2.
 %% @end
--spec send_response(connection() | undefined, #sip_message{}, [term()]) -> {ok, connection()} | {error, Reason :: term()}.
-send_response(undefined, Message, Opts) ->
+-spec send_response(connection() | undefined, #sip_message{}) -> {ok, connection()} | {error, Reason :: term()}.
+send_response(undefined, Message) ->
+    To = reply_address(Message),
+    send_response(To, Message);
+send_response(Connection, Message) ->
     Via = sip_headers:top_via(Message#sip_message.headers),
-    To = reply_address(Via),
-    send_response(To, Message, Opts);
-send_response(Connection, Message, Opts) ->
-    Via = sip_headers:top_via(Message#sip_message.headers),
-    To = reply_address(Via),
-    try transport_send(To#sip_destination.transport, Connection, Message)
+    Transport = Via#sip_hdr_via.transport,
+    try transport_send(Transport, Connection, Message)
     catch exit:{noproc, _Reason} ->
               % Try to send again to the address in "received" and port in sent-by
-              send_response(To, Message, Opts)
-    end.
-
-
--spec send(#sip_destination{} | connection(), #sip_message{}) ->
-          {ok, connection()} | {error, Reason :: term()}.
-send(Dest, Message) ->
-    send(Dest, Message, []).
-
--spec send(#sip_destination{} | connection(), #sip_message{}, [term()]) ->
-          {ok, connection()} | {error, Reason :: term()}.
-send(Dest, Message, Opts) when
-  is_record(Message, sip_message),
-  is_list(Opts) ->
-    case sip_message:is_request(Message) of
-        true -> send_request(Dest, Message, Opts);
-        false -> send_response(Dest, Message, Opts)
+              send_response(undefined, Message)
     end.
 
 %%-----------------------------------------------------------------
@@ -116,24 +98,10 @@ send(Dest, Message, Opts) when
 %%-----------------------------------------------------------------
 
 %% @doc
-%% Dispatch message received through given connection. This function
+%% Dispatch request received through given connection. This function
 %% is called by concrete transport implementations.
 %% @end
 %% @private
--spec dispatch(#sip_destination{}, pid() | undefined, #sip_message{} | [#sip_message{}]) -> ok.
-dispatch(Remote, ConnProc, Msgs) when is_list(Msgs) ->
-    lists:foreach(fun (Msg) -> dispatch(Remote, ConnProc, Msg) end, Msgs);
-
-dispatch(From, Connection, Msg)
-  when is_record(From, sip_destination),
-       (is_pid(Connection) orelse Connection =:= undefined),
-       is_record(Msg, sip_message) ->
-
-    case sip_message:is_request(Msg) of
-        true -> dispatch_request(From, Connection, Msg);
-        false -> dispatch_response(From, Connection, Msg)
-    end.
-
 -spec dispatch_request(#sip_destination{}, connection(), #sip_message{}) -> ok.
 dispatch_request(From, Connection, Msg) ->
     Msg2 = add_via_received(From, Msg),
@@ -143,6 +111,11 @@ dispatch_request(From, Connection, Msg) ->
         {ok, _TxRef} -> ok
     end.
 
+%% @doc
+%% Dispatch response received through given connection. This function
+%% is called by concrete transport implementations.
+%% @end
+%% @private
 -spec dispatch_response(#sip_destination{}, connection(), #sip_message{}) -> ok.
 dispatch_response(From, Connection, Msg) ->
     % When a response is received, the client transport examines the top
@@ -253,7 +226,8 @@ to_address({A, B, C, D} = Addr) when
 %% @doc
 %% See RFC 3261 18.2.2 Sending Responses
 %% @end
-reply_address(Via) ->
+reply_address(Message) ->
+    Via = sip_headers:top_via(Message#sip_message.headers),
     Transport = Via#sip_hdr_via.transport,
     IsReliable = is_reliable(Transport),
     Addr =

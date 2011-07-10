@@ -71,13 +71,13 @@ send_ack(Response, Data) ->
 -spec send_request(#sip_message{}, #data{}) -> #data{}.
 send_request(Msg, Data) ->
     % Send request to the given destination address
-    sip_transport:send(Data#data.to, Msg),
+    sip_transport:send_request(Data#data.to, Msg, []),
     Data.
 
 -spec send_response(#sip_message{}, #data{}) -> #data{}.
 send_response(Msg, Data) ->
     % Send response using the connection of original request 
-    sip_transport:send(Data#data.connection, Msg),
+    sip_transport:send_response(Data#data.connection, Msg),
     Data.
 
 -spec pass_to_tu(#sip_message{}, #data{}) -> term().

@@ -56,16 +56,16 @@ setup() ->
     {ok, Pid} = sip_transaction_sup:start_link(),
     % Mock transport layer calls to intercept messages coming from transaction layer
     meck:new(sip_transport, [passthrough]),
-    Send = fun (Conn, Msg) ->
-                    TestPid = sip_test:test_pid(Msg),
-                    Kind = case sip_message:is_request(Msg) of
-                               true -> request;
-                               false -> response
-                           end,
-                    TestPid ! {tp, Conn, {Kind, Msg}},
-                    {ok, TestPid}
-                  end,
-    meck:expect(sip_transport, send, Send),
+    meck:expect(sip_transport, send_request,
+                fun (To, Msg, _Opts) ->
+                         TestPid = sip_test:test_pid(Msg),
+                         TestPid ! {tp, To, {request, Msg}} 
+                end),
+    meck:expect(sip_transport, send_response,
+                fun (Connection, Msg) ->
+                         TestPid = sip_test:test_pid(Msg),
+                         TestPid ! {tp, Connection, {response, Msg}} 
+                end),
     {Pid}.
 
 cleanup({Pid}) ->
