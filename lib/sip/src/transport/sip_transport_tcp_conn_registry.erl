@@ -30,14 +30,14 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
+-include_lib("sip.hrl").
 
 %%-----------------------------------------------------------------
 %% Records
 %%-----------------------------------------------------------------
 
-%% connections is mapping from Remote :: #conn_key{} -> {pid(), Local :: #conn_key{}}
-%% pids is mapping from pid() -> Remote :: #conn_key{}
+%% connections is mapping from Remote :: #sip_destination{} -> {pid(), Local :: #sip_destination{}}
+%% pids is mapping from pid() -> Remote :: #sip_destination{}
 -record(state, {connections = dict:new(), pids = dict:new()}).
 
 %%-----------------------------------------------------------------
@@ -47,19 +47,19 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec register(#conn_key{}, #conn_key{}, pid()) -> ok.
+-spec register(#sip_destination{}, #sip_destination{}, pid()) -> ok.
 register(Local, Remote, Pid)
-  when is_record(Local, conn_key),
-       is_record(Remote, conn_key),
+  when is_record(Local, sip_destination),
+       is_record(Remote, sip_destination),
        is_pid(Pid) ->
     gen_server:call(?SERVER, {monitor, Local, Remote, Pid}).
 
--spec lookup(Remote :: #conn_key{}) ->
-          {ok, [{Pid :: pid(), Local :: #conn_key{}}]} | error.
-lookup(Remote) when is_record(Remote, conn_key) ->
+-spec lookup(Remote :: #sip_destination{}) ->
+          {ok, [{Pid :: pid(), Local :: #sip_destination{}}]} | error.
+lookup(Remote) when is_record(Remote, sip_destination) ->
     gen_server:call(?SERVER, {lookup, Remote}).
 
--spec list() -> [Remote :: #conn_key{}].
+-spec list() -> [Remote :: #sip_destination{}].
 list() ->
     gen_server:call(?SERVER, list).
 

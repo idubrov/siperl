@@ -25,7 +25,9 @@
 			   request,     % Original request
 			   provisional, % Most recent provisional response
 			   response,    % Final response
-			   connection = undefined
+			   to,          % Address to send request to
+               connection,  % Connection request was received on
+               reliable
   			  }).
 
 % Initial transaction parameters
@@ -33,7 +35,8 @@
                  key,       % Transaction key
                  tx_user,   % Transaction user (TU)
                  remote,    % Remote endpoint that transaction communicates with
-                 connection % Transport layer connection
+                 to,        % Address to send request to
+                 connection % Connection original request was received on 
                 }).
 
 -define(CANCEL(Timer, Data), sip_transaction_base:cancel_timer(#data.Timer, Data)).

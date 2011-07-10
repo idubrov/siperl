@@ -11,7 +11,7 @@
 -compile(export_all).
 
 %% Include files
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 -include_lib("sip_test.hrl").
 
 %%-----------------------------------------------------------------
@@ -55,20 +55,17 @@ specs(Funs) ->
 setup() ->
     {ok, Pid} = sip_transaction_sup:start_link(),
     % Mock transport layer calls to intercept messages coming from transaction layer
-    % See sip_test:connection
     meck:new(sip_transport, [passthrough]),
-    SendRequest = fun (Conn, Msg) ->
-                           TestPid = sip_test:test_pid(Msg),
-                           TestPid ! {tp, Conn, {request, Msg}},
-                           {ok, Conn}
+    Send = fun (Conn, Msg) ->
+                    TestPid = sip_test:test_pid(Msg),
+                    Kind = case sip_message:is_request(Msg) of
+                               true -> request;
+                               false -> response
+                           end,
+                    TestPid ! {tp, Conn, {Kind, Msg}},
+                    {ok, TestPid}
                   end,
-    SendResponse = fun (Conn, Msg) ->
-                            TestPid = sip_test:test_pid(Msg),
-                            TestPid ! {tp, Conn, {response, Msg}},
-                            {ok, Conn}
-                   end,
-    meck:expect(sip_transport, send_request, SendRequest),
-    meck:expect(sip_transport, send_response, SendResponse),
+    meck:expect(sip_transport, send, Send),
     {Pid}.
 
 cleanup({Pid}) ->
@@ -92,43 +89,43 @@ for_transports(Tests, Transports) ->
 %% - transaction terminates
 %% @end
 client_invite_ok(Transport) ->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
 
     ?assertReceive("Expect request to be sent by tx layer",
-                   {tp, Connection, {request, Request}}),
+                   {tp, _Connection, {request, Request}}),
 
     % Should retransmit if unreliable, should not otherwise
     timer:sleep(500),
     case sip_transport:is_reliable(Transport) of
         false ->
             ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                           {tp, Connection, {request, Request}});
+                           {tp, _Connection, {request, Request}});
 
         true ->
             ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
-                              {tp, Connection, _Msg})
+                              {tp, _Connection, _Msg})
     end,
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Provisional)),
+                 sip_transaction:handle(Provisional)),
 
     % Should not retransmit while in PROCEEDING state
     timer:sleep(1000),
     ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
-                              {tp, Connection, _Msg}),
+                      {tp, _Connection, _Msg}),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Response)),
+                 sip_transaction:handle(Response)),
 
     ?assertReceive("Expect final response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -150,20 +147,20 @@ client_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 client_invite_err(Transport)->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Response = Request#sip_message{start_line = {response, 500, <<"Internal error">>}},
+    Response = sip_message:create_response(Request, 500, <<"Internal error">>, undefined),
     ACK = sip_message:create_ack(Request, Response),
     IsReliable = sip_transport:is_reliable(Transport),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
 
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
 
     % Emulate response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Response)),
+                 sip_transaction:handle(Response)),
 
     ?assertReceive("Expect response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -179,7 +176,7 @@ client_invite_err(Transport)->
         false ->
             % ACK should be re-transmitted, but message should not be passed to TU
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Connection, Response)),
+                         sip_transaction:handle(Response)),
             ?assertReceiveNot("Expect response not to be passed to TU",
                               {tx, TxRef, {response, Response}}),
             ?assertReceive("Expect ACK to be retransmitted by tx layer",
@@ -193,7 +190,7 @@ client_invite_err(Transport)->
         false ->
             % Emulate final response retransmission received by transport layer
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Connection, Response)),
+                         sip_transaction:handle(Response)),
 
             ?assertReceiveNot("Expect final response not to be passed to TU",
                            {tx, TxRef, {response, Response}}),
@@ -215,10 +212,10 @@ client_invite_err(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_calling(Transport)->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
 
@@ -245,17 +242,17 @@ client_invite_timeout_calling(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_proceeding(Transport)->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Provisional)),
+                 sip_transaction:handle(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -278,12 +275,12 @@ client_invite_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 client_ok(Transport) ->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
 
     ?assertReceive("Expect request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
@@ -302,7 +299,7 @@ client_ok(Transport) ->
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Provisional)),
+                 sip_transaction:handle(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -321,14 +318,14 @@ client_ok(Transport) ->
 
     % Emulate provisional response retransmission received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Provisional)),
+                 sip_transaction:handle(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Response)),
+                 sip_transaction:handle(Response)),
 
     ?assertReceive("Expect final response to be passed to TU",
                    {tx, TxRef, {response, Response}}),
@@ -341,7 +338,7 @@ client_ok(Transport) ->
         false ->
             % Emulate final 2xx response retransmission received by transport layer
             ?assertEqual({ok, TxRef},
-                         sip_transaction:handle(Connection, Response)),
+                         sip_transaction:handle(Response)),
 
             ?assertReceiveNot("Expect final response not to be passed to TU",
                            {tx, TxRef, {response, Response}}),
@@ -362,10 +359,10 @@ client_ok(Transport) ->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_trying(Transport)->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
 
@@ -392,17 +389,17 @@ client_timeout_trying(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_proceeding(Transport)->
-    Connection = sip_test:connection(Transport),
+    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
-    {ok, TxRef} = sip_transaction:start_tx(client, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, _Conn, {request, Request}}),
 
     % Emulate provisional response received by transport layer
     ?assertEqual({ok, TxRef},
-                 sip_transaction:handle(Connection, Provisional)),
+                 sip_transaction:handle(Provisional)),
 
     ?assertReceive("Expect provisional response to be passed to TU",
                    {tx, TxRef, {response, Provisional}}),
@@ -435,7 +432,7 @@ client_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 server_invite_ok(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Ringing = sip_message:create_response(Request, 180, <<"Ringing">>, undefined),
@@ -443,7 +440,7 @@ server_invite_ok(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(self(), Connection, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -456,7 +453,7 @@ server_invite_ok(Transport) ->
             % no retransmissions for reliable transports
             ok;
         false ->
-            {ok, TxRef} = sip_transaction:handle(Connection, Request),
+            {ok, TxRef} = sip_transaction:handle(Request),
             ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Ringing}}),
             ok
     end,
@@ -486,7 +483,7 @@ server_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_invite_err(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
@@ -494,7 +491,7 @@ server_invite_err(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(self(), Connection, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -509,7 +506,7 @@ server_invite_err(Transport) ->
             ok;
         false ->
             % INVITE retransmission received
-            {ok, TxRef} = sip_transaction:handle(Connection, Request),
+            {ok, TxRef} = sip_transaction:handle(Request),
             ?assertReceive("Expect response is sent", {tp, _Conn, {response, Response}}),
 
             % retransmission by timer
@@ -519,7 +516,7 @@ server_invite_err(Transport) ->
     end,
 
     % ACK is received
-    {ok, TxRef} = sip_transaction:handle(Connection, ACK),
+    {ok, TxRef} = sip_transaction:handle(ACK),
 
     % Verify buffering additional ACK retransmissions
     case sip_transport:is_reliable(Transport) of
@@ -528,7 +525,7 @@ server_invite_err(Transport) ->
 
         false ->
             % ACK is received
-            {ok, TxRef} = sip_transaction:handle(Connection, ACK),
+            {ok, TxRef} = sip_transaction:handle(ACK),
             timer:sleep(5000) % T4
     end,
 
@@ -547,14 +544,14 @@ server_invite_err(Transport) ->
 %% - transaction terminates due to timeout
 %% @end
 server_invite_timeout(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(self(), Connection, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
     ?assertReceive("Expect provisional response is sent", {tp, _Conn, {response, Trying}}),
 
@@ -580,7 +577,7 @@ server_invite_timeout(Transport) ->
 %% - transaction is not in the list of transactions
 %% @end
 server_invite_tu_down(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
@@ -596,7 +593,7 @@ server_invite_tu_down(Transport) ->
     TU = erlang:spawn_link(TUFun),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, TU, Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(TU, Connection, Request),
 
     ?assertEqual([TxRef], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % have transaction in list
     TU ! {proceed, TxRef}, % notify TU about transaction
@@ -622,7 +619,7 @@ server_invite_tu_down(Transport) ->
 %% - transaction terminates
 %% @end
 server_ok(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:request('OPTIONS', Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Trying2 = sip_message:create_response(Request, 100, <<"Trying Again">>, undefined),
@@ -631,11 +628,11 @@ server_ok(Transport) ->
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(self(), Connection, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % Further request retransmissions are ignored
-    {ok, TxRef} = sip_transaction:handle(Connection, Request),
+    {ok, TxRef} = sip_transaction:handle(Request),
     ?assertReceiveNot("Expect request is not passed to TU", {tx, TxRef, {request, Request}}),
 
     % Provisional response is sent by TU
@@ -651,7 +648,7 @@ server_ok(Transport) ->
             % no retransmissions for reliable transports
             ok;
         false ->
-            {ok, TxRef} = sip_transaction:handle(Connection, Request),
+            {ok, TxRef} = sip_transaction:handle(Request),
             ?assertReceive("Expect provisional response is re-sent", {tp, _Conn, {response, Trying2}}),
             ok
     end,
@@ -668,7 +665,7 @@ server_ok(Transport) ->
             % additional responses are discarded
             sip_transaction:send(TxRef, Response2),
 
-            {ok, TxRef} = sip_transaction:handle(Connection, Request),
+            {ok, TxRef} = sip_transaction:handle(Request),
             ?assertReceive("Expect final response is re-sent", {tp, _Conn, {response, Response}}),
             ok
     end,
@@ -692,13 +689,13 @@ server_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_err(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:request('OPTIONS', Transport),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, self(), Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(self(), Connection, Request),
     ?assertReceive("Expect request is passed to TU", {tx, TxRef, {request, Request}}),
 
     % 500 response is sent by TU
@@ -722,7 +719,7 @@ server_err(Transport) ->
 %% - transaction is not in the list of transactions
 %% @end
 server_tu_down(Transport) ->
-    Connection = sip_test:connection(Transport),
+    Connection = self(),
     Request = sip_test:request('OPTIONS', Transport),
 
     % Prepare TU
@@ -736,7 +733,7 @@ server_tu_down(Transport) ->
     TU = erlang:spawn_link(TUFun),
 
     % Request is received
-    {ok, TxRef} = sip_transaction:start_tx(server, TU, Connection, Request),
+    {ok, TxRef} = sip_transaction:start_server_tx(TU, Connection, Request),
 
     ?assertEqual([TxRef], [T || T <- sip_transaction:list_tx(), T =:= TxRef]), % have transaction in list
     TU ! {proceed, TxRef}, % notify TU about transaction

@@ -26,8 +26,7 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 
 -record(state, {socket}).
@@ -41,9 +40,9 @@
 %% @doc
 %% Send SIP message through the given socket.
 %% @end
--spec send(pid(), #conn_key{}, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
+-spec send(pid(), #sip_destination{}, #sip_message{}) -> {ok, #sip_destination{}} | {error, Reason :: term()}.
 send(Pid, To, Message) when is_pid(Pid),
-                                 is_record(To, conn_key),
+                                 is_record(To, sip_destination),
                                  is_record(Message, sip_message) ->
     gen_server:call(Pid, {send, To, Message}).
 
@@ -69,18 +68,18 @@ init(Port) ->
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
           {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
-    Remote = #conn_key{transport = udp, address = SrcAddress, port = SrcPort},
+    Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
     {ok, Msg} = sip_message:parse_datagram(Packet),
-    sip_transport:dispatch(Remote, self(), Msg),
+    sip_transport:dispatch(Remote, undefined, Msg),
     {noreply, State};
 
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
 %% @private
--spec handle_call({send, #conn_key{}, #sip_message{}}, _, #state{}) ->
+-spec handle_call({send, #sip_destination{}, #sip_message{}}, _, #state{}) ->
           {reply, {error, too_big}, #state{}} |
-          {reply, {ok, {pid(), #conn_key{}}}, #state{}}.
+          {reply, {ok, #sip_destination{}}, #state{}}.
 handle_call({send, To, Message}, _From, State) ->
     Packet = sip_message:to_binary(Message),
     %% If a request is within 200 bytes of the path MTU, or if it is larger
@@ -91,8 +90,8 @@ handle_call({send, To, Message}, _From, State) ->
         size(Packet) > 1300 ->
             {reply, {error, too_big}, State};
         true ->
-            ok = gen_udp:send(State#state.socket, To#conn_key.address, To#conn_key.port, Packet),
-            {reply, {ok, self()}, State}
+            ok = gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet),
+            {reply, {ok, To}, State}
     end;
 
 handle_call(Req, _From, State) ->

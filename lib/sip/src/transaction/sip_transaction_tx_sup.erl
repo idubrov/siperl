@@ -24,7 +24,7 @@
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
 -include_lib("sip_transaction.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %%-----------------------------------------------------------------
 %% Macros

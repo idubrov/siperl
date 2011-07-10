@@ -24,7 +24,7 @@
 %%-----------------------------------------------------------------
 -include_lib("sip_common.hrl").
 -include_lib("sip_parse.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %% Types
 -type header_name() :: atom() | binary().

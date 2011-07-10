@@ -25,8 +25,7 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 -define(SERVER, ?MODULE).
 
@@ -35,7 +34,7 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
--spec start_link(#conn_key{} | inet:socket()) -> {ok, pid()}.
+-spec start_link(#sip_destination{} | inet:socket()) -> {ok, pid()}.
 start_link(Remote) ->
     gen_server:start_link(?MODULE, Remote, []).
 
@@ -51,12 +50,12 @@ send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init(inet:socket() | #conn_key{}) -> {ok, #state{}}.
+-spec init(inet:socket() | #sip_destination{}) -> {ok, #state{}}.
 init(Remote)
-  when is_record(Remote, conn_key) ->
+  when is_record(Remote, sip_destination) ->
     % New connection
-    To = Remote#conn_key.address,
-    Port = Remote#conn_key.port,
+    To = Remote#sip_destination.address,
+    Port = Remote#sip_destination.port,
     % FIXME: Opts...
     {ok, Socket} = gen_tcp:connect(To, Port, [binary, {active, false}]),
     init(Socket);
@@ -66,10 +65,10 @@ init(Socket) ->
     % These connections are indexed by the tuple formed from the address,
     % port, and transport protocol at the far end of the connection.
     {ok, {RemoteAddress, RemotePort}} = inet:peername(Socket),
-    Remote = #conn_key{transport = tcp, address = RemoteAddress, port = RemotePort},
+    Remote = #sip_destination{transport = tcp, address = RemoteAddress, port = RemotePort},
 
     {ok, {LocalAddress, LocalPort}} = inet:sockname(Socket),
-    Local = #conn_key{transport = tcp, address = LocalAddress, port = LocalPort},
+    Local = #sip_destination{transport = tcp, address = LocalAddress, port = LocalPort},
 
     % Register itself
     sip_transport_tcp_conn_registry:register(Local, Remote, self()),

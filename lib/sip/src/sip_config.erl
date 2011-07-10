@@ -12,7 +12,6 @@
 
 %% Includes
 -include_lib("sip_common.hrl").
--include_lib("sip_message.hrl").
 
 %% API functions
 

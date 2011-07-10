@@ -11,7 +11,7 @@
 -compile(export_all).
 
 %% Include files
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 -include_lib("sip_test.hrl").
 
 
@@ -46,17 +46,21 @@ setup() ->
                                {packet, raw},
                                {reuseaddr, true}]),
 
-    % Transport will pass request/response to transaction layer first
-    % So, override it with meck to intercept incoming and route them
-    % to the test process
-    meck:new(sip_transaction),
+    % Transport will pass request/response to transaction layer first,
+    % then to the sip_core. So, override sip_transaction to always
+    % return 'not_handled' and route message back to the test process
+    % in mocked sip_core:handle    
+    meck:new(sip_core),
     Handle =
-        fun (Connection, Msg) ->
+        fun (_From, Connection, Msg) ->
                  {Kind, _ , _} = Msg#sip_message.start_line,
                  ?MODULE ! {Kind, Connection, Msg},
                  {ok, undefined}
-        end,
-    meck:expect(sip_transaction, handle, Handle),
+        end,    
+    meck:expect(sip_core, handle, Handle),
+    
+    meck:new(sip_transaction),
+    meck:expect(sip_transaction, handle, fun (_Msg) -> not_handled end),
     {Pid, UDP, TCP}.
 
 cleanup({Pid, UDP, TCP}) ->
@@ -68,14 +72,16 @@ cleanup({Pid, UDP, TCP}) ->
     gen_udp:close(UDP),
     sip_test:shutdown_sup(Pid),
     meck:unload(sip_transaction),
+    meck:unload(sip_core),
     meck:unload(sip_config),
     ok.
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request({_Transport, UDP, TCP}) ->
-    To = sip_transport:connection("127.0.0.1", 25060, udp),
+    To = #sip_destination{address = "127.0.0.1", port = 25060, transport = udp},
     MAddr = {239, 0, 0, 100},
-    MTo = sip_transport:connection(MAddr, 25060, udp), % Multicast To:
+    % Multicast To:
+    MTo = #sip_destination{address = MAddr, port = 25060, transport = udp},
 
     Via1 = #sip_hdr_via{},
     Via2 = #sip_hdr_via{sent_by = {<<"127.0.0.1">>, 25060}, transport = udp},
@@ -91,14 +97,14 @@ send_request({_Transport, UDP, TCP}) ->
     ExpectedRequestBin = sip_message:to_binary(Request#sip_message{headers = Headers}),
 
     % RFC 3261, 18.1.1: Sending Requests
-    sip_transport:send_request(To, Request),
+    sip_transport:send(To, Request),
     {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
     ?assertEqual(ExpectedRequestBin, Packet),
 
     % RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
     LongBody = sip_test:generate_body(<<$A>>, 1300),
     LongRequest = Request#sip_message{body = LongBody},
-    sip_transport:send_request(To, LongRequest),
+    sip_transport:send(To, LongRequest),
     {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
     LongExpected = <<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",
                      "Via: SIP/2.0/TCP ", (sip_binary:any_to_binary(Hostname))/binary, ":15060\r\n",
@@ -112,7 +118,7 @@ send_request({_Transport, UDP, TCP}) ->
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % Send request
-    sip_transport:send_request(MTo, Request, [{ttl, 4}]),
+    sip_transport:send(MTo, Request, [{ttl, 4}]),
 
     {ok, {_, 15060, MPacket}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
     ?assertEqual(<<"INVITE sip:127.0.0.1/test SIP/2.0\r\n",
@@ -218,10 +224,10 @@ send_response({_Transport, UDP, TCP}) ->
 
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
-        {request, {_ConnKey, ConnProc}, Msg} ->
+        {request, Conn, Msg} ->
             ?assertEqual(Request, sip_message:parse_whole(Msg)),
             % Send response
-            sip_transport:send_response(ConnProc, Response),
+            sip_transport:send(Conn, Response),
             {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
             ?assertEqual(ActualResponse, ResponseBin);
 
@@ -239,13 +245,13 @@ send_response({_Transport, UDP, TCP}) ->
 
     gen_tcp:send(Socket2, sip_message:to_binary(Request)),
     receive
-        {request, Connection, Msg2} ->
+        {request, Conn2, Msg2} ->
             ?assertEqual(Request, sip_message:parse_whole(Msg2)),
             % Close connection
             gen_tcp:close(Socket2),
             timer:sleep(?TIMEOUT),
             % Send response
-            sip_transport:send_response(Connection, Response),
+            sip_transport:send(Conn2, Response),
 
             % Server should retry by opening connection to received:sent-by-port
             {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
@@ -267,12 +273,12 @@ send_response({_Transport, UDP, TCP}) ->
     ResponseBin2 = sip_message:to_binary(Response2),
 
     % Should be timeout (membership is not configured yet!)
-    sip_transport:send_response(undefined, Response2),
+    sip_transport:send(undefined, Response2),
     {error, timeout} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 
     % This time we should receive it
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    sip_transport:send_response(undefined, Response2),
+    sip_transport:send(undefined, Response2),
     {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ResponseBin2), ?TIMEOUT),
     ?assertEqual(ResponseBin2, Packet),
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
@@ -283,7 +289,7 @@ send_response({_Transport, UDP, TCP}) ->
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),
 
-    sip_transport:send_response(undefined, Response3),
+    sip_transport:send(undefined, Response3),
     {ok, {_, 15060, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
     ?assertEqual(ResponseBin3, Packet2),
 
@@ -295,7 +301,7 @@ send_response({_Transport, UDP, TCP}) ->
 
     % check on default port
     {ok, DefaultUDP} = gen_udp:open(5060, [inet, binary, {active, false}]),
-    sip_transport:send_response(undefined, Response4),
+    sip_transport:send(undefined, Response4),
     {ok, {_, 15060, Packet3}} = gen_udp:recv(DefaultUDP, size(ResponseBin4), ?TIMEOUT),
     gen_udp:close(DefaultUDP),
     ?assertEqual(ResponseBin4, Packet3),

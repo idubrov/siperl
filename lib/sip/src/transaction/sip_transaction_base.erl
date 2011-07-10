@@ -11,7 +11,7 @@
 %% Include files
 -include_lib("../sip_common.hrl").
 -include_lib("sip_transaction.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %% Exports
 
@@ -27,17 +27,23 @@
 %%-----------------------------------------------------------------
 
 -spec init(#params{}) -> #data{}.
-init(#params{connection = Connection, key = Key, request = Request, tx_user = TxUser})
+init(#params{to = To, connection = Connection, key = Key, request = Request, tx_user = TxUser})
   when is_record(Request, sip_message) ->
+
+    % If message was received via reliable connection
+    Via = sip_headers:top_via(Request#sip_message.headers),
+    Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
     #data{t1 = sip_config:t1(),
           t2 = sip_config:t2(),
           t4 = sip_config:t4(),
+          to = To,
           connection = Connection,
           tx_user = TxUser,
           request = Request,
+          reliable = Reliable,
           tx_ref = {Key, self()}}.
 
 -spec cancel_timer(integer(), #data{}) -> #data{}.
@@ -64,13 +70,15 @@ send_ack(Response, Data) ->
 
 -spec send_request(#sip_message{}, #data{}) -> #data{}.
 send_request(Msg, Data) ->
-    {ok, Conn} = sip_transport:send_request(Data#data.connection, Msg),
-    Data#data{connection = Conn}.
+    % Send request to the given destination address
+    sip_transport:send(Data#data.to, Msg),
+    Data.
 
 -spec send_response(#sip_message{}, #data{}) -> #data{}.
 send_response(Msg, Data) ->
-    {ok, Conn} = sip_transport:send_response(Data#data.connection, Msg),
-    Data#data{connection = Conn}.
+    % Send response using the connection of original request 
+    sip_transport:send(Data#data.connection, Msg),
+    Data.
 
 -spec pass_to_tu(#sip_message{}, #data{}) -> term().
 pass_to_tu(Msg, Data) ->

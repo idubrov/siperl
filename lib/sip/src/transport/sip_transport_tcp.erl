@@ -22,15 +22,14 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Transport callbacks
--export([send/3]).
+-export([send/2]).
 
 %% Macros
 -define(SERVER, ?MODULE).
 
 %% Include files
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %% Records
 -record(state, {ports}).
@@ -45,14 +44,12 @@ start_link(Ports) when is_list(Ports) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec send(#conn_key{}, pid() | undefined, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
-send(ConnKey, undefined, Message) ->
-    {ok, ConnProc} = sip_transport_tcp_conn_sup:start_connection(ConnKey),
-    send(ConnKey, ConnProc, Message);
-send(_ConnKey, ConnProc, Message) when
-  is_pid(ConnProc),
-  is_record(Message, sip_message) ->
-    sip_transport_tcp_conn:send(ConnProc, Message).
+-spec send(#sip_destination{} | pid(), #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
+send(To, Message) when is_record(To, sip_destination) ->
+    {ok, Pid} = sip_transport_tcp_conn_sup:start_connection(To),
+    send(Pid, Message);
+send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
+    sip_transport_tcp_conn:send(Pid, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks

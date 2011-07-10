@@ -1,12 +1,13 @@
 %%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <wfragg@gmail.com>
 %%% @doc
+%%% SIP implementation data types.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
 
 %%-----------------------------------------------------------------
-%% Records
+%% SIP core messages
 %%-----------------------------------------------------------------
 
 %% @doc
@@ -24,3 +25,16 @@
 -record(sip_hdr_address, {display_name = <<>> :: binary(), 
                          uri = <<>> :: binary(), 
                          params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
+
+%%-----------------------------------------------------------------
+%% SIP transport layer types
+%%-----------------------------------------------------------------
+
+%% @doc
+%% According to the RFC 3261 18, connections are indexed by the tuple
+%% formed from the address, port, and transport protocol at the far end
+%% of the connection
+%% @end
+-record(sip_destination, {address :: inet:ip_address() | inet:hostname(),
+                          port = 5060 :: integer(),
+                          transport :: atom()}).

@@ -15,7 +15,7 @@
 %%-----------------------------------------------------------------
 -include_lib("../sip_common.hrl").
 -include_lib("sip_transaction.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %%-----------------------------------------------------------------
 %% Exports
@@ -124,7 +124,7 @@ handle_info(Info, State, Data) ->
     Data3 = ?RESPONSE(Data2),
 
     % start Timer G only for unreliable transports
-    IsReliable = sip_transport:is_reliable(Data3#data.connection),
+    IsReliable = Data3#data.reliable,
     Data4 = case IsReliable of
                 true -> Data3;
                 false -> ?START(timerG, Data#data.t1, Data3)
@@ -166,7 +166,7 @@ handle_info(Info, State, Data) ->
     Data2 = ?CANCEL(timerG, Data),
 
     % start timer I (only for unreliable)
-    case sip_transport:is_reliable(Data2#data.connection) of
+    case Data2#data.reliable of
         true ->
             % skip CONFIRMED state and proceed immediately to TERMINATED state
             {stop, normal, ok, Data2};

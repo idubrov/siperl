@@ -12,13 +12,13 @@
 
 %% Include files
 -include_lib("../sip_common.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 -include_lib("sip_transaction.hrl").
 
 %% API
 -export([start_link/0]).
--export([start_tx/4, list_tx/0]).
--export([handle/2, send/2]).
+-export([start_client_tx/3, start_server_tx/3, list_tx/0]).
+-export([handle/1, send/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -45,16 +45,32 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @doc
-%% Start new client or server transaction.
+%% Start new client transaction.
 %% @end
--spec start_tx(client | server, any(), sip_transport:connection(), #sip_message{}) -> {ok, tx_ref()}.
-start_tx(Kind, TU, Connection, Request)
-  when (Kind =:= client orelse Kind =:= server),
-       is_pid(TU),
+-spec start_client_tx(pid(), #sip_destination{}, #sip_message{}) -> {ok, tx_ref()}.
+start_client_tx(TU, To, Request)
+  when is_pid(TU),
+       is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
-    Key = tx_key(Kind, Request),
-    Module = tx_module(Kind, Request),
+    Key = tx_key(client, Request),
+    Module = tx_module(client, Request),
+    Params = #params{to = To,
+                     key = Key,
+                     tx_user = TU,
+                     request = Request},
+    gen_server:call(?SERVER, {start_tx, Module, Params}).
+
+%% @doc
+%% Start new server transaction.
+%% @end
+-spec start_server_tx(pid(), sip_transport:connection(), #sip_message{}) -> {ok, tx_ref()}.
+start_server_tx(TU, Connection, Request)
+  when is_pid(TU),
+       is_record(Request, sip_message) ->
+
+    Key = tx_key(server, Request),
+    Module = tx_module(server, Request),
     Params = #params{connection = Connection,
                      key = Key,
                      tx_user = TU,
@@ -69,9 +85,8 @@ list_tx() ->
 %% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
--spec handle(sip_transport:connection(), #sip_message{}) -> not_handled | {ok, tx_ref()}.
-handle(_Connection, Msg)
-  when is_record(Msg, sip_message) ->
+-spec handle(#sip_message{}) -> not_handled | {ok, tx_ref()}.
+handle(Msg) when is_record(Msg, sip_message) ->
 
     % requests go to server transactions, responses go to client
     Kind = case sip_message:is_request(Msg) of

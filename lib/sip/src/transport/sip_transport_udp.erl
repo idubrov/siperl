@@ -17,15 +17,14 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Transport callbacks
--export([send/3]).
+-export([send/2]).
 
 %% Macros
 -define(SERVER, ?MODULE).
 
 %% Include files
 -include_lib("../sip_common.hrl").
--include_lib("sip_transport.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %% Records
 -record(state, {ports, supervisor}).
@@ -41,16 +40,13 @@ start_link(Ports, Sup) when is_list(Ports), is_pid(Sup) ->
 %%-----------------------------------------------------------------
 %% Transport callbacks
 %%-----------------------------------------------------------------
--spec send(#conn_key{}, pid() | undefined, #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
-send(ConnKey, undefined, Message) ->
-    % Lookup the socket to handle the request
-    {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, ConnKey}),
-    send(ConnKey, Pid, Message);
-send(ConnKey, ConnProc, Message) when
-  is_pid(ConnProc),
-  is_record(ConnKey, conn_key),
+-spec send(#sip_destination{}, #sip_message{}) -> {ok, #sip_destination{}} | {error, Reason :: term()}.
+send(To, Message) when
+  is_record(To, sip_destination),
   is_record(Message, sip_message) ->
-    sip_transport_udp_socket:send(ConnProc, ConnKey, Message).
+    % Lookup the socket to handle the request
+    {ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
+    sip_transport_udp_socket:send(Pid, To, Message).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -62,8 +58,8 @@ init({Ports, Sup}) ->
     {ok, #state{ports = Ports, supervisor = Sup}}.
 
 %% @private
--spec handle_call({lookup_socket | term(), #conn_key{}}, _, #state{}) ->
-          {reply, #conn_key{} | false, #state{}}.
+-spec handle_call({lookup_socket | term(), #sip_destination{}}, _, #state{}) ->
+          {reply, #sip_destination{} | false, #state{}}.
 handle_call({lookup_socket, _To}, _From, State) ->
     % Consult parent supervisor for children named like {socket, _}
     Endpoint = lookup_socket(supervisor:which_children(State#state.supervisor)),

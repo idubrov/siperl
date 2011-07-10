@@ -11,15 +11,12 @@
 -compile(export_all).
 
 %% Include files
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 -include_lib("sip_test.hrl").
 
 %%-----------------------------------------------------------------
 %% Functions
 %%-----------------------------------------------------------------
-connection(Transport) ->
-    sip_transport:connection("127.0.0.1", 5060, Transport).
-
 %% Extract test process pid from the top branch
 test_pid(Msg) ->
     <<"z9hG4bK_", Bin/binary>> = sip_headers:top_via_branch(Msg#sip_message.headers),

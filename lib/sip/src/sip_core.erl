@@ -11,11 +11,11 @@
 
 %% Include files
 -include_lib("sip_common.hrl").
--include_lib("sip_message.hrl").
+-include_lib("sip.hrl").
 
 %% API
 -export([start_link/0]).
--export([handle/2]).
+-export([handle/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -34,14 +34,14 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
--spec handle(sip_transport:connection(), #sip_message{}) -> ok.
-handle(Connection, Msg)
+-spec handle(#sip_destination{}, sip_transport:connection(), #sip_message{}) -> ok.
+handle(From, Connection, Msg)
   when is_record(Msg, sip_message) ->
     % FIXME: core layer implementation..
     % XXX: Start new transaction for requests...
     case sip_message:is_request(Msg) of
         true ->
-            sip_transaction:start_tx(server, whereis(sip_core), Connection, Msg),
+            sip_transaction:start_server_tx(whereis(sip_core), Connection, Msg),
             ok;
         _ ->
             ok
