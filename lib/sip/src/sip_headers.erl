@@ -57,14 +57,11 @@ split_binary(Headers) when is_binary(Headers) ->
                         [sip_headers:header()]) -> [sip_headers:header()].
 update_top_header(HeaderName, Fun, List) ->
     update_top_header(HeaderName, Fun, [], List).
-
 update_top_header(HeaderName, Fun, Unmatched, [{HeaderName, Value} | Tail]) ->
     Value2 = Fun(HeaderName, Value),
     lists:reverse([{HeaderName, Value2} | Unmatched]) ++ Tail;
-
 update_top_header(HeaderName, Fun, Unmatched, [H | Tail]) ->
     update_top_header(HeaderName, Fun, [H|Unmatched], Tail);
-
 update_top_header(_HeaderName, _Fun, Unmatched, []) ->
     % TODO: Nothing is matched -- we probably can return the original list.
     lists:reverse(Unmatched).

@@ -40,12 +40,21 @@ start_client_tx(TU, To, Request)
   when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
-    Key = tx_key(client, Request),
-    Module = tx_module(client, Request),
+    % Add generated unique branch
+    Headers = sip_headers:update_top_header('via', fun generate_branch/2, Request#sip_message.headers),
+    Request2 = Request#sip_message{headers = Headers},
+
+    % Transport reliability is from To: header
+    % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
+    Reliable = sip_transport:is_reliable(To#sip_destination.transport),
+
+    Key = tx_key(client, Request2),
+    Module = tx_module(client, Request2),
     TxState = #tx_state{to = To,
                         tx_key = Key,
                         tx_user = TU,
-                        request = Request},
+                        request = Request2,
+                        reliable = Reliable},
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
@@ -56,12 +65,17 @@ start_client_tx(TU, To, Request)
 start_server_tx(TU, Connection, Request)
   when is_record(Request, sip_message) ->
 
+    % Check top via in received request to check transport reliability
+    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
+    Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
+
     Key = tx_key(server, Request),
     Module = tx_module(server, Request),
     TxState = #tx_state{connection = Connection,
                         tx_key = Key,
                         tx_user = TU,
-                        request = Request},
+                        request = Request,
+                        reliable = Reliable},
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
@@ -158,17 +172,13 @@ tx_key(server, Request) ->
     end.
 
 %% @doc
-%% Get transaction key and module.
+%% Get transaction module based on the transaction type and method.
 %% @end
 tx_module(client, Request) ->
     case Request#sip_message.start_line of
         {request, 'INVITE', _} -> sip_transaction_client_invite;
         {request, _, _} -> sip_transaction_client
     end;
-
-%% @doc
-%% Get transaction key and module.
-%% @end
 tx_module(server, Request) ->
     case Request#sip_message.start_line of
         {request, 'INVITE', _} -> sip_transaction_server_invite;
@@ -176,10 +186,8 @@ tx_module(server, Request) ->
         {request, _, _} -> sip_transaction_server
      end.
 
-tx_send(undefined, _Msg) ->
-    not_handled;
+tx_send(undefined, _Msg) -> not_handled;
 tx_send(Key, Msg) when is_record(Msg, sip_message) ->
-
     {Kind, Param, _} = Msg#sip_message.start_line,
     % RFC 17.1.3/17.2.3
     case gproc:lookup_local_name({tx, Key}) of
@@ -193,3 +201,20 @@ tx_send(Key, Msg) when is_record(Msg, sip_message) ->
                  end,
             {ok, Key}
     end.
+
+%% @doc
+%% Generate unique branch parameter for top Via header value, if not already present.
+%% @end
+generate_branch('via', [Via | Rest]) ->
+    Via2 = case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
+               {branch, _} -> Via;
+
+               % Generate unique branch id
+               false ->
+                   % FIXME: Poor man's random id generation
+                   {Random, _} = random:uniform_s(2147483647, now()),
+                   Suffix = sip_binary:from_integer(Random),
+                   Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, <<?MAGIC_COOKIE, $_, Suffix/binary>>}),
+                   Via#sip_hdr_via{params = Params}
+           end,
+    [Via2 | Rest].

@@ -28,11 +28,7 @@
 %%-----------------------------------------------------------------
 
 -spec init(#tx_state{}) -> #tx_state{}.
-init(#tx_state{request = Request, tx_key = Key, tx_user = TxUser} = TxState) ->
-    % If message was received via reliable connection
-    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
-    Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
-
+init(#tx_state{tx_key = Key, tx_user = TxUser} = TxState) ->
     % Register transaction under its key
     gproc:add_local_name({tx, Key}),
 
@@ -43,7 +39,7 @@ init(#tx_state{request = Request, tx_key = Key, tx_user = TxUser} = TxState) ->
             monitor(process, TxUser);
         _ -> ok
     end,
-    TxState#tx_state{reliable = Reliable}.
+    TxState.
 
 -spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
 cancel_timer(TimerIdx, TxState)
