@@ -67,9 +67,6 @@ init(Socket) ->
     {ok, {RemoteAddress, RemotePort}} = inet:peername(Socket),
     Remote = #sip_destination{transport = tcp, address = RemoteAddress, port = RemotePort},
 
-    {ok, {LocalAddress, LocalPort}} = inet:sockname(Socket),
-    Local = #sip_destination{transport = tcp, address = LocalAddress, port = LocalPort},
-
     % Register itself
     %gproc:add_local_property({to, Remote}, Local),
 
