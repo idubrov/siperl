@@ -41,9 +41,9 @@ init(Params) ->
 %% @doc
 %% Handle case when we expect response from the TU, but it goes down
 %% @end
-handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State, TxState)
+handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, TxState)
   when State =:= 'TRYING'; State =:= 'PROCEEDING' ->
-    {stop, {tu_down, Pid, Info}, TxState};
+    erlang:error({tu_down, TxState#tx_state.tx_user});
 
 %% @doc
 %% Let the base module handle the info.

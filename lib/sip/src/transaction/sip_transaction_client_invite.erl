@@ -56,8 +56,8 @@ init(Params) ->
 %% @doc
 %% Transaction timed out.
 %% @end
-'CALLING'({timeout, _Ref, {timerB, _}}, TxState) ->
-    {stop, {timeout, timerB}, TxState}.
+'CALLING'({timeout, _Ref, {timerB, _}}, _TxState) ->
+    erlang:error(timeout).
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'CALLING' and 'PROCEEDING'
@@ -118,8 +118,8 @@ init(Params) ->
 %% Transaction timed out
 %% @end
 -spec 'PROCEEDING'(term(), #tx_state{}) -> term().
-'PROCEEDING'({timeout, _Ref, {timerB, _}}, TxState) ->
-    {stop, {timeout, timerB}, TxState}.
+'PROCEEDING'({timeout, _Ref, {timerB, _}}, _TxState) ->
+    erlang:error(timeout).
 
 %% @doc
 %% In 'COMPLETED' state transaction re-sends ACK without passing the response

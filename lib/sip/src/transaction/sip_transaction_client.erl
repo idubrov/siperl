@@ -57,8 +57,8 @@ init(Params) ->
 %% @doc
 %% Transaction timed out.
 %% @end
-'TRYING'({timeout, _Ref, {timerF, _}}, TxState) ->
-    {stop, {timeout, timerF}, TxState}.
+'TRYING'({timeout, _Ref, {timerF, _}}, _TxState) ->
+    erlang:error(timeout).
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'TRYING' and 'PROCEEDING'
@@ -108,8 +108,8 @@ init(Params) ->
 %% @doc
 %% Transaction timed out.
 %% @end
-'PROCEEDING'({timeout, _Ref, {timerF, _}}, TxState) ->
-    {stop, {timeout, timerF}, TxState}.
+'PROCEEDING'({timeout, _Ref, {timerF, _}}, _TxState) ->
+    erlang:error(timeout).
 
 %% @doc
 %% Buffer additional response retransmissions.
