@@ -31,9 +31,9 @@ init(#params{to = To, connection = Connection, key = Key, request = Request, tx_
   when is_record(Request, sip_message) ->
 
     % If message was received via reliable connection
-    Via = sip_headers:top_via(Request#sip_message.headers),
+    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
-    
+
     % Register transaction under its key
     gproc:add_local_name({tx, Key}),
 

@@ -12,7 +12,7 @@
 %%-----------------------------------------------------------------
 -export([split_binary/1, update_top_header/3]).
 -export([parse_header/2, format_header/1]).
--export([top_via/1, top_via_branch/1]).
+-export([top_header/2, top_via_branch/1]).
 -export([via/3, via/1, cseq/2, content_length/1, from/3, to/3]).
 
 %%-----------------------------------------------------------------
@@ -304,19 +304,23 @@ format_param(Name, Bin) ->
 %%-----------------------------------------------------------------
 %% Header-specific helpers
 %%-----------------------------------------------------------------
--spec top_via([sip_headers:header()]) -> #sip_hdr_via{}.
-top_via(Headers) when is_list(Headers) ->
-    % take top via sent-by
-    {'via', Via} = lists:keyfind('via', 1, Headers),
-    {'via', [Via2 | _]} = sip_headers:parse_header('via', Via),
-    Via2.
-
 -spec top_via_branch([header()]) -> binary() | undefined.
 top_via_branch(Headers) ->
-    Via = sip_headers:top_via(Headers),
+    {ok, Via} = sip_headers:top_header('via', Headers),
     case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
         {branch, Branch} -> Branch;
         false -> undefined
+    end.
+
+-spec top_header(header_name(), [header()]) -> {ok, term()} | {error, not_found}.
+top_header(Name, Headers) when is_list(Headers) ->
+    case lists:keyfind(Name, 1, Headers) of
+        false -> {error, not_found};
+        {Name, Value} ->
+            case sip_headers:parse_header(Name, Value) of
+                {_, [Top | _]} -> {ok, Top}; % support for multiple header values
+                {_, ParsedValue} -> {ok, ParsedValue}
+            end
     end.
 
 %% @doc
@@ -470,10 +474,10 @@ parse_test_() ->
      ?_assertEqual(<<"Via: SIP/2.0/UDP 127.0.0.1:15060;param=value;flag\r\n">>,
                    format_header({'via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>})),
 
-     ?_assertEqual(begin {'via', [Via]} = via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]), Via end,
-                   top_via([via([{udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]},
-                                 {tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]}]),
-                            via(udp, {<<"sip.biloxi.com">>, undefined}, [])])),
+     ?_assertEqual(begin {'via', [Via]} = via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]), {ok, Via} end,
+                   top_header('via', [via([{udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]},
+                                           {tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]}]),
+                                      via(udp, {<<"sip.biloxi.com">>, undefined}, [])])),
      ?_assertEqual(<<"z9hG4bK776asdhds">>,
                    top_via_branch([via([{udp, {<<"127.0.0.1">>, 15060}, [{branch, <<"z9hG4bK776asdhds">>}]},
                                         {tcp, {<<"pc33.atlanta.com">>, undefined}, []}]),

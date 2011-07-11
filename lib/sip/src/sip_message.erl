@@ -83,16 +83,16 @@ to_binary(Message) ->
     Headers = [sip_headers:format_header(Hdr) || Hdr <- Message#sip_message.headers],
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
--spec parse_datagram(Datagram :: binary()) ->
-          {ok, #sip_message{}}
-        | {bad_request, Reason :: term()}
-        | {bad_response, Reason :: term()}.
 %% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
 %% retained in binary form for performance reasons. Use {@link parse_whole/1}
 %% to parse the whole message or {@link sip_headers:parse_header/2} to parse
 %% single header.
 %% @end
+-spec parse_datagram(Datagram :: binary()) ->
+          {ok, #sip_message{}}
+        | {bad_request, Reason :: term()}
+        | {bad_response, Reason :: term()}.
 parse_datagram(Datagram) ->
     [Top, Body] = binary:split(Datagram, <<"\r\n\r\n">>),
     [Start | Tail] = binary:split(Top, <<"\r\n">>),
@@ -103,20 +103,18 @@ parse_datagram(Datagram) ->
     StartLine = parse_start_line(Start),
 
     % RFC 3261 18.3
-    case get_content_length(Headers) of
-        false ->
-            {ok, #sip_message{start_line = StartLine, headers = Headers, body = Body}};
-
+    case sip_headers:top_header('content-length', Headers) of
         % Content-Length is present
         {ok, ContentLength} when ContentLength =< size(Body) ->
             <<Body2:ContentLength/binary, _/binary>> = Body,
             {ok, #sip_message{start_line = StartLine, headers = Headers, body = Body2}};
-
         {ok, _} when element(1, StartLine) =:= request ->
             {bad_request, content_too_small};
-
         {ok, _} ->
-            {bad_response, content_too_small}
+            {bad_response, content_too_small};
+        % Content-Length is not present
+        {error, not_found} ->
+            {ok, #sip_message{start_line = StartLine, headers = Headers, body = Body}}
     end.
 
 -spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
@@ -198,16 +196,16 @@ pre_parse_stream({State, Frame}, From, Msgs) when State =:= 'HEADERS'; State =:=
             StartLine = parse_start_line(Start),
 
             % Check content length present
-            case get_content_length(Headers) of
+            case sip_headers:top_header('content-length', Headers) of
                 {ok, ContentLength} ->
                     % Continue processing the message body
                     NewState = {'BODY', StartLine, Headers,ContentLength},
                     pre_parse_stream({NewState, Rest}, 0, Msgs);
 
-                false when element(1, StartLine) =:= request ->
+                {error, not_found} when element(1, StartLine) =:= request ->
                     {bad_request, no_content_length};
 
-                false ->
+                {error, not_found} ->
                     {bad_response, no_content_length}
             end
     end;
@@ -236,14 +234,6 @@ has_header_delimiter(Data, Offset) ->
     case binary:match(Data, <<"\r\n\r\n">>, [{scope, {Offset, size(Data) - Offset}}]) of
         nomatch -> false;
         {Pos, _} -> Pos
-    end.
-
-get_content_length(Headers) ->
-    case lists:keyfind('content-length', 1, Headers) of
-        {_, ContentLength} ->
-            {ok, sip_binary:to_integer(ContentLength)};
-        false ->
-            false
     end.
 
 %% Request-Line   =  Method SP Request-URI SP SIP-Version CRLF
@@ -304,14 +294,14 @@ create_ack(Request, Response) when is_record(Request, sip_message),
     ReqHeaders = lists:reverse(lists:foldl(FoldFun, [], Request#sip_message.headers)),
 
     % Via is taken from top Via of the original request
-    Via = {'via', [sip_headers:top_via(Request#sip_message.headers)]},
+    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
 
     % To goes from the response
-    {'to', To} = lists:keyfind('to', 1, Response#sip_message.headers),
+    {ok, To} = sip_headers:top_header('to', Response#sip_message.headers),
 
     #sip_message{start_line = {request, 'ACK', RequestURI},
                  body = <<>>,
-                 headers = [Via, {'to', To} | ReqHeaders]}.
+                 headers = [{'via', [Via]}, {'to', To} | ReqHeaders]}.
 
 
 %% @doc
@@ -463,5 +453,4 @@ create_ack_test_() ->
     [
      ?_assertEqual(normalize(ACK), normalize(create_ack(OrigRequest, Response)))
      ].
-
 -endif.

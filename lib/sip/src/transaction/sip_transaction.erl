@@ -70,13 +70,13 @@ start_server_tx(TU, Connection, Request)
 
 -spec list_tx() -> [tx_ref()].
 list_tx() ->
-    gproc:select(all, 
+    gproc:select(all,
                  [{{'$1','$2','$3'},
                    % Match {n, l, {tx, Key}}
-                   [{'andalso', 
-                     {'andalso', 
-                      {'=:=', n, {element, 1, '$1'}}, 
-                      {'=:=', l, {element, 2, '$1'}}}, 
+                   [{'andalso',
+                     {'andalso',
+                      {'=:=', n, {element, 1, '$1'}},
+                      {'=:=', l, {element, 2, '$1'}}},
                      {'=:=', tx, {element, 1, {element, 3, '$1'}}}}],
                    % Return {Key, Pid}
                    [{{{element, 2, {element, 3, '$1'}}, '$2'}}]}]).
@@ -139,7 +139,7 @@ tx_key(client, Msg) ->
                     {client, Branch, Method};
 
                 {response, _, _} ->
-                    {'cseq', CSeq} = lists:keyfind('cseq', 1, Headers),
+                    {ok, CSeq} = sip_headers:top_header('cseq', Headers),
                     Method = CSeq#sip_hdr_cseq.method,
                     {client, Branch, Method}
             end
@@ -157,7 +157,7 @@ tx_key(server, Request) ->
     case sip_headers:top_via_branch(Headers) of
         % Magic cookie
         <<"z9hG4bK", _/binary>> = Branch ->
-            Via = sip_headers:top_via(Headers),
+            {ok, Via} = sip_headers:top_header('via', Headers),
             SentBy = Via#sip_hdr_via.sent_by,
             {server, SentBy, Branch, Method};
 

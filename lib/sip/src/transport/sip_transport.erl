@@ -85,7 +85,7 @@ send_response(undefined, Message) ->
     To = reply_address(Message),
     send_response(To, Message);
 send_response(Connection, Message) ->
-    Via = sip_headers:top_via(Message#sip_message.headers),
+    {ok, Via} = sip_headers:top_header('via', Message#sip_message.headers),
     Transport = Via#sip_hdr_via.transport,
     try transport_send(Transport, Connection, Message)
     catch exit:{noproc, _Reason} ->
@@ -174,7 +174,7 @@ check_sent_by(Transport, Msg) ->
     ExpectedSentBy = {sip_binary:any_to_binary(Addr), Port},
 
     % take top via sent-by
-    Via = sip_headers:top_via(Msg#sip_message.headers),
+    {ok, Via} = sip_headers:top_header('via', Msg#sip_message.headers),
     SentBy = Via#sip_hdr_via.sent_by,
     ActualSentBy =
         case SentBy of
@@ -227,7 +227,7 @@ to_address({A, B, C, D} = Addr) when
 %% See RFC 3261 18.2.2 Sending Responses
 %% @end
 reply_address(Message) ->
-    Via = sip_headers:top_via(Message#sip_message.headers),
+    {ok, Via} = sip_headers:top_header('via', Message#sip_message.headers),
     Transport = Via#sip_hdr_via.transport,
     IsReliable = is_reliable(Transport),
     Addr =
