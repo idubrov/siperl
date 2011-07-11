@@ -19,7 +19,7 @@
 %%-----------------------------------------------------------------
 %% Extract test process pid from the top branch
 test_pid(Msg) ->
-    <<?MAGIC_COOKIE, Bin/binary>> = sip_headers:top_via_branch(Msg#sip_message.headers),
+    <<?MAGIC_COOKIE, $_, Bin/binary>> = sip_headers:top_via_branch(Msg#sip_message.headers),
     Pid = [case C of $A -> $<; $B -> $>; $C -> $.; _ -> C end || <<C>> <= Bin],
     list_to_pid(Pid).
 
@@ -30,7 +30,7 @@ invite(Transport) ->
 %% to route message back to the test process
 request(Method, Transport) ->
     Unique = << <<case C of $< -> $A; $> -> $B; $. -> $C; _ -> C end>> || C <- pid_to_list(self())>>,
-    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<"z9hG4bK_", Unique/binary>>}]),
+    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<?MAGIC_COOKIE, $_, Unique/binary>>}]),
     CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
     To = sip_headers:to(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}]),
