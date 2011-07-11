@@ -47,7 +47,7 @@ init(#params{to = To, connection = Connection, key = Key, request = Request, tx_
           tx_user = TxUser,
           request = Request,
           reliable = Reliable,
-          tx_ref = {Key, self()}}.
+          tx_key = Key}.
 
 -spec cancel_timer(integer(), #data{}) -> #data{}.
 cancel_timer(TimerIdx, Data)
@@ -87,7 +87,7 @@ send_response(Msg, Data) ->
 pass_to_tu(Msg, Data) ->
     {Kind, _, _} = Msg#sip_message.start_line,
     TU = Data#data.tx_user,
-    TU ! {tx, Data#data.tx_ref, {Kind, Msg}},
+    TU ! {tx, Data#data.tx_key, {Kind, Msg}},
     Data.
 
 %% @private
@@ -119,7 +119,7 @@ handle_info(Info, _State, Data) ->
 -spec terminate(term(), atom(), #data{}) -> ok.
 terminate(Reason, _State, Data) ->
     TU = Data#data.tx_user,
-    TU ! {tx, Data#data.tx_ref, {terminated, Reason}},
+    TU ! {tx, Data#data.tx_key, {terminated, Reason}},
     ok.
 
 %% @private

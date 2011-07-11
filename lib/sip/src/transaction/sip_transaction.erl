@@ -27,8 +27,7 @@
 %% Types
 -type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} |
                   {server, SentBy :: sip_headers:via_sent_by(), Branch :: binary(), Method :: sip_message:method()}.
--type tx_ref() :: {tx_key(), pid()}.
--export_type([tx_key/0, tx_ref/0]).
+-export_type([tx_key/0]).
 
 %%-----------------------------------------------------------------
 %% API functions
@@ -36,7 +35,7 @@
 %% @doc
 %% Start new client transaction.
 %% @end
--spec start_client_tx(pid(), #sip_destination{}, #sip_message{}) -> {ok, tx_ref()}.
+-spec start_client_tx(pid(), #sip_destination{}, #sip_message{}) -> {ok, tx_key()}.
 start_client_tx(TU, To, Request)
   when is_pid(TU),
        is_record(To, sip_destination),
@@ -48,13 +47,13 @@ start_client_tx(TU, To, Request)
                      key = Key,
                      tx_user = TU,
                      request = Request},
-    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
-    {ok, {Key, Pid}}.
+    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    {ok, Key}.
 
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(pid(), sip_transport:connection(), #sip_message{}) -> {ok, tx_ref()}.
+-spec start_server_tx(pid(), sip_transport:connection(), #sip_message{}) -> {ok, tx_key()}.
 start_server_tx(TU, Connection, Request)
   when is_pid(TU),
        is_record(Request, sip_message) ->
@@ -65,10 +64,10 @@ start_server_tx(TU, Connection, Request)
                      key = Key,
                      tx_user = TU,
                      request = Request},
-    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
-    {ok, {Key, Pid}}.
+    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    {ok, Key}.
 
--spec list_tx() -> [tx_ref()].
+-spec list_tx() -> [tx_key()].
 list_tx() ->
     gproc:select(all,
                  [{{'$1','$2','$3'},
@@ -79,14 +78,14 @@ list_tx() ->
                       {'=:=', l, {element, 2, '$1'}}},
                      {'=:=', tx, {element, 1, {element, 3, '$1'}}}}],
                    % Return {Key, Pid}
-                   [{{{element, 2, {element, 3, '$1'}}, '$2'}}]}]).
+                   [{element, 2, {element, 3, '$1'}}]}]).
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_request(#sip_message{}) -> not_handled | {ok, tx_ref()}.
+-spec handle_request(#sip_message{}) -> not_handled | {ok, tx_key()}.
 handle_request(Msg) when is_record(Msg, sip_message) ->
     true = sip_message:is_request(Msg),
     handle_internal(server, Msg).
@@ -96,7 +95,7 @@ handle_request(Msg) when is_record(Msg, sip_message) ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_response(#sip_message{}) -> not_handled | {ok, tx_ref()}.
+-spec handle_response(#sip_message{}) -> not_handled | {ok, tx_key()}.
 handle_response(Msg) ->
     true = sip_message:is_response(Msg),
     handle_internal(client, Msg).
@@ -104,10 +103,10 @@ handle_response(Msg) ->
 %% @doc
 %% Pass given response from the TU to the given transaction.
 %% @end
--spec send_response(tx_ref(), #sip_message{}) -> not_handled | {ok, tx_ref()}.
-send_response(TxRef, Msg) ->
+-spec send_response(tx_key(), #sip_message{}) -> not_handled | {ok, tx_key()}.
+send_response(Key, Msg) ->
     true = sip_message:is_response(Msg),
-    tx_send(TxRef, Msg).
+    tx_send(Key, Msg).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -119,11 +118,8 @@ send_response(TxRef, Msg) ->
 %% @end
 handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
     % lookup transaction by key
-    TxKey = tx_key(Kind, Msg),
-    case tx_lookup(TxKey) of
-        undefined -> not_handled;
-        TxRef -> tx_send(TxRef, Msg)
-    end.
+    Key = tx_key(Kind, Msg),
+    tx_send(Key, Msg).
 
 tx_key(client, Msg) ->
     % RFC 17.1.3
@@ -167,17 +163,6 @@ tx_key(server, Request) ->
             undefined
     end.
 
-tx_lookup(Key) ->
-    % RFC 17.2.3
-    case Key of
-        undefined -> undefined;
-        _ ->
-            case gproc:lookup_local_name({tx, Key}) of
-                Pid when is_pid(Pid) -> {Key, Pid};
-                undefined -> undefined
-            end
-    end.
-
 %% @doc
 %% Get transaction key and module.
 %% @end
@@ -197,18 +182,20 @@ tx_module(server, Request) ->
         {request, _, _} -> sip_transaction_server
      end.
 
-tx_send(TxRef, Msg) when is_record(Msg, sip_message) ->
+tx_send(undefined, _Msg) ->
+    not_handled;
+tx_send(Key, Msg) when is_record(Msg, sip_message) ->
 
     {Kind, Param, _} = Msg#sip_message.start_line,
     % RFC 17.1.3/17.2.3
-    case TxRef of
+    case gproc:lookup_local_name({tx, Key}) of
         % no transaction
         undefined ->
             not_handled;
 
-        {_Key, Pid} ->
+        Pid when is_pid(Pid) ->
             ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
-            {ok, TxRef}
+            {ok, Key}
     end.

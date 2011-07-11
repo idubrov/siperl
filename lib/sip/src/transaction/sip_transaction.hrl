@@ -10,7 +10,7 @@
 -record(data, {t1,
 			   t2,
 			   t4,
-			   tx_ref,		% Reference to itself {{Branch, Method}, pid()}
+			   tx_key,		% Transaction key
 			   tx_user,		% Transaction user
 			   timerA,		% Timer A, RFC 3261 17.1.1.2
 			   timerB,		% Timer B, RFC 3261 17.1.1.2
