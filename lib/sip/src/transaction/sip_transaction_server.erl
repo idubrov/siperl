@@ -28,37 +28,37 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init(#params{}) -> {ok, atom(), #data{}}.
+-spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
 init(Params) ->
-    Data = ?INIT(Params),
+    TxState = ?INIT(Params),
 
     % The request MUST be passed to the TU.
-    Data2 = ?TU(Data#data.request, Data),
-    {ok, 'TRYING', Data2}.
+    TxState2 = ?TU(TxState#tx_state.request, TxState),
+    {ok, 'TRYING', TxState2}.
 
--spec handle_info(term(), atom(), #data{}) ->
-          {stop, term(), #data{}}.
+-spec handle_info(term(), atom(), #tx_state{}) ->
+          {stop, term(), #tx_state{}}.
 %% @doc
 %% Handle case when we expect response from the TU, but it goes down
 %% @end
-handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State, Data)
+handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State, TxState)
   when State =:= 'TRYING'; State =:= 'PROCEEDING' ->
-    {stop, {tu_down, Pid, Info}, Data};
+    {stop, {tu_down, Pid, Info}, TxState};
 
 %% @doc
 %% Let the base module handle the info.
 %% @end
-handle_info(Info, State, Data) ->
-    sip_transaction_base:handle_info(Info, State, Data).
+handle_info(Info, State, TxState) ->
+    sip_transaction_base:handle_info(Info, State, TxState).
 
--spec 'TRYING'(term(), term(), #data{}) -> term().
+-spec 'TRYING'(term(), term(), #tx_state{}) -> term().
 %% @doc
 %% Once in the "Trying" state, any further request retransmissions are
 %% discarded.  A request is a retransmission if it matches the same server
 %% transaction.
 %% @end
-'TRYING'({request, _Method, _Request}, _From, Data) ->
-    {reply, ok, 'TRYING', Data};
+'TRYING'({request, _Method, _Request}, _From, TxState) ->
+    {reply, ok, 'TRYING', TxState};
 
 %% @doc
 %% While in the "Trying" state, if the TU passes a provisional response
@@ -66,12 +66,12 @@ handle_info(Info, State, Data) ->
 %% "Proceeding" state.  The response MUST be passed to the transport
 %% layer for transmission.
 %% @end
-'TRYING'({response, Status, Response}, _From, Data)
+'TRYING'({response, Status, Response}, _From, TxState)
   when Status >= 100, Status =< 199 ->
 
-    Data2 = Data#data{provisional = Response},
-    Data3 = ?PROVISIONAL(Data2),
-    {reply, ok, 'PROCEEDING', Data3};
+    TxState2 = TxState#tx_state{provisional = Response},
+    TxState3 = ?PROVISIONAL(TxState2),
+    {reply, ok, 'PROCEEDING', TxState3};
 
 
 %% @doc
@@ -80,35 +80,35 @@ handle_info(Info, State, Data) ->
 %% state, and the response MUST be passed to the transport layer for
 %% transmission.
 %% @end
-'TRYING'({response, Status, Response}, From, Data)
+'TRYING'({response, Status, Response}, From, TxState)
   when Status >= 200, Status =< 699 ->
     % Same handling as in PROCEEDING state
-    'PROCEEDING'({response, Status, Response}, From, Data).
+    'PROCEEDING'({response, Status, Response}, From, TxState).
 
 
--spec 'PROCEEDING'(term(), term(), #data{}) -> term().
+-spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 %% @doc
 %% Any further provisional responses that are received from the TU while in
 %% the "Proceeding" state MUST be passed to the transport layer for transmission.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data)
+'PROCEEDING'({response, Status, Response}, _From, TxState)
   when Status >= 100, Status =< 199 ->
 
-    Data2 = Data#data{provisional = Response},
-    Data3 = ?PROVISIONAL(Data2),
-    {reply, ok, 'PROCEEDING', Data3};
+    TxState2 = TxState#tx_state{provisional = Response},
+    TxState3 = ?PROVISIONAL(TxState2),
+    {reply, ok, 'PROCEEDING', TxState3};
 
 %% @doc
 %% If a retransmission of the request is received while in the "Proceeding" state,
 %% the most recently sent provisional response MUST be passed to the transport
 %% layer for retransmission.
 %% @end
-'PROCEEDING'({request, _Method, _Request}, _From, Data) ->
+'PROCEEDING'({request, _Method, _Request}, _From, TxState) ->
 
     % Note: we do not compare the request with original one, assuming it must
     % be the same one.
-    Data2 = ?PROVISIONAL(Data),
-    {reply, ok, 'PROCEEDING', Data2};
+    TxState2 = ?PROVISIONAL(TxState),
+    {reply, ok, 'PROCEEDING', TxState2};
 
 %% @doc
 %% If the TU passes a final response (status codes 200-699) to the server while in
@@ -119,23 +119,23 @@ handle_info(Info, State, Data) ->
 %% Timer J to fire in 64*T1 seconds for unreliable transports, and zero
 %% seconds for reliable transports.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data)
+'PROCEEDING'({response, Status, Response}, _From, TxState)
   when Status >= 200, Status =< 699 ->
 
-    Data2 = Data#data{response = Response},
-    Data3 = ?RESPONSE(Data2),
+    TxState2 = TxState#tx_state{response = Response},
+    TxState3 = ?RESPONSE(TxState2),
 
     % start timer J (only for unreliable)
-    case Data3#data.reliable of
+    case TxState3#tx_state.reliable of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, Data3};
+            {stop, normal, ok, TxState3};
         false ->
-            Data4 = ?START(timerJ, 64 * Data3#data.t1, Data3),
-            {reply, ok, 'COMPLETED', Data4}
+            TxState4 = ?START(timerJ, 64 * TxState3#tx_state.t1, TxState3),
+            {reply, ok, 'COMPLETED', TxState4}
     end.
 
--spec 'COMPLETED'(term(), term(), #data{}) -> term().
+-spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
 %% @doc
 %% While in the "Completed" state, the server transaction MUST pass the
 %% final response to the transport layer for retransmission whenever a
@@ -145,22 +145,22 @@ handle_info(Info, State, Data) ->
 %% until Timer J fires, at which point it MUST transition to the "Terminated"
 %% state.
 %% @end
-'COMPLETED'({request, _Method, _Request}, _From, Data) ->
-    Data2 = ?RESPONSE(Data),
-    {reply, ok, 'COMPLETED', Data2};
+'COMPLETED'({request, _Method, _Request}, _From, TxState) ->
+    TxState2 = ?RESPONSE(TxState),
+    {reply, ok, 'COMPLETED', TxState2};
 
 %% @doc
 %% Any other final responses passed by the TU to the server transaction MUST
 %% be discarded while in the "Completed" state.
 %% @end
-'COMPLETED'({response, Status, _Response}, _From, Data)
+'COMPLETED'({response, Status, _Response}, _From, TxState)
   when Status >= 200, Status =< 699 ->
-    {reply, ok, 'COMPLETED', Data}.
+    {reply, ok, 'COMPLETED', TxState}.
 
--spec 'COMPLETED'(term(), #data{}) -> term().
+-spec 'COMPLETED'(term(), #tx_state{}) -> term().
 %% @doc
 %% The server transaction remains in this state until Timer J fires, at which
 %% point it MUST transition to the "Terminated" state.
 %% @end
-'COMPLETED'({timeout, _Ref, {timerJ, _}}, Data) ->
-    {stop, normal, Data}.
+'COMPLETED'({timeout, _Ref, {timerJ, _}}, TxState) ->
+    {stop, normal, TxState}.

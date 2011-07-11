@@ -15,6 +15,7 @@
 
 %% Exports
 
+
 %% FSM callbacks
 -export([handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
@@ -26,10 +27,8 @@
 %% API
 %%-----------------------------------------------------------------
 
--spec init(#params{}) -> #data{}.
-init(#params{to = To, connection = Connection, key = Key, request = Request, tx_user = TxUser})
-  when is_record(Request, sip_message) ->
-
+-spec init(#tx_state{}) -> #tx_state{}.
+init(#tx_state{request = Request, tx_key = Key, tx_user = TxUser} = TxState) ->
     % If message was received via reliable connection
     {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
@@ -39,91 +38,87 @@ init(#params{to = To, connection = Connection, key = Key, request = Request, tx_
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
-    #data{t1 = sip_config:t1(),
-          t2 = sip_config:t2(),
-          t4 = sip_config:t4(),
-          to = To,
-          connection = Connection,
-          tx_user = TxUser,
-          request = Request,
-          reliable = Reliable,
-          tx_key = Key}.
+    TxState#tx_state{t1 = sip_config:t1(),
+                     t2 = sip_config:t2(),
+                     t4 = sip_config:t4(),
+                     reliable = Reliable
+                    }.
 
--spec cancel_timer(integer(), #data{}) -> #data{}.
-cancel_timer(TimerIdx, Data)
-  when is_integer(TimerIdx), is_record(Data, data) ->
-    case element(TimerIdx, Data) of
+-spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
+cancel_timer(TimerIdx, TxState)
+  when is_integer(TimerIdx), is_record(TxState, tx_state) ->
+    case element(TimerIdx, TxState) of
         undefined ->
-            Data;
+            TxState;
 
         Timer ->
             gen_fsm:cancel_timer(Timer),
-            setelement(TimerIdx, Data, undefined)
+            setelement(TimerIdx, TxState, undefined)
     end.
 
--spec start_timer(atom(), integer(), integer(), #data{}) -> #data{}.
-start_timer(TimerName, TimerIdx, Interval, Data) ->
+-spec start_timer(atom(), integer(), integer(), #tx_state{}) -> #tx_state{}.
+start_timer(TimerName, TimerIdx, Interval, TxState) ->
     Timer = gen_fsm:start_timer(Interval, {TimerName, Interval}),
-    setelement(TimerIdx, Data, Timer).
+    setelement(TimerIdx, TxState, Timer).
 
--spec send_ack(#sip_message{}, #data{}) -> #data{}.
-send_ack(Response, Data) ->
-    ACK = sip_message:create_ack(Data#data.request, Response),
-    send_request(ACK, Data).
+-spec send_ack(#sip_message{}, #tx_state{}) -> #tx_state{}.
+send_ack(Response, TxState) ->
+    ACK = sip_message:create_ack(TxState#tx_state.request, Response),
+    send_request(ACK, TxState).
 
--spec send_request(#sip_message{}, #data{}) -> #data{}.
-send_request(Msg, Data) ->
+-spec send_request(#sip_message{}, #tx_state{}) -> #tx_state{}.
+send_request(Msg, TxState) ->
     % Send request to the given destination address
-    sip_transport:send_request(Data#data.to, Msg, []),
-    Data.
+    sip_transport:send_request(TxState#tx_state.to, Msg, []),
+    TxState.
 
--spec send_response(#sip_message{}, #data{}) -> #data{}.
-send_response(Msg, Data) ->
+-spec send_response(#sip_message{}, #tx_state{}) -> #tx_state{}.
+send_response(Msg, TxState) ->
     % Send response using the connection of original request
-    sip_transport:send_response(Data#data.connection, Msg),
-    Data.
+    sip_transport:send_response(TxState#tx_state.connection, Msg),
+    TxState.
 
--spec pass_to_tu(#sip_message{}, #data{}) -> term().
-pass_to_tu(Msg, Data) ->
+-spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
+pass_to_tu(Msg, TxState) ->
     {Kind, _, _} = Msg#sip_message.start_line,
-    TU = Data#data.tx_user,
-    TU ! {tx, Data#data.tx_key, {Kind, Msg}},
-    Data.
+    TU = TxState#tx_state.tx_user,
+    TU ! {tx, TxState#tx_state.tx_key, {Kind, Msg}},
+    TxState.
 
 %% @private
--spec handle_event(term(), atom(), #data{}) ->
-          {stop, term(), #data{}}.
-handle_event(Event, _State, Data) ->
-    {stop, {unexpected, Event}, Data}.
+-spec handle_event(term(), atom(), #tx_state{}) ->
+          {stop, term(), #tx_state{}}.
+handle_event(Event, _State, TxState) ->
+    {stop, {unexpected, Event}, TxState}.
 
 %% @private
--spec handle_sync_event(term(), term(), atom(), #data{}) ->
-          {stop, term(), term(), #data{}}.
-handle_sync_event(Event, _From, _State, Data) ->
+-spec handle_sync_event(term(), term(), atom(), #tx_state{}) ->
+          {stop, term(), term(), #tx_state{}}.
+handle_sync_event(Event, _From, _State, TxState) ->
     Reason = {unexpected, Event},
-    {stop, Reason, Reason, Data}.
+    {stop, Reason, Reason, TxState}.
 
 %% @private
--spec handle_info(term(), atom(), #data{}) ->
-          {stop, term(), #data{}}.
-handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, Data) ->
+-spec handle_info(term(), atom(), #tx_state{}) ->
+          {stop, term(), #tx_state{}}.
+handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, TxState) ->
     % we mostly ignore when TU is down, it is only handled in server
     % transactions when response from TU is expected
-    {next_state, State, Data};
-handle_info(Info, _State, Data) ->
-    {stop, {unexpected, Info}, Data}.
+    {next_state, State, TxState};
+handle_info(Info, _State, TxState) ->
+    {stop, {unexpected, Info}, TxState}.
 
 %% @doc
 %% Inform the transaction user about transition to 'TERMINATED' state.
 %% @end
--spec terminate(term(), atom(), #data{}) -> ok.
-terminate(Reason, _State, Data) ->
-    TU = Data#data.tx_user,
-    TU ! {tx, Data#data.tx_key, {terminated, Reason}},
+-spec terminate(term(), atom(), #tx_state{}) -> ok.
+terminate(Reason, _State, TxState) ->
+    TU = TxState#tx_state.tx_user,
+    TU ! {tx, TxState#tx_state.tx_key, {terminated, Reason}},
     ok.
 
 %% @private
--spec code_change(term(), atom(), #data{}, term()) -> {ok, atom(), #data{}}.
-code_change(_OldVsn, State, Data, _Extra) ->
-    {ok, State, Data}.
+-spec code_change(term(), atom(), #tx_state{}, term()) -> {ok, atom(), #tx_state{}}.
+code_change(_OldVsn, State, TxState, _Extra) ->
+    {ok, State, TxState}.
 

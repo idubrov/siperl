@@ -27,101 +27,101 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init(#params{}) -> {ok, atom(), #data{}}.
+-spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
 init(Params) ->
-    Data = ?INIT(Params),
+    TxState = ?INIT(Params),
 
     % start Timer E only for unreliable transports
-    IsReliable = Data#data.reliable,
-    Data2 = case IsReliable of
-                true -> Data;
-                false -> ?START(timerE, Data#data.t1, Data)
+    IsReliable = TxState#tx_state.reliable,
+    TxState2 = case IsReliable of
+                true -> TxState;
+                false -> ?START(timerE, TxState#tx_state.t1, TxState)
             end,
     % timer F
-    Data3 = ?START(timerF, 64 * Data#data.t1, Data2),
+    TxState3 = ?START(timerF, 64 * TxState#tx_state.t1, TxState2),
     % send request
-    Data4 = ?REQUEST(Data3),
-    {ok, 'TRYING', Data4}.
+    TxState4 = ?REQUEST(TxState3),
+    {ok, 'TRYING', TxState4}.
 
 %% @doc
 %% Handle retransmission timer (Timer E).
 %% @end
--spec 'TRYING'(term(), #data{}) -> term().
-'TRYING'({timeout, _Ref, {timerE, Interval}}, Data) ->
-    Data2 = ?REQUEST(Data),
+-spec 'TRYING'(term(), #tx_state{}) -> term().
+'TRYING'({timeout, _Ref, {timerE, Interval}}, TxState) ->
+    TxState2 = ?REQUEST(TxState),
     % request is retransmitted with intervals that double after each transmission
-    NewInterval = min(2 * Interval, Data2#data.t2),
-    Data3 = ?START(timerE, NewInterval, Data2),
-    {next_state, 'TRYING', Data3};
+    NewInterval = min(2 * Interval, TxState2#tx_state.t2),
+    TxState3 = ?START(timerE, NewInterval, TxState2),
+    {next_state, 'TRYING', TxState3};
 
 %% @doc
 %% Transaction timed out.
 %% @end
-'TRYING'({timeout, _Ref, {timerF, _}}, Data) ->
-    {stop, timeout, Data}.
+'TRYING'({timeout, _Ref, {timerF, _}}, TxState) ->
+    {stop, timeout, TxState}.
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'TRYING' and 'PROCEEDING'
 %% states as they are similar.
 %% @end
--spec 'TRYING'(term(), term(), #data{}) -> term().
-'TRYING'({response, Status, Response}, _From, Data)
+-spec 'TRYING'(term(), term(), #tx_state{}) -> term().
+'TRYING'({response, Status, Response}, _From, TxState)
   when Status >= 100, Status =< 199 ->
     %% Provisional response, transition to PROCEEDING state.
 
-    ?TU(Response, Data),
-    {reply, ok, 'PROCEEDING', Data};
+    ?TU(Response, TxState),
+    {reply, ok, 'PROCEEDING', TxState};
 
-'TRYING'({response, Status, Response}, _From, Data)
+'TRYING'({response, Status, Response}, _From, TxState)
   when Status >= 200, Status =< 699 ->
     %% Final response, transition to COMPLETED state.
 
-    ?TU(Response, Data),
+    ?TU(Response, TxState),
 
     % cancel the timers E and F
-    Data2 = ?CANCEL(timerE, Data),
-    Data3 = ?CANCEL(timerF, Data2),
+    TxState2 = ?CANCEL(timerE, TxState),
+    TxState3 = ?CANCEL(timerF, TxState2),
 
     % start timer K
-    case Data3#data.reliable of
+    case TxState3#tx_state.reliable of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, Data3};
+            {stop, normal, ok, TxState3};
         false ->
-            Data4 = ?START(timerK, Data3#data.t4, Data3),
-            {reply, ok, 'COMPLETED', Data4}
+            TxState4 = ?START(timerK, TxState3#tx_state.t4, TxState3),
+            {reply, ok, 'COMPLETED', TxState4}
     end.
 
 %% @doc
 %% In 'PROCEEDING' state, act the same way as in 'TRYING' state.
 %% @end
--spec 'PROCEEDING'(term(), term(), #data{}) -> term().
-'PROCEEDING'({response, Status, Msg}, From, Data) ->
-    'TRYING'({response, Status, Msg}, From, Data).
+-spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
+'PROCEEDING'({response, Status, Msg}, From, TxState) ->
+    'TRYING'({response, Status, Msg}, From, TxState).
 
--spec 'PROCEEDING'(term(), #data{}) -> term().
-'PROCEEDING'({timeout, _Ref, {timerE, _Interval}}, Data) ->
-    Data2 = ?REQUEST(Data),
-    Data3 = ?START(timerE, Data2#data.t2, Data2),
-    {next_state, 'PROCEEDING', Data3};
+-spec 'PROCEEDING'(term(), #tx_state{}) -> term().
+'PROCEEDING'({timeout, _Ref, {timerE, _Interval}}, TxState) ->
+    TxState2 = ?REQUEST(TxState),
+    TxState3 = ?START(timerE, TxState2#tx_state.t2, TxState2),
+    {next_state, 'PROCEEDING', TxState3};
 
 %% @doc
 %% Transaction timed out.
 %% @end
-'PROCEEDING'({timeout, _Ref, {timerF, _}}, Data) ->
-    {stop, timeout, Data}.
+'PROCEEDING'({timeout, _Ref, {timerF, _}}, TxState) ->
+    {stop, timeout, TxState}.
 
 %% @doc
 %% Buffer additional response retransmissions.
 %% @end
--spec 'COMPLETED'(term(), term(), #data{}) -> term().
-'COMPLETED'({response, _Status, _Response}, _From, Data) ->
-    {reply, ok, 'COMPLETED', Data}.
+-spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
+'COMPLETED'({response, _Status, _Response}, _From, TxState) ->
+    {reply, ok, 'COMPLETED', TxState}.
 
 %% @doc
 %% When Timer K fires while in 'COMPLETED' state, transition to the 'TERMINATED'
 %% state.
 %% @end
--spec 'COMPLETED'(term(), #data{}) -> term().
-'COMPLETED'({timeout, _Ref, {timerK, _}}, Data) ->
-    {stop, normal, Data}.
+-spec 'COMPLETED'(term(), #tx_state{}) -> term().
+'COMPLETED'({timeout, _Ref, {timerK, _}}, TxState) ->
+    {stop, normal, TxState}.

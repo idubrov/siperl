@@ -27,55 +27,55 @@
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init(#params{}) -> {ok, atom(), #data{}}.
+-spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
 init(Params) ->
-    Data = ?INIT(Params),
+    TxState = ?INIT(Params),
 
     % notify self to send provisional response
     % (not to block initialization)
     self() ! provisional,
 
     % The request MUST be passed to the TU.
-    Data2 = ?TU(Data#data.request, Data),
-    {ok, 'PROCEEDING', Data2}.
+    TxState2 = ?TU(TxState#tx_state.request, TxState),
+    {ok, 'PROCEEDING', TxState2}.
 
--spec handle_info(term(), atom(), #data{}) ->
-          {stop, term(), #data{}}.
+-spec handle_info(term(), atom(), #tx_state{}) ->
+          {stop, term(), #tx_state{}}.
 %% @doc
 %% Handle case when we expect response from the TU, but it goes down
 %% @end
-handle_info({'DOWN', _MonitorRef, process, Pid, Info}, 'PROCEEDING', Data) ->
-    {stop, {tu_down, Pid, Info}, Data};
+handle_info({'DOWN', _MonitorRef, process, Pid, Info}, 'PROCEEDING', TxState) ->
+    {stop, {tu_down, Pid, Info}, TxState};
 
 %% @doc
 %% Send provisional response.
 %% @end
-handle_info(provisional, _State, Data) ->
+handle_info(provisional, _State, TxState) ->
     % send provisional response
-    Trying = sip_message:create_response(Data#data.request, 100, <<"Trying">>, undefined),
-    Data2 = Data#data{provisional = Trying},
+    Trying = sip_message:create_response(TxState#tx_state.request, 100, <<"Trying">>, undefined),
+    TxState2 = TxState#tx_state{provisional = Trying},
 
-    Data3 = ?PROVISIONAL(Data2),
-    {next_state, 'PROCEEDING', Data3};
+    TxState3 = ?PROVISIONAL(TxState2),
+    {next_state, 'PROCEEDING', TxState3};
 
 %% @doc
 %% Let the base module handle the info.
 %% @end
-handle_info(Info, State, Data) ->
-    sip_transaction_base:handle_info(Info, State, Data).
+handle_info(Info, State, TxState) ->
+    sip_transaction_base:handle_info(Info, State, TxState).
 
--spec 'PROCEEDING'(term(), term(), #data{}) -> term().
+-spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 %% @doc
 %% If a request retransmission is received while in the "Proceeding" state, the
 %% most recent provisional response that was received from the TU MUST be passed
 %% to the transport layer for retransmission.
 %% @end
-'PROCEEDING'({request, _Method, _Request}, _From, Data) ->
+'PROCEEDING'({request, _Method, _Request}, _From, TxState) ->
 
     % Note: we do not compare the request with original one, assuming it must
     % be the same one.
-    Data2 = ?PROVISIONAL(Data),
-    {reply, ok, 'PROCEEDING', Data2};
+    TxState2 = ?PROVISIONAL(TxState),
+    {reply, ok, 'PROCEEDING', TxState2};
 
 %% @doc
 %% The TU passes any number of provisional responses to the server
@@ -83,12 +83,12 @@ handle_info(Info, State, Data) ->
 %% "Proceeding" state, each of these MUST be passed to the transport
 %% layer for transmission.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data)
+'PROCEEDING'({response, Status, Response}, _From, TxState)
   when Status >= 100, Status =< 199 ->
 
-    Data2 = Data#data{provisional = Response},
-    Data3 = ?PROVISIONAL(Data2),
-    {reply, ok, 'PROCEEDING', Data3};
+    TxState2 = TxState#tx_state{provisional = Response},
+    TxState3 = ?PROVISIONAL(TxState2),
+    {reply, ok, 'PROCEEDING', TxState3};
 
 %% @doc
 %% If, while in the "Proceeding" state, the TU passes a 2xx response to
@@ -98,12 +98,12 @@ handle_info(Info, State, Data) ->
 %% responses are handled by the TU.  The server transaction MUST then
 %% transition to the "Terminated" state.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data)
+'PROCEEDING'({response, Status, Response}, _From, TxState)
   when Status >= 200, Status =< 299 ->
 
-    Data2 = Data#data{response = Response},
-    Data3 = ?RESPONSE(Data2),
-    {stop, normal, ok, Data3};
+    TxState2 = TxState#tx_state{response = Response},
+    TxState3 = ?RESPONSE(TxState2),
+    {stop, normal, ok, TxState3};
 
 %% @doc
 %% While in the "Proceeding" state, if the TU passes a response with
@@ -117,33 +117,33 @@ handle_info(Info, State, Data) ->
 %% 64*T1 seconds for all transports.  Timer H determines when the server
 %% transaction abandons retransmitting the response.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, Data)
+'PROCEEDING'({response, Status, Response}, _From, TxState)
   when Status >= 300, Status =< 699 ->
 
-    Data2 = Data#data{response = Response},
-    Data3 = ?RESPONSE(Data2),
+    TxState2 = TxState#tx_state{response = Response},
+    TxState3 = ?RESPONSE(TxState2),
 
     % start Timer G only for unreliable transports
-    IsReliable = Data3#data.reliable,
-    Data4 = case IsReliable of
-                true -> Data3;
-                false -> ?START(timerG, Data#data.t1, Data3)
+    IsReliable = TxState3#tx_state.reliable,
+    TxState4 = case IsReliable of
+                true -> TxState3;
+                false -> ?START(timerG, TxState#tx_state.t1, TxState3)
             end,
     % start Timer H
-    Data5 = ?START(timerH, 64 * Data#data.t1, Data4),
-    {reply, ok, 'COMPLETED', Data5}.
+    TxState5 = ?START(timerH, 64 * TxState#tx_state.t1, TxState4),
+    {reply, ok, 'COMPLETED', TxState5}.
 
 %% @doc
 %% If timer G fires, the response is passed to the transport layer once
 %% more for retransmission, and timer G is set to fire in MIN(2*T1, T2)
 %% seconds.
 %% @end
--spec 'COMPLETED'(term(), #data{}) -> term().
-'COMPLETED'({timeout, _Ref, {timerG, Interval}}, Data) ->
-    Data2 = ?RESPONSE(Data),
-    NewInterval = min(2 * Interval, Data2#data.t2),
-    Data3 = ?START(timerG, NewInterval, Data2),
-    {next_state, 'COMPLETED', Data3};
+-spec 'COMPLETED'(term(), #tx_state{}) -> term().
+'COMPLETED'({timeout, _Ref, {timerG, Interval}}, TxState) ->
+    TxState2 = ?RESPONSE(TxState),
+    NewInterval = min(2 * Interval, TxState2#tx_state.t2),
+    TxState3 = ?START(timerG, NewInterval, TxState2),
+    {next_state, 'COMPLETED', TxState3};
 
 %% @doc
 %% If timer H fires while in the "Completed" state, it implies that the
@@ -151,8 +151,8 @@ handle_info(Info, State, Data) ->
 %% transition to the "Terminated" state, and MUST indicate to the TU
 %% that a transaction failure has occurred.
 %% @end
-'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, Data) ->
-    {stop, timeout, Data}.
+'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, TxState) ->
+    {stop, timeout, TxState}.
 
 %% @doc
 %%  If an ACK is received while the server transaction is in the
@@ -160,19 +160,19 @@ handle_info(Info, State, Data) ->
 %% "Confirmed" state.  As Timer G is ignored in this state, any
 %% retransmissions of the response will cease.
 %% @end
--spec 'COMPLETED'(term(), term(), #data{}) -> term().
-'COMPLETED'({request, 'ACK', _Request}, _From, Data) ->
+-spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
+'COMPLETED'({request, 'ACK', _Request}, _From, TxState) ->
     % cancel timerG
-    Data2 = ?CANCEL(timerG, Data),
+    TxState2 = ?CANCEL(timerG, TxState),
 
     % start timer I (only for unreliable)
-    case Data2#data.reliable of
+    case TxState2#tx_state.reliable of
         true ->
             % skip CONFIRMED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, Data2};
+            {stop, normal, ok, TxState2};
         false ->
-            Data3 = ?START(timerI, Data#data.t4, Data2),
-            {reply, ok, 'CONFIRMED', Data3}
+            TxState3 = ?START(timerI, TxState#tx_state.t4, TxState2),
+            {reply, ok, 'CONFIRMED', TxState3}
     end;
 
 %% @doc
@@ -180,9 +180,9 @@ handle_info(Info, State, Data) ->
 %% is received, the server SHOULD pass the response to the transport for
 %% retransmission.
 %% @end
-'COMPLETED'({request, _Method, _Request}, _From, Data) ->
-    Data2 = ?RESPONSE(Data),
-    {reply, ok, 'COMPLETED', Data2}.
+'COMPLETED'({request, _Method, _Request}, _From, TxState) ->
+    TxState2 = ?RESPONSE(TxState),
+    {reply, ok, 'COMPLETED', TxState2}.
 
 %% @doc
 %% The purpose of the "Confirmed" state is to absorb any additional ACK
@@ -190,13 +190,13 @@ handle_info(Info, State, Data) ->
 %% response.
 %% state.
 %% @end
--spec 'CONFIRMED'(term(), #data{}) -> term().
-'CONFIRMED'({timeout, _Ref, {timerI, _}}, Data) ->
-    {stop, normal, Data}.
+-spec 'CONFIRMED'(term(), #tx_state{}) -> term().
+'CONFIRMED'({timeout, _Ref, {timerI, _}}, TxState) ->
+    {stop, normal, TxState}.
 
 %% @doc
 %% Absorb any additional ACK messages
 %% @end
--spec 'CONFIRMED'(term(), term(), #data{}) -> term().
-'CONFIRMED'({request, _Method, _Response}, _From, Data) ->
-    {reply, ok, 'CONFIRMED', Data}.
+-spec 'CONFIRMED'(term(), term(), #tx_state{}) -> term().
+'CONFIRMED'({request, _Method, _Response}, _From, TxState) ->
+    {reply, ok, 'CONFIRMED', TxState}.

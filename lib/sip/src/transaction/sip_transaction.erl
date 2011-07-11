@@ -43,11 +43,11 @@ start_client_tx(TU, To, Request)
 
     Key = tx_key(client, Request),
     Module = tx_module(client, Request),
-    Params = #params{to = To,
-                     key = Key,
-                     tx_user = TU,
-                     request = Request},
-    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    TxState = #tx_state{to = To,
+                        tx_key = Key,
+                        tx_user = TU,
+                        request = Request},
+    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
 %% @doc
@@ -60,11 +60,11 @@ start_server_tx(TU, Connection, Request)
 
     Key = tx_key(server, Request),
     Module = tx_module(server, Request),
-    Params = #params{connection = Connection,
-                     key = Key,
-                     tx_user = TU,
-                     request = Request},
-    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, Params),
+    TxState = #tx_state{connection = Connection,
+                        tx_key = Key,
+                        tx_user = TU,
+                        request = Request},
+    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
 -spec list_tx() -> [tx_key()].
