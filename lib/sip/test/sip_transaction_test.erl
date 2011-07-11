@@ -224,7 +224,7 @@ client_invite_timeout_calling(Transport)->
     timer:sleep(32000),
 
     ?assertReceive("Expect tx to terminate after timeout",
-                   {tx, TxKey, {terminated, timeout}}),
+                   {tx, TxKey, {terminated, {timeout, timerB}}}),
 
     case sip_transport:is_reliable(Transport) of
         true ->
@@ -262,7 +262,7 @@ client_invite_timeout_proceeding(Transport)->
     timer:sleep(32000),
 
     ?assertReceive("Expect tx to terminate after timeout",
-                   {tx, TxKey, {terminated, timeout}}),
+                   {tx, TxKey, {terminated, {timeout, timerB}}}),
 
     ?assertReceiveNot("Message queue is empty", _),
     ok.
@@ -371,7 +371,7 @@ client_timeout_trying(Transport)->
     timer:sleep(32000),
 
     ?assertReceive("Expect tx to terminate after timeout",
-                   {tx, TxKey, {terminated, timeout}}),
+                   {tx, TxKey, {terminated, {timeout, timerF}}}),
 
     case sip_transport:is_reliable(Transport) of
         true ->
@@ -409,7 +409,7 @@ client_timeout_proceeding(Transport)->
     timer:sleep(32000),
 
     ?assertReceive("Expect tx to terminate after timeout",
-                   {tx, TxKey, {terminated, timeout}}),
+                   {tx, TxKey, {terminated, {timeout, timerF}}}),
 
     case sip_transport:is_reliable(Transport) of
         true ->
@@ -564,7 +564,7 @@ server_invite_timeout(Transport) ->
     timer:sleep(32000),
 
     ?assertReceive("Expect tx to terminate after timeout final response",
-                   {tx, TxKey, {terminated, timeout}}),
+                   {tx, TxKey, {terminated, {timeout, timerH}}}),
     case IsReliable of
         true -> ?assertReceiveNot("Message queue is empty", _);
         false -> ok % we have lots of message retransmissions in message queue

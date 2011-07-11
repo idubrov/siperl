@@ -39,3 +39,4 @@
 -define(T1, sip_config:t1()).
 -define(T2, sip_config:t2()).
 -define(T4, sip_config:t4()).
+-define(TU_TIMEOUT, 1000). % Timeout when waiting for TU

@@ -57,7 +57,7 @@ init(Params) ->
 %% Transaction timed out.
 %% @end
 'CALLING'({timeout, _Ref, {timerB, _}}, TxState) ->
-    {stop, timeout, TxState}.
+    {stop, {timeout, timerB}, TxState}.
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'CALLING' and 'PROCEEDING'
@@ -119,7 +119,7 @@ init(Params) ->
 %% @end
 -spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 'PROCEEDING'({timeout, _Ref, {timerB, _}}, TxState) ->
-    {stop, timeout, TxState}.
+    {stop, {timeout, timerB}, TxState}.
 
 %% @doc
 %% In 'COMPLETED' state transaction re-sends ACK without passing the response

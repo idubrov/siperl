@@ -152,7 +152,7 @@ handle_info(Info, State, TxState) ->
 %% that a transaction failure has occurred.
 %% @end
 'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, TxState) ->
-    {stop, timeout, TxState}.
+    {stop, {timeout, timerH}, TxState}.
 
 %% @doc
 %%  If an ACK is received while the server transaction is in the

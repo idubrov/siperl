@@ -37,7 +37,12 @@ init(#tx_state{request = Request, tx_key = Key, tx_user = TxUser} = TxState) ->
     gproc:add_local_name({tx, Key}),
 
     % start monitoring TU user so we terminate if it does
-    monitor(process, TxUser),
+    % FIXME: mechanism for detecting gproc-registered TUs failures
+    case TxUser of
+        Pid when is_pid(Pid) ->
+            monitor(process, TxUser);
+        _ -> ok
+    end,
     TxState#tx_state{reliable = Reliable}.
 
 -spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
@@ -77,8 +82,7 @@ send_response(Msg, TxState) ->
 -spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
 pass_to_tu(Msg, TxState) ->
     {Kind, _, _} = Msg#sip_message.start_line,
-    TU = TxState#tx_state.tx_user,
-    TU ! {tx, TxState#tx_state.tx_key, {Kind, Msg}},
+    notify_tu(TxState, {tx, TxState#tx_state.tx_key, {Kind, Msg}}),
     TxState.
 
 %% @private
@@ -109,12 +113,22 @@ handle_info(Info, _State, TxState) ->
 %% @end
 -spec terminate(term(), atom(), #tx_state{}) -> ok.
 terminate(Reason, _State, TxState) ->
-    TU = TxState#tx_state.tx_user,
-    TU ! {tx, TxState#tx_state.tx_key, {terminated, Reason}},
+    notify_tu(TxState, {tx, TxState#tx_state.tx_key, {terminated, Reason}}),
     ok.
 
 %% @private
 -spec code_change(term(), atom(), #tx_state{}, term()) -> {ok, atom(), #tx_state{}}.
 code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
+
+notify_tu(TxState, Msg) ->
+    Pid = case TxState#tx_state.tx_user of
+              P when is_pid(P) -> P;
+              % Name must be gproc-registered name
+              Name ->
+                  % Wait for TU (in case of TU restart)
+                  {P, _} = gproc:await({n, l, Name}, ?TU_TIMEOUT),
+                  P
+          end,
+    Pid ! Msg.
 

@@ -35,10 +35,9 @@
 %% @doc
 %% Start new client transaction.
 %% @end
--spec start_client_tx(pid(), #sip_destination{}, #sip_message{}) -> {ok, tx_key()}.
+-spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, tx_key()}.
 start_client_tx(TU, To, Request)
-  when is_pid(TU),
-       is_record(To, sip_destination),
+  when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
     Key = tx_key(client, Request),
@@ -53,10 +52,9 @@ start_client_tx(TU, To, Request)
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(pid(), sip_transport:connection(), #sip_message{}) -> {ok, tx_key()}.
+-spec start_server_tx(pid() | term(), sip_transport:connection(), #sip_message{}) -> {ok, tx_key()}.
 start_server_tx(TU, Connection, Request)
-  when is_pid(TU),
-       is_record(Request, sip_message) ->
+  when is_record(Request, sip_message) ->
 
     Key = tx_key(server, Request),
     Module = tx_module(server, Request),
