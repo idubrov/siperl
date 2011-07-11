@@ -146,7 +146,7 @@ tx_key(server, Request) ->
              end,
     case sip_headers:top_via_branch(Headers) of
         % Magic cookie
-        <<"z9hG4bK", _/binary>> = Branch ->
+        <<?MAGIC_COOKIE, _/binary>> = Branch ->
             {ok, Via} = sip_headers:top_header('via', Headers),
             SentBy = Via#sip_hdr_via.sent_by,
             {server, SentBy, Branch, Method};

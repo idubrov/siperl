@@ -19,7 +19,7 @@
 %%-----------------------------------------------------------------
 %% Extract test process pid from the top branch
 test_pid(Msg) ->
-    <<"z9hG4bK_", Bin/binary>> = sip_headers:top_via_branch(Msg#sip_message.headers),
+    <<?MAGIC_COOKIE, Bin/binary>> = sip_headers:top_via_branch(Msg#sip_message.headers),
     Pid = [case C of $A -> $<; $B -> $>; $C -> $.; _ -> C end || <<C>> <= Bin],
     list_to_pid(Pid).
 

@@ -39,3 +39,12 @@
 -record(sip_destination, {address :: inet:ip_address() | inet:hostname(),
                           port = 5060 :: integer(),
                           transport :: atom()}).
+
+%%-----------------------------------------------------------------
+%% SIP transaction layer
+%%-----------------------------------------------------------------
+
+%% @doc
+%% See RFC 3261, 20.42 Via
+%% @end
+-define(MAGIC_COOKIE, "z9hG4bK").
