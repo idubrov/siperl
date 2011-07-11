@@ -11,5 +11,5 @@ Running tests without deps:
 $ rebar eunit skip_deps=true
 
 Hacking the code:
-$ rebare compile & erl -pa lib/sip/ebin
+$ rebare compile & shell/siperl
 
