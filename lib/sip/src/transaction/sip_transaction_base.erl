@@ -122,13 +122,11 @@ code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
 
 notify_tu(TxState, Msg) ->
-    Pid = case TxState#tx_state.tx_user of
-              P when is_pid(P) -> P;
-              % Name must be gproc-registered name
-              Name ->
-                  % Wait for TU (in case of TU restart)
-                  {P, _} = gproc:await({n, l, Name}, ?TU_TIMEOUT),
-                  P
-          end,
-    Pid ! Msg.
+    case TxState#tx_state.tx_user of
+        Pid when is_pid(Pid) -> Pid ! Msg;
+        % Name must be gproc-registered name
+        Name ->
+            gproc:send({n, l, Name}, Msg)
+    end,
+    ok.
 
