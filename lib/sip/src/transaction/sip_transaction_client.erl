@@ -35,10 +35,10 @@ init(Params) ->
     IsReliable = TxState#tx_state.reliable,
     TxState2 = case IsReliable of
                 true -> TxState;
-                false -> ?START(timerE, TxState#tx_state.t1, TxState)
+                false -> ?START(timerE, ?T1, TxState)
             end,
     % timer F
-    TxState3 = ?START(timerF, 64 * TxState#tx_state.t1, TxState2),
+    TxState3 = ?START(timerF, 64 * ?T1, TxState2),
     % send request
     TxState4 = ?REQUEST(TxState3),
     {ok, 'TRYING', TxState4}.
@@ -50,7 +50,7 @@ init(Params) ->
 'TRYING'({timeout, _Ref, {timerE, Interval}}, TxState) ->
     TxState2 = ?REQUEST(TxState),
     % request is retransmitted with intervals that double after each transmission
-    NewInterval = min(2 * Interval, TxState2#tx_state.t2),
+    NewInterval = min(2 * Interval, ?T2),
     TxState3 = ?START(timerE, NewInterval, TxState2),
     {next_state, 'TRYING', TxState3};
 
@@ -88,7 +88,7 @@ init(Params) ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
             {stop, normal, ok, TxState3};
         false ->
-            TxState4 = ?START(timerK, TxState3#tx_state.t4, TxState3),
+            TxState4 = ?START(timerK, ?T4, TxState3),
             {reply, ok, 'COMPLETED', TxState4}
     end.
 
@@ -102,7 +102,7 @@ init(Params) ->
 -spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 'PROCEEDING'({timeout, _Ref, {timerE, _Interval}}, TxState) ->
     TxState2 = ?REQUEST(TxState),
-    TxState3 = ?START(timerE, TxState2#tx_state.t2, TxState2),
+    TxState3 = ?START(timerE, ?T2, TxState2),
     {next_state, 'PROCEEDING', TxState3};
 
 %% @doc

@@ -8,10 +8,7 @@
 
 %% Types
 -record(tx_state, 
-        {t1,
-         t2,
-         t4,
-         tx_key,        % Transaction key
+        {tx_key,        % Transaction key
          tx_user,        % Transaction user
          timerA,        % Timer A, RFC 3261 17.1.1.2
          timerB,        % Timer B, RFC 3261 17.1.1.2
@@ -39,3 +36,6 @@
 -define(PROVISIONAL(TxState), sip_transaction_base:send_response(TxState#tx_state.provisional, TxState)).
 -define(INIT(Opts), sip_transaction_base:init(Opts)).
 -define(TU(Msg, TxState), sip_transaction_base:pass_to_tu(Msg, TxState)).
+-define(T1, sip_config:t1()).
+-define(T2, sip_config:t2()).
+-define(T4, sip_config:t4()).

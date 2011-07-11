@@ -35,10 +35,10 @@ init(Params) ->
     IsReliable = TxState#tx_state.reliable,
     TxState2 = case IsReliable of
                 true -> TxState;
-                false -> ?START(timerA, TxState#tx_state.t1, TxState)
+                false -> ?START(timerA, ?T1, TxState)
             end,
     % timer B
-    TxState3 = ?START(timerB, 64 * TxState2#tx_state.t1, TxState2),
+    TxState3 = ?START(timerB, 64 * ?T1, TxState2),
     % send request
     TxState4 = ?REQUEST(TxState3),
     {ok, 'CALLING', TxState4}.

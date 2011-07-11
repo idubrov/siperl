@@ -131,7 +131,7 @@ handle_info(Info, State, TxState) ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
             {stop, normal, ok, TxState3};
         false ->
-            TxState4 = ?START(timerJ, 64 * TxState3#tx_state.t1, TxState3),
+            TxState4 = ?START(timerJ, 64 * ?T1, TxState3),
             {reply, ok, 'COMPLETED', TxState4}
     end.
 

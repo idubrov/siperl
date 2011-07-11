@@ -127,10 +127,10 @@ handle_info(Info, State, TxState) ->
     IsReliable = TxState3#tx_state.reliable,
     TxState4 = case IsReliable of
                 true -> TxState3;
-                false -> ?START(timerG, TxState#tx_state.t1, TxState3)
+                false -> ?START(timerG, ?T1, TxState3)
             end,
     % start Timer H
-    TxState5 = ?START(timerH, 64 * TxState#tx_state.t1, TxState4),
+    TxState5 = ?START(timerH, 64 * ?T1, TxState4),
     {reply, ok, 'COMPLETED', TxState5}.
 
 %% @doc
@@ -141,7 +141,7 @@ handle_info(Info, State, TxState) ->
 -spec 'COMPLETED'(term(), #tx_state{}) -> term().
 'COMPLETED'({timeout, _Ref, {timerG, Interval}}, TxState) ->
     TxState2 = ?RESPONSE(TxState),
-    NewInterval = min(2 * Interval, TxState2#tx_state.t2),
+    NewInterval = min(2 * Interval, ?T2),
     TxState3 = ?START(timerG, NewInterval, TxState2),
     {next_state, 'COMPLETED', TxState3};
 
@@ -171,7 +171,7 @@ handle_info(Info, State, TxState) ->
             % skip CONFIRMED state and proceed immediately to TERMINATED state
             {stop, normal, ok, TxState2};
         false ->
-            TxState3 = ?START(timerI, TxState#tx_state.t4, TxState2),
+            TxState3 = ?START(timerI, ?T4, TxState2),
             {reply, ok, 'CONFIRMED', TxState3}
     end;
 

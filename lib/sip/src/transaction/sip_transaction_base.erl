@@ -38,11 +38,7 @@ init(#tx_state{request = Request, tx_key = Key, tx_user = TxUser} = TxState) ->
 
     % start monitoring TU user so we terminate if it does
     monitor(process, TxUser),
-    TxState#tx_state{t1 = sip_config:t1(),
-                     t2 = sip_config:t2(),
-                     t4 = sip_config:t4(),
-                     reliable = Reliable
-                    }.
+    TxState#tx_state{reliable = Reliable}.
 
 -spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
 cancel_timer(TimerIdx, TxState)
