@@ -69,14 +69,10 @@ start_server_tx(TU, Connection, Request)
 
 -spec list_tx() -> [tx_key()].
 list_tx() ->
-    gproc:select(all,
+    gproc:select(names,
                  [{{'$1','$2','$3'},
-                   % Match {n, l, {tx, Key}}
-                   [{'andalso',
-                     {'andalso',
-                      {'=:=', n, {element, 1, '$1'}},
-                      {'=:=', l, {element, 2, '$1'}}},
-                     {'=:=', tx, {element, 1, {element, 3, '$1'}}}}],
+                   % Match {n, _, {tx, Key}}
+                   [{'=:=', tx, {element, 1, {element, 3, '$1'}}}],
                    % Return {Key, Pid}
                    [{element, 2, {element, 3, '$1'}}]}]).
 
