@@ -59,12 +59,12 @@ setup() ->
     meck:new(sip_transport, [passthrough]),
     meck:expect(sip_transport, send_request,
                 fun (To, Msg, _Opts) ->
-                         TestPid = sip_test:test_pid(Msg),
+                         TestPid = sip_test:pid_from_branch(Msg),
                          TestPid ! {tp, To, {request, Msg}}
                 end),
     meck:expect(sip_transport, send_response,
                 fun (Connection, Msg) ->
-                         TestPid = sip_test:test_pid(Msg),
+                         TestPid = sip_test:pid_from_branch(Msg),
                          TestPid ! {tp, Connection, {response, Msg}}
                 end),
     {Pid}.

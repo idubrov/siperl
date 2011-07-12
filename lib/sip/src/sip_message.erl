@@ -84,7 +84,7 @@ to_binary(Message) ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
-    Headers = [sip_headers:format_header(Hdr) || Hdr <- Message#sip_message.headers],
+    Headers = << <<(sip_headers:format_header(Name, Value))/binary, "\r\n">> || {Name, Value} <- Message#sip_message.headers>>,
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 
@@ -570,24 +570,26 @@ create_ack_test_() ->
 -spec header_test_() -> list().
 header_test_() ->
 
-    CL = sip_headers:content_length(123),
     CSeq = sip_headers:cseq(110, 'INVITE'),
     Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
-    Fun = fun ('via', Value) when Via1 =:= {'via', [Value]} -> {'via', [NewVal]} = Via1Up, NewVal end,
+    Fun = fun ('via', Value) when Value =:= Via1 -> Via1Up end,
 
-    {'via', [Via1Value]} = Via1,
-
+    ViaMsg =  #sip_message{headers = [{'content-length', 123},
+                                      {'via', [Via1]},
+                                      {'via', [Via2]}]},
+    ViaMsgUp = #sip_message{headers = [{'content-length', 123},
+                                       {'via', [Via1Up]},
+                                       {'via', [Via2]}]},
+    NoViaMsg = #sip_message{headers = [{'content-length', 123}, {'cseq', CSeq}]},
     [% Header lookup functions
-     ?_assertEqual({ok, Via1Value}, top_header('via', [Via1, Via2])),
-     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [Via1, Via2]})),
-     ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [Via2]})),
+     ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
+     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [{'via', [Via1]}, {'via', [Via2]}]})),
+     ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [{'via', [Via2]}]})),
 
      % Header update functions
-     ?_assertEqual(#sip_message{headers = [CL, Via1Up, Via2]},
-                   update_top_header('via', Fun, #sip_message{headers = [CL, Via1, Via2]})),
-     ?_assertEqual(#sip_message{headers = [CL, CSeq]},
-                   replace_top_header('via', Via1Up, #sip_message{headers = [CL, CSeq]}))
+     ?_assertEqual(ViaMsgUp, update_top_header('via', Fun, ViaMsg)),
+     ?_assertEqual(NoViaMsg, replace_top_header('via', Via1Up, NoViaMsg))
      ].
 -endif.

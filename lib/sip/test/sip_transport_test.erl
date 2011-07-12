@@ -58,7 +58,7 @@ setup() ->
     Handle =
         fun (_From, Connection, Msg) ->
                  {Kind, _ , _} = Msg#sip_message.start_line,
-                 TestPid = sip_test:test_pid(Msg),
+                 TestPid = sip_test:pid_from_branch(Msg),
                  TestPid ! {Kind, Connection, Msg},
                  {ok, undefined}
         end,
@@ -86,9 +86,9 @@ send_request_udp({_Transport, UDP, _TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    Via = sip_headers:via(udp, {sip_binary:any_to_binary(Hostname), 15060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests
@@ -103,9 +103,9 @@ send_request_udp_fallback({_Transport, _UDP, TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    Via = sip_headers:via(tcp, {sip_binary:any_to_binary(Hostname), 15060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
@@ -123,9 +123,9 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    Via = sip_headers:via(udp, {sip_binary:any_to_binary(Hostname), 15060}, [{maddr, MAddr}, {ttl, 4}]),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {maddr, MAddr}, {ttl, 4}]),
+    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests (sending to multicast addr)
@@ -145,9 +145,9 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
 
     % send with updated via
     {ok, Hostname} = inet:gethostname(),
-    Via = sip_headers:via(udp, {sip_binary:any_to_binary(Hostname), 15060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    Response2 = sip_message:replace_top_header('via', Via2, Response),
+    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Response2 = sip_message:replace_top_header('via', Via, Response),
     ResponseBin = sip_message:to_binary(Response2),
 
     % RFC 3261, 18.1.2: Receiving Responses
@@ -161,72 +161,68 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
     end.
 
 receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
-    Request = sip_test:invite(udp),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
-    {'via', [Via]} = sip_headers:via(udp, {<<"incorrect-sent-by">>, 35060}, []),
+    Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>, undefined),
+    Via = sip_headers:via(udp, {<<"incorrect-sent-by">>, 35060}, [{branch, sip_test:branch_from_pid()}]),
     WrongResponse = sip_message:replace_top_header('via', Via, Response),
 
     % RFC 3261, 18.1.2: Receiving Responses (wrong sent-by, should be discarded)
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(WrongResponse)),
     receive
-        {request, _Conn2, _Msg2} -> ?fail("Request is not expected here");
-        {response, _Conn2, _Msg2} -> ?fail("Response must be discarded (wrong sent-by)")
+        {request, _Conn, _Msg} -> ?fail("Request is not expected here");
+        {response, _Conn, _Msg} -> ?fail("Response must be discarded (wrong sent-by)")
         after ?TIMEOUT -> ok
     end.
 
 receive_request_udp({_Transport, UDP, _TCP}) ->
-    Request = sip_test:invite(udp),
-    Via = sip_headers:via(udp, {<<"127.0.0.1">>, 25060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {<<"127.0.0.1">>, 25060},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
     % RFC 3261, 18.2.1: Receiving Requests
-    gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request2)),
+    gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request)),
     receive
         {request, _Conn, Msg} ->
-            ?assertEqual(Request2, sip_message:parse_whole(Msg));
+            ?assertEqual(Request, sip_message:parse_whole(Msg));
 
         {response, _Conn, _Msg} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
 receive_request_udp2({_Transport, UDP, _TCP}) ->
-    Request = sip_test:invite(udp),
-    Via = sip_headers:via(udp, {<<"localhost">>, 25060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via),
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {<<"localhost">>, 25060},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
     % RFC 3261, 18.2.1: Receiving Requests, check received is added when sent-by is hostname
-    gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request2)),
+    gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request)),
 
     receive
-        {request, _Conn2, Msg2} ->
-            ExpectedVia = sip_headers:via(udp, {<<"localhost">>, 25060}, [{received, <<"127.0.0.1">>}]),
-            {'via', [ExpectedVia2]} = sip_test:with_test_branch(ExpectedVia),
-            ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia2, Request2),
-            ?assertEqual(ExpectedRequest, sip_message:parse_whole(Msg2));
+        {request, _Conn, Msg} ->
+            ExpectedVia = sip_headers:via(udp, {<<"localhost">>, 25060}, [{branch, sip_test:branch_from_pid()},
+                                                                          {received, <<"127.0.0.1">>}]),
+            ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia, Request),
+            ?assertEqual(ExpectedRequest, sip_message:parse_whole(Msg));
 
-        {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
+        {response, _Conn, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
 send_response_tcp({_Transport, _UDP, _TCP}) ->
-    Request = sip_test:invite(tcp),
-    Via = sip_headers:via(tcp, {<<"127.0.0.1">>, 25060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via) ,
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {<<"127.0.0.1">>, 25060},
+    Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, same connection)
     {ok, Socket} = gen_tcp:connect("127.0.0.1", 15060,
                                    [inet, binary, {active, false}, {packet, raw}]),
 
-    gen_tcp:send(Socket, sip_message:to_binary(Request2)),
+    gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
         {request, Conn, Msg} ->
-            ?assertEqual(Request2, sip_message:parse_whole(Msg)),
+            ?assertEqual(Request, sip_message:parse_whole(Msg)),
             % Send response
             sip_transport:send_response(Conn, Response),
             {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
@@ -242,50 +238,47 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     ok.
 
 send_response_tcp2({_Transport, _UDP, TCP}) ->
-    Request = sip_test:invite(tcp),
-    Via = sip_headers:via(tcp, {<<"127.0.0.1">>, 25060}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via) ,
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {<<"127.0.0.1">>, 25060},
+    Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, server reopens connection)
-    {ok, Socket2} = gen_tcp:connect("127.0.0.1", 15060,
+    {ok, Socket} = gen_tcp:connect("127.0.0.1", 15060,
                                    [inet, binary, {active, false}, {packet, raw}]),
 
-    gen_tcp:send(Socket2, sip_message:to_binary(Request2)),
+    gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
-        {request, Conn2, Msg2} ->
-            ?assertEqual(Request2, sip_message:parse_whole(Msg2)),
+        {request, Conn, Msg} ->
+            ?assertEqual(Request, sip_message:parse_whole(Msg)),
             % Close connection
-            gen_tcp:close(Socket2),
+            gen_tcp:close(Socket),
             timer:sleep(?TIMEOUT),
             % Send response
-            sip_transport:send_response(Conn2, Response),
+            sip_transport:send_response(Conn, Response),
 
             % Server should retry by opening connection to received:sent-by-port
             {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
-            {ok, ActualResponse2} = gen_tcp:recv(RecvSocket, size(ResponseBin), ?TIMEOUT),
-            ?assertEqual(ActualResponse2, ResponseBin),
+            {ok, ActualResponse} = gen_tcp:recv(RecvSocket, size(ResponseBin), ?TIMEOUT),
+            ?assertEqual(ActualResponse, ResponseBin),
             gen_tcp:close(RecvSocket);
 
         {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
 
-    gen_tcp:close(Socket2),
+    gen_tcp:close(Socket),
     ok.
 
 send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     MAddr = {239, 0, 0, 100},
+    SentBy = {<<"127.0.0.1">>, 25060},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {'maddr', MAddr}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Request = sip_test:invite(udp),
-    Via = sip_headers:via(udp, {<<"127.0.0.1">>, 25060}, [{'maddr', MAddr}]),
-    {'via', [Via2]} = sip_test:with_test_branch(Via) ,
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
-
-    Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to maddr)
@@ -314,12 +307,11 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     ok.
 
 send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
-    Request = sip_test:invite(udp),
-    Via = sip_headers:via(udp, {<<"127.0.0.1">>, undefined}, []),
-    {'via', [Via2]} = sip_test:with_test_branch(Via) ,
-    Request2 = sip_message:replace_top_header('via', Via2, Request),
+    SentBy = {<<"127.0.0.1">>, undefined},
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
+    Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to sent-by and default port)
