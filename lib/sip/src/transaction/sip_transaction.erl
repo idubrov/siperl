@@ -41,8 +41,7 @@ start_client_tx(TU, To, Request)
        is_record(Request, sip_message) ->
 
     % Add generated unique branch
-    Headers = sip_headers:update_top_header('via', fun generate_branch/2, Request#sip_message.headers),
-    Request2 = Request#sip_message{headers = Headers},
+    Request2 = sip_message:update_top_header('via', fun generate_branch/2, Request),
 
     % Transport reliability is from To: header
     % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
@@ -205,16 +204,15 @@ tx_send(Key, Msg) when is_record(Msg, sip_message) ->
 %% @doc
 %% Generate unique branch parameter for top Via header value, if not already present.
 %% @end
-generate_branch('via', [Via | Rest]) ->
-    Via2 = case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
-               {branch, _} -> Via;
+generate_branch('via', Via) ->
+    case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
+        {branch, _} -> Via;
 
-               % Generate unique branch id
-               false ->
-                   % FIXME: Poor man's random id generation
-                   {Random, _} = random:uniform_s(2147483647, now()),
-                   Suffix = sip_binary:from_integer(Random),
-                   Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, <<?MAGIC_COOKIE, $_, Suffix/binary>>}),
-                   Via#sip_hdr_via{params = Params}
-           end,
-    [Via2 | Rest].
+        false ->
+            % Generate unique branch id
+            % FIXME: Poor man's random id generation
+            {Random, _} = random:uniform_s(2147483647, now()),
+            Suffix = sip_binary:from_integer(Random),
+            Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, <<?MAGIC_COOKIE, $_, Suffix/binary>>}),
+            Via#sip_hdr_via{params = Params}
+    end.

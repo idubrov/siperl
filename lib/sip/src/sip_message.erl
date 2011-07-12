@@ -15,6 +15,8 @@
 -export([parse_stream/2, parse_datagram/1, parse_whole/1, normalize/1]).
 -export([request/2, response/2]).
 -export([create_ack/2, create_response/4]).
+-export([validate_request/1]).
+-export([update_top_header/3, replace_top_header/3]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -38,7 +40,8 @@
 %% Exported types
 -type start_line() :: {'request', Method :: sip_headers:method(), RequestURI :: binary()} |
                       {'response', Status :: integer(), Reason :: binary()}.
--export_type([start_line/0]).
+-type message() :: #sip_message{}.
+-export_type([start_line/0, message/0]).
 
 %%-----------------------------------------------------------------
 %% API functions
@@ -82,6 +85,48 @@ to_binary(Message) ->
           end,
     Headers = [sip_headers:format_header(Hdr) || Hdr <- Message#sip_message.headers],
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
+
+
+%% @doc
+%% Update value of top header with given name. If header value is
+%% multi-value, only first element of the list is updated by the
+%% function.
+%% @end
+-spec update_top_header(
+        sip_headers:header_name(),
+        fun((HeaderName :: sip_headers:header_name(), Value :: any()) -> UpdatedValue :: any()),
+        #sip_message{}) -> #sip_message{}.
+update_top_header(HeaderName, Fun, Request) ->
+    Headers = update_header(HeaderName, Fun, Request#sip_message.headers),
+    Request#sip_message{headers = Headers}.
+
+update_header(HeaderName, Fun, [{HeaderName, Value} | Rest]) ->
+    UpdatedValue =
+        case Value of
+            % multi-value header
+            [Top | Rest2] -> [Fun(HeaderName, Top) | Rest2];
+            % single value header
+            _ -> Fun(HeaderName, Value)
+        end,
+    [{HeaderName, UpdatedValue} | Rest];
+update_header(HeaderName, Fun, [Header | Rest]) ->
+    [Header | update_header(HeaderName, Fun, Rest)];
+update_header(_HeaderName, _Fun, []) ->
+    [].
+
+%% @doc
+%% Replace value of top header with given name with provided value. If
+%% header value is multi-value (a list), the first element of the list
+%% is replaced.
+%% @end
+-spec replace_top_header(sip_headers:header_name(), term() | binary(), #sip_message{}) ->
+          #sip_message{}.
+replace_top_header(HeaderName, Value, Message) ->
+    UpdateFun = fun
+                   (_, [_ | Rest]) -> [Value | Rest];
+                   (_, _) -> Value
+                end,
+    update_top_header(HeaderName, UpdateFun, Message).
 
 %% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
@@ -328,6 +373,42 @@ add_tag({Name, Value}, Tag)
     Params = lists:keystore('tag', 1, Value2#sip_hdr_address.params, {'tag', Tag}),
     {Name2, Value2#sip_hdr_address{params = Params}}.
 
+
+%% @doc Validate that request contains all required headers
+%% A valid SIP request formulated by a UAC MUST, at a minimum, contain
+%% the following header fields: To, From, CSeq, Call-ID, Max-Forwards,
+%% and Via; all of these header fields are mandatory in all SIP
+%% requests.
+%% @end
+-spec validate_request(#sip_message{}) -> boolean().
+validate_request(Request) when is_record(Request, sip_message) ->
+    CountFun =
+        fun ({Name, _}, Tuple) ->
+                 % assign tuple index for every header being counted
+                 Idx = case Name of
+                           'to' -> 1;
+                           'from' -> 2;
+                           'cseq' -> 3;
+                           'call-id' -> 4;
+                           'max-forwards' -> 5;
+                           'via' -> 6;
+                           _ -> 0
+                       end,
+                 if
+                     Idx > 0 -> setelement(Idx, Tuple, element(Idx, Tuple) + 1);
+                     true -> Tuple
+                 end
+        end,
+
+    % Count headers
+    Counts = lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Request#sip_message.headers),
+    case Counts of
+        C when C >= {1, 1, 1, 1, 1, 1}, % Each header must be exactly once,
+               C =< {1, 1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
+          -> ok;
+        _ -> {error, {invalid_headers, Counts}}
+    end.
+
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -452,5 +533,20 @@ create_ack_test_() ->
     ACK = #sip_message{start_line = request('ACK', <<"sip:bob@biloxi.com">>), headers = ACKHeaders},
     [
      ?_assertEqual(normalize(ACK), normalize(create_ack(OrigRequest, Response)))
+     ].
+
+
+-spec update_header_test_() -> list().
+update_header_test_() ->
+    CL = sip_headers:content_length(123),
+    CSeq = sip_headers:cseq(110, 'INVITE'),
+    Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, []),
+    Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
+    Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
+    Fun = fun ('via', Value) when Via1 =:= {'via', [Value]} -> {'via', [NewVal]} = Via1Up, NewVal end,
+    [?_assertEqual(#sip_message{headers = [CL, Via1Up, Via2]},
+                   update_top_header('via', Fun, #sip_message{headers = [CL, Via1, Via2]})),
+     ?_assertEqual(#sip_message{headers = [CL, CSeq]},
+                   replace_top_header('via', Via1Up, #sip_message{headers = [CL, CSeq]}))
      ].
 -endif.

@@ -62,18 +62,22 @@ is_reliable(tcp) -> true.
 %% @end
 -spec send_request(#sip_destination{}, #sip_message{}, [term()]) ->
           {ok, connection()} | {error, Reason :: term()}.
-send_request(To, Message, Opts) when is_record(To, sip_destination) ->
+send_request(To, Request, Opts) when is_record(To, sip_destination) ->
+    % Validate request
+    true = sip_message:is_request(Request),
+    ok = sip_message:validate_request(Request),
+
     % Update top Via header
     TTL = proplists:get_value(ttl, Opts, 1),
-    NewMessage = add_via_sentby(Message, To, TTL),
+    Request2 = add_via_sentby(Request, To, TTL),
 
-    case transport_send(To#sip_destination.transport, To, NewMessage) of
+    case transport_send(To#sip_destination.transport, To, Request2) of
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
             error_logger:warning_msg("Message is too big, re-sending using TCP"),
 
             % Change transport
-            send_request(To#sip_destination{transport = tcp}, Message, Opts);
+            send_request(To#sip_destination{transport = tcp}, Request, Opts);
         Result -> Result
      end.
 
@@ -81,16 +85,20 @@ send_request(To, Message, Opts) when is_record(To, sip_destination) ->
 %% Try to send reply by following RFC 3261 18.2.2.
 %% @end
 -spec send_response(connection() | undefined, #sip_message{}) -> {ok, connection()} | {error, Reason :: term()}.
-send_response(undefined, Message) ->
-    To = reply_address(Message),
-    send_response(To, Message);
-send_response(Connection, Message) ->
-    {ok, Via} = sip_headers:top_header('via', Message#sip_message.headers),
+send_response(undefined, Response) ->
+    To = reply_address(Response),
+    send_response(To, Response);
+send_response(Connection, Response) ->
+    % Validate response
+    true = sip_message:is_response(Response),
+
+    % Determine transport to send response with
+    {ok, Via} = sip_headers:top_header('via', Response#sip_message.headers),
     Transport = Via#sip_hdr_via.transport,
-    try transport_send(Transport, Connection, Message)
+    try transport_send(Transport, Connection, Response)
     catch exit:{noproc, _Reason} ->
               % Try to send again to the address in "received" and port in sent-by
-              send_response(undefined, Message)
+              send_response(undefined, Response)
     end.
 
 %%-----------------------------------------------------------------
@@ -147,7 +155,7 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
     % XXX: Only ipv4 for now.
     {ok, To} = inet:getaddr(Addr, inet),
 
-    Fun = fun ('via', [Via | Rest]) ->
+    Fun = fun ('via', Via) ->
                    Params = Via#sip_hdr_via.params,
                    NewParams = case To of
                                    % multicast
@@ -159,13 +167,9 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
 
                                    _Other -> Params
                                end,
-                   NewVia = Via#sip_hdr_via{transport = Transport,
-                                            sent_by = SentBy,
-                                            params = NewParams},
-                   [NewVia | Rest]
+                   #sip_hdr_via{transport = Transport, sent_by = SentBy, params = NewParams}
           end,
-    NewHeaders = sip_headers:update_top_header('via', Fun, Message#sip_message.headers),
-    Message#sip_message{headers = NewHeaders}.
+    sip_message:update_top_header('via', Fun, Message).
 
 -spec check_sent_by(atom(), #sip_message{}) -> true | {Expected :: term(), Actual :: term()}.
 %% Check message sent by matches one inserted by the transport layer
@@ -210,8 +214,7 @@ add_via_received(#sip_destination{address = Src}, Msg) ->
                            [TopVia2|Rest]
                    end
           end,
-    Headers = sip_headers:update_top_header('via', Fun, Msg#sip_message.headers),
-    Msg#sip_message{headers = Headers}.
+    sip_message:update_top_header('via', Fun, Msg).
 
 to_address(List) when is_list(List) ->
     List;

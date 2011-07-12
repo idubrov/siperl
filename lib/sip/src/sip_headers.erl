@@ -10,7 +10,7 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([split_binary/1, update_top_header/3]).
+-export([split_binary/1]).
 -export([parse_header/2, format_header/1]).
 -export([top_header/2, top_via_branch/1]).
 -export([via/3, via/1, cseq/2, content_length/1, from/3, to/3]).
@@ -48,23 +48,6 @@
 split_binary(Headers) when is_binary(Headers) ->
     Lines = binary:split(Headers, <<"\r\n">>, [global]),
     lists:reverse(lists:foldl(fun (Bin, List) -> fold_header(Bin, List) end, [], Lines)).
-
-%% @doc
-%% Update value of the top header with given name
-%% @end
--spec update_top_header(HeaderName :: sip_headers:header_name(),
-                        fun((HeaderName :: sip_headers:header_name(), Value :: any()) -> UpdatedValue :: any()),
-                        [sip_headers:header()]) -> [sip_headers:header()].
-update_top_header(HeaderName, Fun, List) ->
-    update_top_header(HeaderName, Fun, [], List).
-update_top_header(HeaderName, Fun, Unmatched, [{HeaderName, Value} | Tail]) ->
-    Value2 = Fun(HeaderName, Value),
-    lists:reverse([{HeaderName, Value2} | Unmatched]) ++ Tail;
-update_top_header(HeaderName, Fun, Unmatched, [H | Tail]) ->
-    update_top_header(HeaderName, Fun, [H|Unmatched], Tail);
-update_top_header(_HeaderName, _Fun, Unmatched, []) ->
-    % TODO: Nothing is matched -- we probably can return the original list.
-    lists:reverse(Unmatched).
 
 %%-----------------------------------------------------------------
 %% Header parsing/format functions
@@ -110,6 +93,14 @@ parse_header('cseq', Bin) ->
     Sequence = sip_binary:to_integer(SeqBin),
     Method = sip_binary:try_binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
     {'cseq', #sip_hdr_cseq{sequence = Sequence, method = Method}};
+
+%% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
+parse_header('max-forwards', Bin) ->
+    {'max-forwards', sip_binary:to_integer(Bin)};
+
+%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
+parse_header('call-id', Bin) ->
+    {'call-id', Bin};
 
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
@@ -230,6 +221,16 @@ format_header({'cseq', CSeq}) when is_record(CSeq, sip_hdr_cseq) ->
     SequenceBin = sip_binary:from_integer(CSeq#sip_hdr_cseq.sequence),
     MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
     <<"CSeq: ", SequenceBin/binary, " ", MethodBin/binary, "\r\n">>;
+
+%% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
+format_header({'max-forwards', Hops}) when is_binary(Hops) ->
+    <<"Max-Forwards: ", Hops/binary, "\r\n">>;
+format_header({'max-forwards', Hops}) when is_integer(Hops) ->
+    format_header({'max-forwards', sip_binary:from_integer(Hops)});
+
+%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
+format_header({'call-id', CallId}) when is_binary(CallId) ->
+    <<"Call-ID: ", CallId/binary, "\r\n">>;
 
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
@@ -392,6 +393,7 @@ binary_to_header_name(<<"v">>) -> 'via';
 binary_to_header_name(<<"l">>) -> 'content-length';
 binary_to_header_name(<<"f">>) -> 'from';
 binary_to_header_name(<<"t">>) -> 'to';
+binary_to_header_name(<<"i">>) -> 'call-id';
 binary_to_header_name(Bin) ->
     sip_binary:try_binary_to_existing_atom(Bin).
 
@@ -406,8 +408,9 @@ parse_test_() ->
      ?_assertEqual([{'content-length', <<"5">>}],
                    split_binary(<<"Content-Length: 5">>)),
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>}],
-                   split_binary(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\nt: sip:bob@localhost">>)),
+                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
+                    {'call-id', <<"callid">>}],
+                   split_binary(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\nt: sip:bob@localhost\r\ni: callid">>)),
      ?_assertEqual([{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}],
                    split_binary(<<"X-Custom: Nothing\r\nContent-Length: 5">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
@@ -435,6 +438,12 @@ parse_test_() ->
                    format_header({'cseq', #sip_hdr_cseq{sequence=  123453, method = 'INVITE'}})),
      ?_assertEqual(<<"CSeq: 123453 INVITE\r\n">>,
                    format_header({'cseq', <<"123453 INVITE">>})),
+
+     % Max-Forwards
+     ?_assertEqual({'max-forwards', 70},
+                   parse_header('max-forwards', <<"70">>)),
+     ?_assertEqual(<<"Max-Forwards: 70\r\n">>,
+                   format_header({'max-forwards', 70})),
 
      % From/To
      ?_assertEqual(from(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
@@ -484,19 +493,5 @@ parse_test_() ->
      ?_assertEqual(<<"subject: I know you're there, pick up the phone and talk to me!\r\n">>,
         format_header({'subject', <<"I know you're there, pick up the phone and talk to me!">>}))
     ].
-
--spec update_top_test_() -> list().
-update_top_test_() ->
-    CL = content_length(123),
-    CSeq = cseq(110, 'INVITE'),
-    Via1 = via(udp, {<<"127.0.0.1">>, 5060}, []),
-    Via2 = via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
-    Via1Up = via(udp, {<<"localhost">>, 5060}, []),
-    Fun = fun ('via', Value) when Via1 =:= {'via', Value} -> {'via', NewVal} = Via1Up, NewVal end,
-    [?_assertEqual([CL, Via1Up, Via2],
-                   update_top_header('via', Fun, [CL, Via1, Via2])),
-     ?_assertEqual([CL, CSeq],
-                   update_top_header('via', Fun, [CL, CSeq]))
-     ].
 
 -endif.

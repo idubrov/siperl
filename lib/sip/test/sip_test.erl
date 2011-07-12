@@ -26,21 +26,40 @@ test_pid(Msg) ->
 invite(Transport) ->
     request('INVITE', Transport).
 
+%% @doc
 %% Also encodes current process id into the branch id, so it could be restored later
 %% to route message back to the test process
+%% end
 request(Method, Transport) ->
-    Unique = << <<case C of $< -> $A; $> -> $B; $. -> $C; _ -> C end>> || C <- pid_to_list(self())>>,
-    Via = sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, <<?MAGIC_COOKIE, $_, Unique/binary>>}]),
+    ViaTop = with_test_branch(sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [])),
+    Via = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}]),
     CSeq = sip_headers:cseq(232908, Method),
     From = sip_headers:from(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
     To = sip_headers:to(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}]),
+    ContentLength = sip_headers:content_length(6),
 
-    Headers = [CSeq, Via, From, To],
+    % FIXME: Update sip_headers.
+    CallId = {'call-id', <<"a84b4c76e66710">>},
+    MaxForwards = {'max-forwards', 70},
+
+    Headers = [CSeq, ViaTop, Via, From, To, CallId, MaxForwards, ContentLength],
     Msg = #sip_message{start_line = sip_message:request(Method, <<"sip:127.0.0.1/test">>),
                        body = <<"Hello!">>,
                        headers = Headers},
     Msg.
 
+%% @doc
+%% Append branch to the top Via: header. Branch is generated from the process id (which could be restored
+%% from branch by calling {@link sip_test:test_pid/1}.
+%% @end
+with_test_branch({'via', [Via]}) ->
+    Unique = << <<case C of $< -> $A; $> -> $B; $. -> $C; _ -> C end>> || C <- pid_to_list(self())>>,
+    Params = [{branch, <<?MAGIC_COOKIE, $_, Unique/binary>>} | Via#sip_hdr_via.params],
+    {'via', [Via#sip_hdr_via{params = Params}]}.
+
+%% @doc
+%% Generate binary by repeating given binary.
+%% @end
 generate_body(Repeat, Count) ->
     generate_body(<<>>, Repeat, Count).
 
