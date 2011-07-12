@@ -65,7 +65,7 @@ start_server_tx(TU, Connection, Request)
   when is_record(Request, sip_message) ->
 
     % Check top via in received request to check transport reliability
-    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
+    {ok, Via} = sip_message:top_header('via', Request),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
     Key = tx_key(server, Request),
@@ -130,19 +130,16 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
 
 tx_key(client, Msg) ->
     % RFC 17.1.3
-    Headers = Msg#sip_message.headers,
-    case sip_headers:top_via_branch(Headers) of
-        % no branch parameter
-        undefined ->
-            undefined;
-
-        Branch ->
+    case sip_message:top_via_branch(Msg) of
+        % According to RFC 3161 20.42 Branch MUST present for all requests
+        % FIXME: does that mean all responses coming back to client TX will have it too?
+        {ok, Branch} ->
             case Msg#sip_message.start_line of
                 {request, Method, _} ->
                     {client, Branch, Method};
 
                 {response, _, _} ->
-                    {ok, CSeq} = sip_headers:top_header('cseq', Headers),
+                    {ok, CSeq} = sip_message:top_header('cseq', Msg),
                     Method = CSeq#sip_hdr_cseq.method,
                     {client, Branch, Method}
             end
@@ -150,17 +147,16 @@ tx_key(client, Msg) ->
 
 tx_key(server, Request) ->
     % RFC 17.2.3
-    Headers = Request#sip_message.headers,
 
     % for ACK we use INVITE
     Method = case Request#sip_message.start_line of
                  {request, 'ACK', _} -> 'INVITE';
                  {request, M, _} -> M
              end,
-    case sip_headers:top_via_branch(Headers) of
+    case sip_message:top_via_branch(Request) of
         % Magic cookie
-        <<?MAGIC_COOKIE, _/binary>> = Branch ->
-            {ok, Via} = sip_headers:top_header('via', Headers),
+        {ok, <<?MAGIC_COOKIE, _/binary>> = Branch} ->
+            {ok, Via} = sip_message:top_header('via', Request),
             SentBy = Via#sip_hdr_via.sent_by,
             {server, SentBy, Branch, Method};
 

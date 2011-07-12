@@ -165,7 +165,7 @@ receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
     Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
     {'via', [Via]} = sip_headers:via(udp, {<<"incorrect-sent-by">>, 35060}, []),
     WrongResponse = sip_message:replace_top_header('via', Via, Response),
-    
+
     % RFC 3261, 18.1.2: Receiving Responses (wrong sent-by, should be discarded)
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(WrongResponse)),
     receive
@@ -205,7 +205,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
             {'via', [ExpectedVia2]} = sip_test:with_test_branch(ExpectedVia),
             ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia2, Request2),
             ?assertEqual(ExpectedRequest, sip_message:parse_whole(Msg2));
-        
+
         {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
@@ -215,7 +215,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     Via = sip_headers:via(tcp, {<<"127.0.0.1">>, 25060}, []),
     {'via', [Via2]} = sip_test:with_test_branch(Via) ,
     Request2 = sip_message:replace_top_header('via', Via2, Request),
-    
+
     Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
@@ -246,7 +246,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
     Via = sip_headers:via(tcp, {<<"127.0.0.1">>, 25060}, []),
     {'via', [Via2]} = sip_test:with_test_branch(Via) ,
     Request2 = sip_message:replace_top_header('via', Via2, Request),
-    
+
     Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
@@ -279,12 +279,12 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
 
 send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     MAddr = {239, 0, 0, 100},
-    
+
     Request = sip_test:invite(udp),
     Via = sip_headers:via(udp, {<<"127.0.0.1">>, 25060}, [{'maddr', MAddr}]),
     {'via', [Via2]} = sip_test:with_test_branch(Via) ,
     Request2 = sip_message:replace_top_header('via', Via2, Request),
-    
+
     Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
@@ -309,7 +309,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
 
     sip_transport:send_response(undefined, Response3),
     {ok, {_, 15060, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
-    
+
     ?assertEqual(ResponseBin3, Packet2),
     ok.
 
@@ -318,7 +318,7 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
     Via = sip_headers:via(udp, {<<"127.0.0.1">>, undefined}, []),
     {'via', [Via2]} = sip_test:with_test_branch(Via) ,
     Request2 = sip_message:replace_top_header('via', Via2, Request),
-    
+
     Response = sip_message:create_response(Request2, 200, <<"Ok">>, undefined),
     ResponseBin = sip_message:to_binary(Response),
 
@@ -331,5 +331,5 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
     gen_udp:close(DefaultUDP),
     ?assertEqual(ResponseBin, Packet),
     ok.
-    
+
 -endif.

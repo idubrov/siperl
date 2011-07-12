@@ -17,6 +17,7 @@
 -export([create_ack/2, create_response/4]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
+-export([top_header/2, top_via_branch/1]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -40,7 +41,7 @@
 %% Exported types
 -type start_line() :: {'request', Method :: sip_headers:method(), RequestURI :: binary()} |
                       {'response', Status :: integer(), Reason :: binary()}.
--type message() :: #sip_message{}.
+-type message() :: message().
 -export_type([start_line/0, message/0]).
 
 %%-----------------------------------------------------------------
@@ -50,7 +51,7 @@
 %% @doc
 %% Check if message is SIP request.
 %% @end
--spec is_request(#sip_message{}) -> boolean().
+-spec is_request(message()) -> boolean().
 is_request(#sip_message{start_line = {request, _, _}}) ->
     true;
 
@@ -60,14 +61,14 @@ is_request(#sip_message{start_line = {response, _, _}}) ->
 %% @doc
 %% Check if message is SIP response.
 %% @end
--spec is_response(#sip_message{}) -> boolean().
+-spec is_response(message()) -> boolean().
 is_response(Message) ->
     not is_request(Message).
 
 %% @doc
 %% Check if message is SIP provisional response (1xx).
 %% @end
--spec is_provisional_response(#sip_message{}) -> boolean().
+-spec is_provisional_response(message()) -> boolean().
 is_provisional_response(#sip_message{start_line = {response, Status, _}})
   when Status >= 100, Status =< 199 ->
     true;
@@ -75,7 +76,7 @@ is_provisional_response(#sip_message{start_line = {response, Status, _}})
 is_provisional_response(#sip_message{start_line = {response, _Status, _}}) ->
     false.
 
--spec to_binary(#sip_message{}) -> binary().
+-spec to_binary(message()) -> binary().
 to_binary(Message) ->
     Top = case Message#sip_message.start_line of
               {request, Method, URI} -> <<(sip_binary:any_to_binary(Method))/binary, " ", URI/binary, " ", ?SIPVERSION>>;
@@ -95,7 +96,7 @@ to_binary(Message) ->
 -spec update_top_header(
         sip_headers:header_name(),
         fun((HeaderName :: sip_headers:header_name(), Value :: any()) -> UpdatedValue :: any()),
-        #sip_message{}) -> #sip_message{}.
+        message()) -> message().
 update_top_header(HeaderName, Fun, Request) ->
     Headers = update_header(HeaderName, Fun, Request#sip_message.headers),
     Request#sip_message{headers = Headers}.
@@ -119,8 +120,8 @@ update_header(_HeaderName, _Fun, []) ->
 %% header value is multi-value (a list), the first element of the list
 %% is replaced.
 %% @end
--spec replace_top_header(sip_headers:header_name(), term() | binary(), #sip_message{}) ->
-          #sip_message{}.
+-spec replace_top_header(sip_headers:header_name(), term() | binary(), message()) ->
+          message().
 replace_top_header(HeaderName, Value, Message) ->
     UpdateFun = fun
                    (_, [_ | Rest]) -> [Value | Rest];
@@ -129,13 +130,44 @@ replace_top_header(HeaderName, Value, Message) ->
     update_top_header(HeaderName, UpdateFun, Message).
 
 %% @doc
+%% Retrieve `branch' parameter of top via header or `undefined' if no such
+%% parameter present.
+%% @end
+-spec top_via_branch(message()) -> {ok, binary()} | {error, not_found}.
+top_via_branch(Message) when is_record(Message, sip_message) ->
+    {ok, Via} = top_header('via', Message#sip_message.headers),
+    case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
+        {branch, Branch} -> {ok, Branch};
+        false -> {error, not_found}
+    end.
+
+%% @doc
+%% Retrieve top value of given header. Accepts either full SIP message
+%% or list of headers.
+%% @end
+-spec top_header(sip_headers:header_name(), message() | [sip_headers:header()]) ->
+          {ok, term()} | {error, not_found}.
+top_header(Name, Message) when is_record(Message, sip_message) ->
+    top_header(Name, Message#sip_message.headers);
+top_header(Name, Headers) when is_list(Headers) ->
+    case lists:keyfind(Name, 1, Headers) of
+        false -> {error, not_found};
+        {Name, Value} ->
+            case sip_headers:parse_header(Name, Value) of
+                {_, [Top | _]} -> {ok, Top}; % support for multiple header values
+                {_, ParsedValue} -> {ok, ParsedValue}
+            end
+    end.
+
+
+%% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
 %% retained in binary form for performance reasons. Use {@link parse_whole/1}
 %% to parse the whole message or {@link sip_headers:parse_header/2} to parse
 %% single header.
 %% @end
 -spec parse_datagram(Datagram :: binary()) ->
-          {ok, #sip_message{}}
+          {ok, message()}
         | {bad_request, Reason :: term()}
         | {bad_response, Reason :: term()}.
 parse_datagram(Datagram) ->
@@ -148,7 +180,7 @@ parse_datagram(Datagram) ->
     StartLine = parse_start_line(Start),
 
     % RFC 3261 18.3
-    case sip_headers:top_header('content-length', Headers) of
+    case top_header('content-length', Headers) of
         % Content-Length is present
         {ok, ContentLength} when ContentLength =< size(Body) ->
             <<Body2:ContentLength/binary, _/binary>> = Body,
@@ -163,7 +195,7 @@ parse_datagram(Datagram) ->
     end.
 
 -spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
-          {ok, state(), Msgs :: [#sip_message{}]}
+          {ok, state(), Msgs :: [message()]}
         | {'bad_request', Reason :: term()}
         | {'bad_response', Reason :: term()}.
 
@@ -191,7 +223,7 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 %% @doc
 %% Parses all headers of the message.
 %% @end
--spec parse_whole(#sip_message{}) -> #sip_message{}.
+-spec parse_whole(message()) -> message().
 parse_whole(Msg) when is_record(Msg, sip_message) ->
     Headers = [sip_headers:parse_header(Name, Value) || {Name, Value} <- Msg#sip_message.headers],
     Msg#sip_message{headers = Headers}.
@@ -200,7 +232,7 @@ parse_whole(Msg) when is_record(Msg, sip_message) ->
 %% Parse and stable sort all headers of the message. This function is mostly used for testing
 %% purposes before comparing the messages.
 %% @end
--spec normalize(#sip_message{}) -> #sip_message{}.
+-spec normalize(message()) -> message().
 normalize(Msg) when is_record(Msg, sip_message) ->
     Msg2 = parse_whole(Msg),
     Msg2#sip_message{headers = lists:keysort(1, Msg2#sip_message.headers)}.
@@ -241,7 +273,7 @@ pre_parse_stream({State, Frame}, From, Msgs) when State =:= 'HEADERS'; State =:=
             StartLine = parse_start_line(Start),
 
             % Check content length present
-            case sip_headers:top_header('content-length', Headers) of
+            case top_header('content-length', Headers) of
                 {ok, ContentLength} ->
                     % Continue processing the message body
                     NewState = {'BODY', StartLine, Headers,ContentLength},
@@ -320,7 +352,7 @@ response(Status, Reason)
 %% @doc
 %% RFC 3261, 17.1.1.3 Construction of the ACK Request
 %% @end
--spec create_ack(#sip_message{}, #sip_message{}) -> #sip_message{}.
+-spec create_ack(message(), message()) -> message().
 create_ack(Request, Response) when is_record(Request, sip_message),
                                    is_record(Response, sip_message) ->
     {request, Method, RequestURI} = Request#sip_message.start_line,
@@ -339,10 +371,10 @@ create_ack(Request, Response) when is_record(Request, sip_message),
     ReqHeaders = lists:reverse(lists:foldl(FoldFun, [], Request#sip_message.headers)),
 
     % Via is taken from top Via of the original request
-    {ok, Via} = sip_headers:top_header('via', Request#sip_message.headers),
+    {ok, Via} = top_header('via', Request),
 
     % To goes from the response
-    {ok, To} = sip_headers:top_header('to', Response#sip_message.headers),
+    {ok, To} = top_header('to', Response),
 
     #sip_message{start_line = {request, 'ACK', RequestURI},
                  body = <<>>,
@@ -353,7 +385,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 %% 8.2.6.1 Sending a Provisional Response
 %% FIXME: adding tag...
 %% @end
--spec create_response(#sip_message{}, integer(), binary(), undefined | binary()) -> #sip_message{}.
+-spec create_response(message(), integer(), binary(), undefined | binary()) -> message().
 create_response(Request, Status, Reason, Tag) ->
     Headers = [if Name =:= 'to' -> add_tag({Name, Value}, Tag);
                   true -> {Name, Value}
@@ -380,7 +412,7 @@ add_tag({Name, Value}, Tag)
 %% and Via; all of these header fields are mandatory in all SIP
 %% requests.
 %% @end
--spec validate_request(#sip_message{}) -> boolean().
+-spec validate_request(message()) -> boolean().
 validate_request(Request) when is_record(Request, sip_message) ->
     CountFun =
         fun ({Name, _}, Tuple) ->
@@ -535,16 +567,25 @@ create_ack_test_() ->
      ?_assertEqual(normalize(ACK), normalize(create_ack(OrigRequest, Response)))
      ].
 
+-spec header_test_() -> list().
+header_test_() ->
 
--spec update_header_test_() -> list().
-update_header_test_() ->
     CL = sip_headers:content_length(123),
     CSeq = sip_headers:cseq(110, 'INVITE'),
-    Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, []),
+    Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
     Fun = fun ('via', Value) when Via1 =:= {'via', [Value]} -> {'via', [NewVal]} = Via1Up, NewVal end,
-    [?_assertEqual(#sip_message{headers = [CL, Via1Up, Via2]},
+
+    {'via', [Via1Value]} = Via1,
+
+    [% Header lookup functions
+     ?_assertEqual({ok, Via1Value}, top_header('via', [Via1, Via2])),
+     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [Via1, Via2]})),
+     ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [Via2]})),
+
+     % Header update functions
+     ?_assertEqual(#sip_message{headers = [CL, Via1Up, Via2]},
                    update_top_header('via', Fun, #sip_message{headers = [CL, Via1, Via2]})),
      ?_assertEqual(#sip_message{headers = [CL, CSeq]},
                    replace_top_header('via', Via1Up, #sip_message{headers = [CL, CSeq]}))
