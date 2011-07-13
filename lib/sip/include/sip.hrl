@@ -28,6 +28,7 @@
 -record(sip_hdr_address, {display_name = <<>> :: binary(), 
                          uri = <<>> :: binary(), 
                          params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
+% FIXME: default uri should be "Anonymous" <sip:thisis@anonymous.invalid>
 
 %%-----------------------------------------------------------------
 %% SIP transport layer types

@@ -197,18 +197,14 @@ tx_send(Key, Msg) when is_record(Msg, sip_message) ->
             {ok, Key}
     end.
 
-%% @doc
-%% Generate unique branch parameter for top Via header value, if not already present.
+%% @doc Generate unique branch for the top Via, if not already present
 %% @end
 generate_branch('via', Via) ->
     case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
         {branch, _} -> Via;
 
         false ->
-            % Generate unique branch id
-            % FIXME: Poor man's random id generation
-            {Random, _} = random:uniform_s(2147483647, now()),
-            Suffix = sip_binary:from_integer(Random),
-            Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, <<?MAGIC_COOKIE, $_, Suffix/binary>>}),
+            Branch = sip_idgen:generate_branch(),
+            Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
             Via#sip_hdr_via{params = Params}
     end.
