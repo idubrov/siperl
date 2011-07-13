@@ -406,6 +406,7 @@ add_tag({Name, Value}, Tag)
 %% @end
 -spec validate_request(message()) -> ok | {error, Reason :: term()}.
 validate_request(Request) when is_record(Request, sip_message) ->
+    {request, Method, _} = Request#sip_message.start_line,
     CountFun =
         fun ({Name, Value}, Counts) ->
                  % assign tuple index for every header being counted
@@ -416,6 +417,7 @@ validate_request(Request) when is_record(Request, sip_message) ->
                            'call-id' -> 4;
                            'max-forwards' -> 5;
                            'via' -> 6;
+                           'contact' -> 7;
                            _ -> 0
                        end,
                  if
@@ -427,9 +429,14 @@ validate_request(Request) when is_record(Request, sip_message) ->
         end,
 
     % Count headers
-    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Request#sip_message.headers) of
-        C when C >= {1, 1, 1, 1, 1, 1}, % Each header must be exactly once,
-               C =< {1, 1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
+    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0, 0}, Request#sip_message.headers) of
+        C when C >= {1, 1, 1, 1, 1, 1, 0}, % Each header must be at least once (except contact),
+               C =< {1, 1, 1, 1, 1, a, 0}, % except Via:, which must be at least once (atom > every possible number)
+
+               % The Contact header field MUST be present and contain exactly one SIP
+               % or SIPS URI in any request that can result in the establishment of a
+               % dialog.
+               (Method =/= 'INVITE' orelse element(7, C) =:= 1)
           -> ok;
         _ -> {error, invalid_headers}
     end.
@@ -576,6 +583,20 @@ header_test_() ->
                                        {'via', [Via1Up]},
                                        {'via', [Via2]}]},
     NoViaMsg = #sip_message{headers = [{'content-length', 123}, {'cseq', CSeq}]},
+
+    URI = <<"sip@nowhere.invalid">>,
+    ValidRequest =
+        #sip_message{start_line = {request, 'OPTIONS', URI},
+                     headers = [{to, sip_headers:address(<<>>, URI, [])},
+                                {from, sip_headers:address(<<>>, URI, [])},
+                                {cseq, sip_headers:cseq(1, 'OPTIONS')},
+                                {'call-id', <<"123">>},
+                                {'max-forwards', 70},
+                                {via, sip_headers:via(udp, <<"localhost">>, [])}]},
+
+    % No contact in INVITE
+    InvalidRequest =
+        ValidRequest#sip_message{start_line = {request, 'INVITE', URI}},
     [% Header lookup functions
      ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
      ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [{'via', [Via1]}, {'via', [Via2]}]})),
@@ -583,6 +604,10 @@ header_test_() ->
 
      % Header update functions
      ?_assertEqual(ViaMsgUp, update_top_header('via', Fun, ViaMsg)),
-     ?_assertEqual(NoViaMsg, replace_top_header('via', Via1Up, NoViaMsg))
+     ?_assertEqual(NoViaMsg, replace_top_header('via', Via1Up, NoViaMsg)),
+
+     % Validation
+     ?_assertEqual(ok, validate_request(ValidRequest)),
+     ?_assertEqual({error, invalid_headers}, validate_request(InvalidRequest))
      ].
 -endif.
