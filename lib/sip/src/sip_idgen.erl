@@ -10,7 +10,7 @@
 %% Exports
 
 %% API
--export([generate_tag/0, generate_branch/0]).
+-export([generate_tag/0, generate_branch/0, generate_call_id/0]).
 
 %% Include files
 -include_lib("sip.hrl").
@@ -37,6 +37,18 @@ generate_tag() ->
 -spec generate_branch() -> binary().
 generate_branch() ->
     rand_binary(8, <<?MAGIC_COOKIE>>).
+
+%% @doc Generate new random Call-ID
+%%
+%% In a new request created by a UAC outside of any dialog, the Call-ID
+%% header field MUST be selected by the UAC as a globally unique
+%% identifier over space and time unless overridden by method-specific
+%% behavior.
+%% @end
+-spec generate_call_id() -> binary().
+generate_call_id() ->
+    rand_binary(8, <<>>).
+
 
 %%-----------------------------------------------------------------
 %% Internal functions
