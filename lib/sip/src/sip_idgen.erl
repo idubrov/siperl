@@ -10,7 +10,7 @@
 %% Exports
 
 %% API
--export([generate_tag/0, generate_branch/0, generate_call_id/0]).
+-export([generate_tag/0, generate_branch/0, generate_call_id/0, generate_cseq/0]).
 
 %% Include files
 -include_lib("sip.hrl").
@@ -48,6 +48,17 @@ generate_branch() ->
 -spec generate_call_id() -> binary().
 generate_call_id() ->
     rand_binary(8, <<>>).
+
+%% @doc Generate new random CSeq
+%%
+%% The sequence number value MUST be expressible as a 32-bit unsigned
+%% integer and MUST be less than 2**31.  As long as it follows the above
+%% guidelines, a client may use any mechanism it would like to select
+%% CSeq header field values.
+%% @end
+-spec generate_cseq() -> integer().
+generate_cseq() ->
+    crypto:rand_uniform(1, 2147483648).
 
 
 %%-----------------------------------------------------------------
