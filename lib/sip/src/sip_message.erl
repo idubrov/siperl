@@ -12,8 +12,7 @@
 %%-----------------------------------------------------------------
 -export([is_request/1, is_response/1, to_binary/1]).
 -export([is_provisional_response/1]).
--export([parse_stream/2, parse_datagram/1, parse_whole/1, normalize/1]).
--export([request/2, response/2]).
+-export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
 -export([create_ack/2, create_response/4]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
@@ -232,8 +231,8 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 %% @doc
 %% Parses all headers of the message.
 %% @end
--spec parse_whole(message()) -> message().
-parse_whole(Msg) when is_record(Msg, sip_message) ->
+-spec parse_all_headers(message()) -> message().
+parse_all_headers(Msg) when is_record(Msg, sip_message) ->
     Headers = [{Name, sip_headers:parse_header(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
     Msg#sip_message{headers = Headers}.
 
@@ -241,9 +240,9 @@ parse_whole(Msg) when is_record(Msg, sip_message) ->
 %% Parse and stable sort all headers of the message. This function is mostly used for testing
 %% purposes before comparing the messages.
 %% @end
--spec normalize(message()) -> message().
-normalize(Msg) when is_record(Msg, sip_message) ->
-    Msg2 = parse_whole(Msg),
+-spec sort_headers(message()) -> message().
+sort_headers(Msg) when is_record(Msg, sip_message) ->
+    Msg2 = parse_all_headers(Msg),
     Msg2#sip_message{headers = lists:keysort(1, Msg2#sip_message.headers)}.
 
 %%-----------------------------------------------------------------
@@ -341,22 +340,6 @@ parse_start_line(StartLine) when is_binary(StartLine) ->
           ->
             {response, list_to_integer([A, B, C]), ReasonPhrase}
     end.
-
-%% @doc
-%% Request start line construction.
-%% @end
--spec request(sip_headers:method(), binary()) -> {'request', Method :: sip_headers:method(), RequestURI :: binary()}.
-request(Method, RequestURI)
-  when is_binary(RequestURI), (is_atom(Method) orelse is_binary(Method)) ->
-    {request, Method, RequestURI}.
-
-%% @doc
-%% Response start line construction.
-%% @end
--spec response(integer(), binary()) -> {'response', Status :: integer(), Reason :: binary()}.
-response(Status, Reason)
-  when is_integer(Status), is_binary(Reason) ->
-    {response, Status, Reason}.
 
 %% @doc
 %% RFC 3261, 17.1.1.3 Construction of the ACK Request
@@ -565,15 +548,15 @@ create_ack_test_() ->
                   {'route', <<"<sip:alice@atlanta.com>">>},
                   {'route', <<"<sip:bob@biloxi.com>">>}
                   ],
-    OrigRequest = #sip_message{start_line = request('INVITE', <<"sip:bob@biloxi.com">>), headers = ReqHeaders},
+    OrigRequest = #sip_message{start_line = {request, 'INVITE', <<"sip:bob@biloxi.com">>}, headers = ReqHeaders},
 
     RespHeaders = lists:keyreplace('to', 1, ReqHeaders, {'to', <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>}),
-    Response = #sip_message{start_line = response(500, <<"Internal error">>), headers = RespHeaders},
+    Response = #sip_message{start_line = {response, 500, <<"Internal error">>}, headers = RespHeaders},
 
     ACKHeaders = lists:keyreplace('cseq', 1, RespHeaders, {'cseq', <<"986759 ACK">>}),
-    ACK = #sip_message{start_line = request('ACK', <<"sip:bob@biloxi.com">>), headers = ACKHeaders},
+    ACK = #sip_message{start_line = {request, 'ACK', <<"sip:bob@biloxi.com">>}, headers = ACKHeaders},
     [
-     ?_assertEqual(normalize(ACK), normalize(create_ack(OrigRequest, Response)))
+     ?_assertEqual(sort_headers(ACK), sort_headers(create_ack(OrigRequest, Response)))
      ].
 
 -spec header_test_() -> list().

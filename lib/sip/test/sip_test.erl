@@ -34,7 +34,7 @@ request(Method, Transport) ->
                {'call-id', <<"a84b4c76e66710">>},
                {'max-forwards', 70},
                {'content-length', 6}],
-    Msg = #sip_message{start_line = sip_message:request(Method, <<"sip:127.0.0.1/test">>),
+    Msg = #sip_message{start_line = {request, Method, <<"sip:127.0.0.1/test">>},
                        body = <<"Hello!">>,
                        headers = Headers},
     Msg.

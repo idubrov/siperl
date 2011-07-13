@@ -156,7 +156,7 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
         {request, _Conn, _Msg} ->
             ?fail("Request is not expected here");
         {response, _Conn, Msg} ->
-            ?assertEqual(Response2, sip_message:parse_whole(Msg))
+            ?assertEqual(Response2, sip_message:parse_all_headers(Msg))
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
@@ -182,7 +182,7 @@ receive_request_udp({_Transport, UDP, _TCP}) ->
     gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request)),
     receive
         {request, _Conn, Msg} ->
-            ?assertEqual(Request, sip_message:parse_whole(Msg));
+            ?assertEqual(Request, sip_message:parse_all_headers(Msg));
 
         {response, _Conn, _Msg} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
@@ -201,7 +201,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
             ExpectedVia = sip_headers:via(udp, {<<"localhost">>, 25060}, [{branch, sip_test:branch_from_pid()},
                                                                           {received, <<"127.0.0.1">>}]),
             ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia, Request),
-            ?assertEqual(ExpectedRequest, sip_message:parse_whole(Msg));
+            ?assertEqual(ExpectedRequest, sip_message:parse_all_headers(Msg));
 
         {response, _Conn, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
@@ -222,7 +222,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
         {request, Conn, Msg} ->
-            ?assertEqual(Request, sip_message:parse_whole(Msg)),
+            ?assertEqual(Request, sip_message:parse_all_headers(Msg)),
             % Send response
             sip_transport:send_response(Conn, Response),
             {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
@@ -252,7 +252,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
         {request, Conn, Msg} ->
-            ?assertEqual(Request, sip_message:parse_whole(Msg)),
+            ?assertEqual(Request, sip_message:parse_all_headers(Msg)),
             % Close connection
             gen_tcp:close(Socket),
             timer:sleep(?TIMEOUT),
