@@ -249,7 +249,6 @@ any_to_binary({A, B, C, D}) when
 -spec binary_test_() -> list().
 binary_test_() ->
     % for join tests
-    JoinerFunc = fun (Elem, Bin) -> <<Bin/binary, Elem/binary>> end,
     [?_assertEqual(<<>>, trim_leading(<<>>)),
      ?_assertEqual(<<>>, trim_leading(<<"    ">>)),
      ?_assertEqual(<<"ABC DEF    ">>, trim_leading(<<"  ABC DEF    ">>)),

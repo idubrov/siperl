@@ -84,7 +84,8 @@ to_binary(Message) ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
-    Headers = << <<(sip_headers:to_binary(Name, Value))/binary, "\r\n">> || {Name, Value} <- Message#sip_message.headers>>,
+    Headers = << <<(sip_headers:to_binary(Name, Value))/binary, "\r\n">> ||
+                 {Name, Value} <- Message#sip_message.headers>>,
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 
@@ -420,7 +421,7 @@ add_tag({Name, Value}, Tag)
 %% and Via; all of these header fields are mandatory in all SIP
 %% requests.
 %% @end
--spec validate_request(message()) -> boolean().
+-spec validate_request(message()) -> ok | {error, Reason :: term()}.
 validate_request(Request) when is_record(Request, sip_message) ->
     CountFun =
         fun ({Name, _}, Tuple) ->
@@ -446,7 +447,7 @@ validate_request(Request) when is_record(Request, sip_message) ->
         C when C >= {1, 1, 1, 1, 1, 1}, % Each header must be exactly once,
                C =< {1, 1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
           -> ok;
-        _ -> {error, {invalid_headers, Counts}}
+        _ -> {error, invalid_headers}
     end.
 
 %%-----------------------------------------------------------------

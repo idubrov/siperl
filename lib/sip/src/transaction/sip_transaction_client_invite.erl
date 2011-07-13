@@ -117,7 +117,7 @@ init(Params) ->
 %% @doc
 %% Transaction timed out
 %% @end
--spec 'PROCEEDING'(term(), #tx_state{}) -> term().
+-spec 'PROCEEDING'(term(), #tx_state{}) -> none().
 'PROCEEDING'({timeout, _Ref, {timerB, _}}, _TxState) ->
     erlang:error(timeout).
 

@@ -36,7 +36,7 @@
 -include_lib("sip.hrl").
 
 %% Types
--opaque connection() :: pid() | term().
+-type connection() :: pid() | term().
 -export_type([connection/0]).
 
 -record(state, {}).
