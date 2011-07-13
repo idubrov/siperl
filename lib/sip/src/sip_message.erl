@@ -92,6 +92,8 @@ to_binary(Message) ->
 %% Update value of top header with given name. If header value is
 %% multi-value, only first element of the list is updated by the
 %% function.
+%%
+%% This function parses the header value if header is in binary form.
 %% @end
 -spec update_top_header(
         sip_headers:header_name(),
@@ -101,13 +103,16 @@ update_top_header(HeaderName, Fun, Request) ->
     Headers = update_header(HeaderName, Fun, Request#sip_message.headers),
     Request#sip_message{headers = Headers}.
 
+%% Internal function to update the header list
 update_header(HeaderName, Fun, [{HeaderName, Value} | Rest]) ->
+    % Parse header if it is not parsed yet
+    {HeaderName, ParsedValue} = sip_headers:parse_header(HeaderName, Value),
     UpdatedValue =
-        case Value of
+        case ParsedValue of
             % multi-value header
             [Top | Rest2] -> [Fun(HeaderName, Top) | Rest2];
             % single value header
-            _ -> Fun(HeaderName, Value)
+            _ -> Fun(HeaderName, ParsedValue)
         end,
     [{HeaderName, UpdatedValue} | Rest];
 update_header(HeaderName, Fun, [Header | Rest]) ->
@@ -132,6 +137,8 @@ replace_top_header(HeaderName, Value, Message) ->
 %% @doc
 %% Retrieve `branch' parameter of top via header or `undefined' if no such
 %% parameter present.
+%%
+%% This function parses the Via: header value if header is in binary form.
 %% @end
 -spec top_via_branch(message()) -> {ok, binary()} | {error, not_found}.
 top_via_branch(Message) when is_record(Message, sip_message) ->
@@ -144,6 +151,8 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
 %% @doc
 %% Retrieve top value of given header. Accepts either full SIP message
 %% or list of headers.
+%%
+%% This function parses the header value if header is in binary form.
 %% @end
 -spec top_header(sip_headers:header_name(), message() | [sip_headers:header()]) ->
           {ok, term()} | {error, not_found}.
@@ -378,7 +387,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 
     #sip_message{start_line = {request, 'ACK', RequestURI},
                  body = <<>>,
-                 headers = [{'via', [Via]}, {'to', To} | ReqHeaders]}.
+                 headers = [{'via', Via}, {'to', To} | ReqHeaders]}.
 
 
 %% @doc

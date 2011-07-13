@@ -67,19 +67,22 @@ parse_header('via', Bin) ->
     % Parse parameters (which should start with semicolon)
     {Params, Bin7} = parse_params(Bin4, []),
 
+    Top = #sip_hdr_via{transport = Transport,
+                       version = Version,
+                       sent_by = SentBy,
+                       params = Params},
+
     % Parse the rest of the Via
     % *(COMMA via-parm)
-    RestHdrs = case Bin7 of
-                   <<?COMMA, Bin8/binary>> ->
-                       {'via', Via} = parse_header('via', Bin8),
-                       Via;
-                   _ ->
-                       []
-               end,
-    {'via', [#sip_hdr_via{transport = Transport,
-                          version = Version,
-                          sent_by = SentBy,
-                          params = Params} | RestHdrs]};
+    case Bin7 of
+        <<?COMMA, Bin8/binary>> ->
+            case parse_header('via', Bin8) of
+                {'via', Via} when is_list(Via) -> {'via', [Top | Via]};
+                {'via', Via} -> {'via', [Top | [Via]]}
+            end;
+        _ ->
+            {'via', Top}
+               end;
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 parse_header('content-length', Bin) ->
@@ -430,7 +433,7 @@ parse_test_() ->
                    format_header('to', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
      % Via
-     ?_assertEqual({'via', [via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])]},
+     ?_assertEqual({'via', via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])},
                    parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
      ?_assertEqual({'via', [via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
                             via(tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])]},
