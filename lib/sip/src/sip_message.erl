@@ -106,13 +106,12 @@ update_top_header(HeaderName, Fun, Request) ->
 %% Internal function to update the header list
 update_header(HeaderName, Fun, [{HeaderName, Value} | Rest]) ->
     % Parse header if it is not parsed yet
-    {HeaderName, ParsedValue} = sip_headers:parse_header(HeaderName, Value),
     UpdatedValue =
-        case ParsedValue of
+        case sip_headers:parse_header(HeaderName, Value) of
             % multi-value header
             [Top | Rest2] -> [Fun(HeaderName, Top) | Rest2];
             % single value header
-            _ -> Fun(HeaderName, ParsedValue)
+            Top -> Fun(HeaderName, Top)
         end,
     [{HeaderName, UpdatedValue} | Rest];
 update_header(HeaderName, Fun, [Header | Rest]) ->
@@ -163,8 +162,8 @@ top_header(Name, Headers) when is_list(Headers) ->
         false -> {error, not_found};
         {Name, Value} ->
             case sip_headers:parse_header(Name, Value) of
-                {_, [Top | _]} -> {ok, Top}; % support for multiple header values
-                {_, ParsedValue} -> {ok, ParsedValue}
+                [Top | _] -> {ok, Top}; % support for multiple header values
+                Top -> {ok, Top}
             end
     end.
 
@@ -234,7 +233,7 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 %% @end
 -spec parse_whole(message()) -> message().
 parse_whole(Msg) when is_record(Msg, sip_message) ->
-    Headers = [sip_headers:parse_header(Name, Value) || {Name, Value} <- Msg#sip_message.headers],
+    Headers = [{Name, sip_headers:parse_header(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
     Msg#sip_message{headers = Headers}.
 
 %% @doc
@@ -371,9 +370,9 @@ create_ack(Request, Response) when is_record(Request, sip_message),
     FoldFun = fun ({'call-id', _} = H, List) -> [H|List];
                   ({'from', _} = H, List) -> [H|List];
                   ({'cseq', Value}, List) ->
-                       {_, CSeq} = sip_headers:parse_header('cseq', Value),
-                       CSeq2 = {'cseq', CSeq#sip_hdr_cseq{method = 'ACK'}},
-                       [CSeq2|List];
+                       CSeq = sip_headers:parse_header('cseq', Value),
+                       CSeq2 = CSeq#sip_hdr_cseq{method = 'ACK'},
+                       [{'cseq', CSeq2} | List];
                   ({'route', _} = H, List) when Method =:= 'INVITE' -> [H|List];
                   (_, List) -> List
            end,
@@ -396,8 +395,9 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 %% @end
 -spec create_response(message(), integer(), binary(), undefined | binary()) -> message().
 create_response(Request, Status, Reason, Tag) ->
-    Headers = [if Name =:= 'to' -> add_tag({Name, Value}, Tag);
-                  true -> {Name, Value}
+    Headers = [if
+                   Name =:= 'to' -> add_tag({Name, Value}, Tag);
+                   true -> {Name, Value}
                end || {Name, Value} <- Request#sip_message.headers,
                       (Name =:= 'from' orelse Name =:= 'call-id' orelse
                        Name =:= 'cseq' orelse Name =:= 'via' orelse
@@ -405,14 +405,13 @@ create_response(Request, Status, Reason, Tag) ->
     Start = {response, Status, Reason},
     #sip_message{start_line = Start, headers = Headers}.
 
-add_tag(Header, undefined) ->
-    Header;
+add_tag(Header, undefined) -> Header;
 add_tag({Name, Value}, Tag)
   when Name =:= 'to' orelse Name =:= 'from' ->
-    {Name2, Value2} = sip_headers:parse_header(Name, Value),
+    Value2 = sip_headers:parse_header(Name, Value),
 
     Params = lists:keystore('tag', 1, Value2#sip_hdr_address.params, {'tag', Tag}),
-    {Name2, Value2#sip_hdr_address{params = Params}}.
+    {Name, Value2#sip_hdr_address{params = Params}}.
 
 
 %% @doc Validate that request contains all required headers
