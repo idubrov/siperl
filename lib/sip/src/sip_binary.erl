@@ -11,7 +11,7 @@
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
--export([to_integer/1, from_integer/1, join/4]).
+-export([to_integer/1, from_integer/1]).
 -export([try_binary_to_existing_atom/1, any_to_binary/1]).
 -export([is_space_char/1, is_token_char/1]).
 
@@ -208,20 +208,6 @@ to_integer(Bin) ->
 from_integer(Int) ->
     list_to_binary(integer_to_list(Int)).
 
-
-%% @doc
-%% Join elements of given list into single binary string with delimiter.
-%% @doc
--spec join(binary(), fun((Elem :: term(), Acc0 :: binary()) -> Acc1 :: binary()),
-           Delim :: binary(), Items :: list()) -> binary().
-join(Start, _, _, []) ->
-    Start;
-
-join(Start, Fun, Delim, List) ->
-    Joiner = fun (Elem, Bin) -> Fun(Elem, <<Bin/binary, Delim/binary>>) end,
-    Start2 = Fun(hd(List), Start),
-    lists:foldl(Joiner, Start2, tl(List)).
-
 %% @doc
 %% Tries to convert binary to existing atom. If such atom does not exist,
 %% binary is returned as is.
@@ -308,14 +294,7 @@ binary_test_() ->
      ?_assertEqual({<<"some">>, <<" rest  ">>}, parse_until(<<"some rest  ">>, fun is_space_char/1)),
      ?_assertEqual({<<"somerest">>, <<>>}, parse_until(<<"somerest">>, fun is_space_char/1)),
      ?_assertEqual({<<"some">>, <<"! rest  ">>}, parse_until(<<"some! rest  ">>, $!)),
-     ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$)),
-
-     % join
-     ?_assertEqual(<<"some data1;data2;data3">>,
-                   join(<<"some ">>,
-                        JoinerFunc, <<";">>,
-                        [<<"data1">>, <<"data2">>, <<"data3">>] )),
-     ?_assertEqual(<<"some ">>, join(<<"some ">>, JoinerFunc, <<";">>, []))
+     ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$))
     ].
 
 -endif.

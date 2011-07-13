@@ -84,7 +84,7 @@ to_binary(Message) ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
-    Headers = << <<(sip_headers:format_header(Name, Value))/binary, "\r\n">> || {Name, Value} <- Message#sip_message.headers>>,
+    Headers = << <<(sip_headers:to_binary(Name, Value))/binary, "\r\n">> || {Name, Value} <- Message#sip_message.headers>>,
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 

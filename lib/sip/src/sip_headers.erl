@@ -10,7 +10,7 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([split_binary/1]).
+-export([split_binary/1, to_binary/2]).
 -export([parse_header/2, format_header/2]).
 -export([via/3, cseq/2, address/3]).
 
@@ -47,6 +47,15 @@
 split_binary(Headers) when is_binary(Headers) ->
     Lines = binary:split(Headers, <<"\r\n">>, [global]),
     lists:reverse(lists:foldl(fun (Bin, List) -> fold_header(Bin, List) end, [], Lines)).
+
+%% @doc
+%% Convert header name and value into binary.
+%% @end
+-spec to_binary(header_name(), term()) -> binary().
+to_binary(Name, Value) ->
+    NameBin = header_name_to_binary(Name),
+    ValueBin = format_header(Name, Value),
+    <<NameBin/binary, ": ", ValueBin/binary>>.
 
 %%-----------------------------------------------------------------
 %% Header parsing/format functions
@@ -200,37 +209,35 @@ parse_fromto(Bin) ->
 %% Format header into the binary.
 %% @end
 -spec format_header(header_name(), term()) -> binary().
+format_header(_Name, Value) when is_binary(Value) ->
+    % already formatted to binary
+    Value;
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
-format_header('via', Value) when is_binary(Value) ->
-    <<"Via: ", Value/binary>>;
+format_header('via', [Via]) when is_record(Via, sip_hdr_via) ->
+    format_header('via', Via);
 format_header('via', Via) when is_record(Via, sip_hdr_via) ->
-    format_header('via', format_via_parm(Via, <<>>));
-format_header('via', Parms) when is_list(Parms) ->
-    sip_binary:join(<<"Via: ">>, fun format_via_parm/2, <<?COMMA>>, Parms);
+    format_header('via', append_via_parm(<<>>, Via));
+format_header('via', [Top | Rest]) ->
+    Joiner = fun (Elem, Bin) -> append_via_parm(<<Bin/binary, ?COMMA>>, Elem) end,
+    TopBin = append_via_parm(<<>>, Top),
+    lists:foldl(Joiner, TopBin, Rest);
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
-format_header('content-length', Length) when is_binary(Length) ->
-    <<"Content-Length: ", Length/binary>>;
 format_header('content-length', Length) when is_integer(Length) ->
-    format_header('content-length', sip_binary:from_integer(Length));
+    sip_binary:from_integer(Length);
 
 %% CSeq  =  "CSeq" HCOLON 1*DIGIT LWS Method
-format_header('cseq', CSeq) when is_binary(CSeq) ->
-    <<"CSeq: ", CSeq/binary>>;
 format_header('cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
     SequenceBin = sip_binary:from_integer(CSeq#sip_hdr_cseq.sequence),
     MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
-    <<"CSeq: ", SequenceBin/binary, " ", MethodBin/binary>>;
+    <<SequenceBin/binary, " ", MethodBin/binary>>;
 
 %% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
-format_header('max-forwards', Hops) when is_binary(Hops) ->
-    <<"Max-Forwards: ", Hops/binary>>;
 format_header('max-forwards', Hops) when is_integer(Hops) ->
-    format_header('max-forwards', sip_binary:from_integer(Hops));
+    sip_binary:from_integer(Hops);
 
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
-format_header('call-id', CallId) when is_binary(CallId) ->
-    <<"Call-ID: ", CallId/binary>>;
+%% Call id is always a binary, so handled by first case
 
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
@@ -244,20 +251,17 @@ format_header('call-id', CallId) when is_binary(CallId) ->
 %% display-name   =  *(token LWS)/ quoted-string
 format_header(Name, Addr) when
   is_record(Addr, sip_hdr_address), (Name =:= 'from' orelse Name =:= 'to') ->
-    Prefix = case Name of 'from' -> <<"From: ">>; _ -> <<"To: ">> end,
 
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
-              <<>> -> <<Prefix/binary, ?LAQUOT, URI/binary, ?RAQUOT>>;
-              DisplayName -> <<Prefix/binary, DisplayName/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
+              <<>> -> <<?LAQUOT, URI/binary, ?RAQUOT>>;
+              DisplayName -> <<DisplayName/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
           end,
     append_params(Bin, Addr#sip_hdr_address.params);
 
 %% Any other header
-format_header(Name, Value) ->
-    Name2 = sip_binary:any_to_binary(Name),
-    Value2 = sip_binary:any_to_binary(Value),
-    <<Name2/binary, ?HCOLON, ?SP, Value2/binary>>.
+format_header(_Name, Value) ->
+    sip_binary:any_to_binary(Value).
 
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -265,7 +269,7 @@ format_header(Name, Value) ->
 %%                      / via-extension
 %% sent-protocol     =  protocol-name SLASH protocol-version
 %%                      SLASH transport
-format_via_parm(Value, Bin) ->
+append_via_parm(Bin, Value) ->
     Version = Value#sip_hdr_via.version,
     Transport = sip_binary:to_upper(sip_binary:any_to_binary(Value#sip_hdr_via.transport)),
     Bin2 = <<Bin/binary, "SIP/", Version/binary, $/, Transport/binary>>,
@@ -352,6 +356,7 @@ fold_header(HeaderLine, List) ->
     Name3 = binary_to_header_name(Name2),
     [{Name3, sip_binary:trim_leading(Value)} | List].
 
+%% Converting binary to header name
 %% Short header names support
 binary_to_header_name(<<"v">>) -> 'via';
 binary_to_header_name(<<"l">>) -> 'content-length';
@@ -360,6 +365,16 @@ binary_to_header_name(<<"t">>) -> 'to';
 binary_to_header_name(<<"i">>) -> 'call-id';
 binary_to_header_name(Bin) ->
     sip_binary:try_binary_to_existing_atom(Bin).
+
+%% Converting header name back to binary
+header_name_to_binary('via') -> <<"Via">>;
+header_name_to_binary('content-length') -> <<"Content-Length">>;
+header_name_to_binary('cseq') -> <<"CSeq">>;
+header_name_to_binary('max-forwards') -> <<"Max-Forwards">>;
+header_name_to_binary('call-id') -> <<"Call-Id">>;
+header_name_to_binary('from') -> <<"From">>;
+header_name_to_binary('to') -> <<"To">>;
+header_name_to_binary(Name) -> sip_binary:any_to_binary(Name).
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -390,19 +405,19 @@ parse_test_() ->
 
      % Content-Length
      ?_assertEqual(32543523, parse_header('content-length', <<"32543523">>)),
-     ?_assertEqual(<<"Content-Length: 98083">>,
+     ?_assertEqual(<<"98083">>,
                    format_header('content-length', 98083)),
      % CSeq
      ?_assertEqual(#sip_hdr_cseq{sequence = 1231, method = 'ACK'},
                    parse_header('cseq', <<"1231 ACK">>)),
-     ?_assertEqual(<<"CSeq: 123453 INVITE">>,
+     ?_assertEqual(<<"123453 INVITE">>,
                    format_header('cseq', #sip_hdr_cseq{sequence=  123453, method = 'INVITE'})),
-     ?_assertEqual(<<"CSeq: 123453 INVITE">>,
+     ?_assertEqual(<<"123453 INVITE">>,
                    format_header('cseq', <<"123453 INVITE">>)),
 
      % Max-Forwards
      ?_assertEqual(70, parse_header('max-forwards', <<"70">>)),
-     ?_assertEqual(<<"Max-Forwards: 70">>,
+     ?_assertEqual(<<"70">>,
                    format_header('max-forwards', 70)),
 
      % From/To
@@ -415,15 +430,15 @@ parse_test_() ->
      ?_assertEqual(address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse_header('from', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
 
-     ?_assertEqual(<<"From: Bob  Zert <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"Bob  Zert <sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
-     ?_assertEqual(<<"From: <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"<sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
-     ?_assertEqual(<<"From: <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"<sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
-     ?_assertEqual(<<"From: \"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
-     ?_assertEqual(<<"To: \"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('to', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
      % Via
@@ -432,16 +447,16 @@ parse_test_() ->
      ?_assertEqual([via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
                     via(tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual(<<"Via: SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>,
+     ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>,
                    format_header('via', [via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])])),
-     ?_assertEqual(<<"Via: SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com:5060;branch=z9hG4bK776asdhds">>,
+     ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com:5060;branch=z9hG4bK776asdhds">>,
                    format_header('via', [via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
                                          via(tcp, <<"pc33.atlanta.com">>, [{branch, <<"z9hG4bK776asdhds">>}])])),
-     ?_assertEqual(<<"Via: SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>,
+     ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>,
                    format_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>)),
 
      % Formatting
-     ?_assertEqual(<<"subject: I know you're there, pick up the phone and talk to me!">>,
+     ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
         format_header('subject', <<"I know you're there, pick up the phone and talk to me!">>))
     ].
 
