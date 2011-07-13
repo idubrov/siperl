@@ -407,7 +407,7 @@ add_tag({Name, Value}, Tag)
 -spec validate_request(message()) -> ok | {error, Reason :: term()}.
 validate_request(Request) when is_record(Request, sip_message) ->
     CountFun =
-        fun ({Name, _}, Tuple) ->
+        fun ({Name, Value}, Counts) ->
                  % assign tuple index for every header being counted
                  Idx = case Name of
                            'to' -> 1;
@@ -419,14 +419,15 @@ validate_request(Request) when is_record(Request, sip_message) ->
                            _ -> 0
                        end,
                  if
-                     Idx > 0 -> setelement(Idx, Tuple, element(Idx, Tuple) + 1);
-                     true -> Tuple
+                     Idx > 0 ->
+                         Incr = if is_list(Value) -> length(Value); true -> 1 end,
+                         setelement(Idx, Counts, element(Idx, Counts) + Incr);
+                     true -> Counts
                  end
         end,
 
     % Count headers
-    Counts = lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Request#sip_message.headers),
-    case Counts of
+    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Request#sip_message.headers) of
         C when C >= {1, 1, 1, 1, 1, 1}, % Each header must be exactly once,
                C =< {1, 1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
           -> ok;
