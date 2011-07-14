@@ -31,17 +31,23 @@ send(To, Message) when
             {ok, #hostent{h_addr_list = [Addr|_]}} = inet:gethostbyname(To#sip_destination.address)
     end,
     To2 = To#sip_destination{address = Addr},
-    Port = To#sip_destination.port,
-
-    Pid =
-        case gproc:lookup_pids({n, l, {udp, Addr, Port}}) of
-            [] ->
-                % Start new UDP socket for given destination
-                % FIXME: could fail in case of race condition!
-                {ok, P} = sip_transport_udp_socket_sup:start_socket(To2),
-                P;
-            [P|_] -> P
-        end,
-    % Lookup the socket to handle the request
-    %{ok, Pid} = gen_server:call(?SERVER, {lookup_socket, To}),
+    Pid = lookup_socket(To2),
     sip_transport_udp_socket:send(Pid, To2, Message).
+
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+lookup_socket(To) ->
+    Key = {n, l, {udp, To#sip_destination.address, To#sip_destination.port}},
+
+    % Lookup for the socket
+    case gproc:lookup_pids(Key) of
+        [] ->
+            % Start new UDP socket for given destination
+            % Note that this could actually fail in case of race condition
+            % So we query gproc again to get the pid of surviving socket
+            sip_transport_udp_socket_sup:start_socket(To),
+            gproc:lookup_pid(Key);
+        [P|_] -> P
+    end.
