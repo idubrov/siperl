@@ -41,7 +41,7 @@ start_link(Remote) ->
 %% @doc
 %% Send SIP message through given connection.
 %% @end
--spec send(pid(), #sip_message{}) -> {ok, pid()} | {error, Reason :: term()}.
+-spec send(pid(), #sip_message{}) -> ok | {error, Reason :: term()}.
 send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
     gen_server:call(Pid, {send, Message}).
 

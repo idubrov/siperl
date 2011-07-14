@@ -58,7 +58,7 @@
 % Keep socket for 32 seconds after last event
 -define(TIMEOUT, 32000).
 
--record(state, {socket, error, timeout = infinity}).
+-record(state, {socket, error, timeout = infinity :: integer() | infinity}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -101,7 +101,7 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
 
 %% @private
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
-          {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
+          {noreply, #state{}, infinity} | {stop, _Reason, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
     {ok, Msg} = sip_message:parse_datagram(Packet),
@@ -120,8 +120,8 @@ handle_info(Req, State) ->
 
 %% @private
 -spec handle_call({send, #sip_destination{}, #sip_message{}}, _, #state{}) ->
-          {reply, {error, too_big}, #state{}} |
-          {reply, {ok, #sip_destination{}}, #state{}}.
+          {reply, {error, too_big}, #state{}, integer() | infinity} |
+          {reply, {ok, #sip_destination{}}, #state{}, integer() | infinity}.
 handle_call(_Req, _From, #state{error = Reason} = State)
   when Reason =/= undefined ->
     {reply, {error, Reason}, State#state{error = undefined}, State#state.timeout};
