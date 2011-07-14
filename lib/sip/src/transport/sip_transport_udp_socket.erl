@@ -16,14 +16,14 @@
 %%% <li>UDP socket created uses ephemeral port. Note that according
 %%% to the RFC 3261 18.1.1 responses are sent to the port in Via: sent-by,
 %%% therefore, in general, in this mode process will not receive any
-%%% UDP messages.
+%%% UDP messages.</li>
 %%% <li>When started, process connects to the destination address
 %%% via `gen_udp:connect/3'. This allows receiving subsequent ICMP
-%%% errors.
+%%% errors.</li>
 %%% <li>When started, process registers via `gproc' under
-%%% {udp, RemoteAddr, RemotePort} local name.
+%%% {udp, RemoteAddr, RemotePort} local name.</li>
 %%% <li>If no request or message is received within configured timeout,
-%%% process terminates.
+%%% process terminates.</li>
 %%% </ul>
 %%% This mode is suitable for communicating with the remote party.
 %%%

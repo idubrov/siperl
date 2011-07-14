@@ -196,14 +196,13 @@ parse_token_or_quoted_string(Bin) ->
 
 %% @doc
 %% Convert ASCII binary to integer.
-%% @doc
+%% @end
 -spec to_integer(binary()) -> integer().
 to_integer(Bin) ->
     list_to_integer(binary_to_list(Bin)).
 
-%% @doc
-%% Convert integer to ASCII binary.
-%% @doc
+%% @doc Convert integer to ASCII binary.
+%% @end
 -spec from_integer(integer()) -> binary().
 from_integer(Int) ->
     list_to_binary(integer_to_list(Int)).
