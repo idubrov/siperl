@@ -114,11 +114,12 @@ dispatch_request(From, Connection, Msg) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
     case sip_transaction:handle_request(Msg2) of
-        not_handled -> sip_core:handle_request(From, Connection, Msg2);
+        not_handled -> sip_core:handle_request(Connection, Msg2);
         {ok, _TxRef} -> ok
     end.
 
-%% @doc
+%% @doc Dispatch response, received by the transport socket.
+%%
 %% Dispatch response received through given connection. This function
 %% is called by concrete transport implementations.
 %% @end
@@ -134,7 +135,7 @@ dispatch_response(From, Connection, Msg) ->
         true ->
             % 18.2.1: route to server transaction or to core
             case sip_transaction:handle_response(Msg) of
-                not_handled -> sip_core:handle_response(From, Connection, Msg);
+                not_handled -> sip_core:handle_response(Connection, Msg);
                 {ok, _TxRef} -> ok
             end;
 

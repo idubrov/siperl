@@ -57,7 +57,7 @@ setup() ->
     % in mocked sip_core:handle
     meck:new(sip_core),
     Handle =
-        fun (_From, Connection, Msg) ->
+        fun (Connection, Msg) ->
                  {Kind, _ , _} = Msg#sip_message.start_line,
                  TestPid = sip_test:pid_from_branch(Msg),
                  TestPid ! {Kind, Connection, Msg},
