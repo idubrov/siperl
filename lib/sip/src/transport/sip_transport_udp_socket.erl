@@ -1,8 +1,35 @@
 %%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <wfragg@gmail.com>
-%%% @doc
-%%% UDP SIP socket implementation. This module provides both listener
-%%% and sender implementation.
+%%% @doc UDP SIP socket implementation.
+%%%
+%%% This module could operate in two modes: listening UDP process and
+%%% "connected" UDP process.
+%%%
+%%% When started without destination address, process is started in
+%%% listening mode. In this mode process accepts all messages on given
+%%% port.
+%%%
+%%% When started with destination address, process is started in
+%%% "connected" mode. This mode differs from regular mode in the
+%%% following:
+%%% <ul>
+%%% <li>UDP socket created uses ephemeral port. Note that according
+%%% to the RFC 3261 18.1.1 responses are sent to the port in Via: sent-by,
+%%% therefore, in general, in this mode process will not receive any
+%%% UDP messages.
+%%% <li>When started, process connects to the destination address
+%%% via `gen_udp:connect/3'. This allows receiving subsequent ICMP
+%%% errors.
+%%% <li>When started, process registers via `gproc' under
+%%% {udp, RemoteAddr, RemotePort} local name.
+%%% <li>If no request or message is received within configured timeout,
+%%% process terminates.
+%%% </ul>
+%%% This mode is suitable for communicating with the remote party.
+%%%
+%%% <em>Since this process register itself with `gproc' in "connected"
+%%% mode, the same process should be used by all parties communicating
+%%% with same remote address</em>
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------,
@@ -28,8 +55,10 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
+% Keep socket for 32 seconds after last event
+-define(TIMEOUT, 32000).
 
--record(state, {socket}).
+-record(state, {socket, timeout = infinity}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -51,20 +80,26 @@ send(Pid, To, Message) when is_pid(Pid),
 %%-----------------------------------------------------------------
 
 %% @private
--spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Port) when is_integer(Port) ->
-inet:getif(),
-    gen_server:start_link(?MODULE, Port, []).
+-spec start_link(integer() | #sip_destination{}) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Param) when is_integer(Param); is_record(Param, sip_destination) ->
+    gen_server:start_link(?MODULE, Param, []).
 
 %% @private
--spec init(integer()) -> {ok, #state{}}.
-init(Port) ->
-    {ok, Socket} = gen_udp:open(Port, [binary, inet]),
-    {ok, #state{socket = Socket}}.
+-spec init(integer() | #sip_destination{}) -> {ok, #state{}}.
+init(Port) when is_integer(Port) ->
+    {ok, Socket} = gen_udp:open(Port, [binary, inet, {reuseaddr, true}]),
+    {ok, #state{socket = Socket}};
+init(#sip_destination{address = ToAddr, port = ToPort}) ->
+    {ok, Socket} = gen_udp:open(0, [binary, inet, {reuseaddr, true}]),
+
+    % connect and register local name, so it could be reused by another client
+    ok = gen_udp:connect(Socket, ToAddr, ToPort),
+    gproc:add_local_name({udp, ToAddr, ToPort}),
+
+    % "connected" should terminate after timeout to free resources
+    {ok, #state{socket = Socket, timeout = ?TIMEOUT}, ?TIMEOUT}.
 
 %% @private
-%% When the connection is accepted by the transport layer, this
-%% index is set to the source IP address, port number, and transport.
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
           {noreply, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
@@ -75,8 +110,12 @@ handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
         true -> sip_transport:dispatch_request(Remote, undefined, Msg);
         false -> sip_transport:dispatch_response(Remote, undefined, Msg)
     end,
-    {noreply, State};
-
+    {noreply, State, State#state.timeout};
+handle_info({udp_error, _Socket, Reason}, State) ->
+    % FIXME: we should return it back to the user
+    {noreply, State, State#state.timeout};
+handle_info(timeout, State) ->
+    {stop, normal, State};
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
@@ -90,13 +129,14 @@ handle_call({send, To, Message}, _From, State) ->
     %% than 1300 bytes and the path MTU is unknown, the request MUST be sent
     %% using an RFC 2914 [43] congestion controlled transport protocol, such
     %% as TCP.
-    if
-        size(Packet) > 1300 ->
-            {reply, {error, too_big}, State};
-        true ->
-            ok = gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet),
-            {reply, {ok, To}, State}
-    end;
+    Reply =
+        if
+            size(Packet) > 1300 -> {error, too_big};
+            true ->
+                ok = gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet),
+                {ok, To}
+        end,
+    {reply, Reply, State, State#state.timeout};
 
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
