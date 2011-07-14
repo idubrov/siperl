@@ -179,18 +179,15 @@ check_sent_by(Transport, Msg) ->
 
     % take top via sent-by
     {ok, Via} = sip_message:top_header('via', Msg),
-    SentBy = Via#sip_hdr_via.sent_by,
-    ActualSentBy =
-        case SentBy of
-            % Default port, RFC 3261 18.1
-            {SentByAddr, undefined} ->
-                {SentByAddr, default_port(Transport)};
-            _ ->
-                SentBy
-        end,
+    case Via#sip_hdr_via.sent_by of
+        % Default port, RFC 3261 18.1
+        {SentByAddr, undefined} ->
+            SentBy = {SentByAddr, default_port(Transport)};
+        _ -> SentBy = Via#sip_hdr_via.sent_by
+    end,
     if
-        ActualSentBy =:= ExpectedSentBy -> true;
-        true -> {ExpectedSentBy, ActualSentBy}
+        SentBy =:= ExpectedSentBy -> true;
+        true -> {ExpectedSentBy, SentBy}
     end.
 
 % If the host portion of the "sent-by" parameter contains a domain name, or if
