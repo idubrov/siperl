@@ -58,7 +58,7 @@
 % Keep socket for 32 seconds after last event
 -define(TIMEOUT, 32000).
 
--record(state, {socket, timeout = infinity}).
+-record(state, {socket, error, timeout = infinity}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -69,7 +69,7 @@
 %% @doc
 %% Send SIP message through the given socket.
 %% @end
--spec send(pid(), #sip_destination{}, #sip_message{}) -> {ok, #sip_destination{}} | {error, Reason :: term()}.
+-spec send(pid(), #sip_destination{}, #sip_message{}) -> ok | {error, Reason :: term()}.
 send(Pid, To, Message) when is_pid(Pid),
                                  is_record(To, sip_destination),
                                  is_record(Message, sip_message) ->
@@ -112,8 +112,7 @@ handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
     end,
     {noreply, State, State#state.timeout};
 handle_info({udp_error, _Socket, Reason}, State) ->
-    % FIXME: we should return it back to the user
-    {noreply, State, State#state.timeout};
+    {noreply, State#state{error = Reason}, State#state.timeout};
 handle_info(timeout, State) ->
     {stop, normal, State};
 handle_info(Req, State) ->
@@ -123,6 +122,9 @@ handle_info(Req, State) ->
 -spec handle_call({send, #sip_destination{}, #sip_message{}}, _, #state{}) ->
           {reply, {error, too_big}, #state{}} |
           {reply, {ok, #sip_destination{}}, #state{}}.
+handle_call(_Req, _From, #state{error = Reason} = State)
+  when Reason =/= undefined ->
+    {reply, {error, Reason}, State#state{error = undefined}, State#state.timeout};
 handle_call({send, To, Message}, _From, State) ->
     Packet = sip_message:to_binary(Message),
     %% If a request is within 200 bytes of the path MTU, or if it is larger
@@ -131,10 +133,10 @@ handle_call({send, To, Message}, _From, State) ->
     %% as TCP.
     Reply =
         if
-            size(Packet) > 1300 -> {error, too_big};
+            size(Packet) > 1300 ->
+                {error, too_big};
             true ->
-                ok = gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet),
-                {ok, To}
+                gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet)
         end,
     {reply, Reply, State, State#state.timeout};
 

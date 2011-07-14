@@ -66,13 +66,19 @@ send_ack(Response, TxState) ->
 -spec send_request(#sip_message{}, #tx_state{}) -> #tx_state{}.
 send_request(Msg, TxState) ->
     % Send request to the given destination address
-    sip_transport:send_request(TxState#tx_state.to, Msg, []),
+    case sip_transport:send_request(TxState#tx_state.to, Msg, []) of
+        ok -> ok;
+        {error, Reason} -> erlang:error(Reason)
+    end,
     TxState.
 
 -spec send_response(#sip_message{}, #tx_state{}) -> #tx_state{}.
 send_response(Msg, TxState) ->
     % Send response using the connection of original request
-    sip_transport:send_response(TxState#tx_state.connection, Msg),
+    case sip_transport:send_response(TxState#tx_state.connection, Msg) of
+        ok -> ok;
+        {error, Reason} -> erlang:error(Reason)
+    end,
     TxState.
 
 -spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().

@@ -60,8 +60,7 @@ is_reliable(tcp) -> true.
 %% Opts = [term()]. The only supported option is {ttl, TTL} used
 %% for sending multicast requests.
 %% @end
--spec send_request(#sip_destination{}, #sip_message{}, [term()]) ->
-          {ok, connection()} | {error, Reason :: term()}.
+-spec send_request(#sip_destination{}, #sip_message{}, [term()]) -> ok | {error, Reason :: term()}.
 send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     % Validate request
     true = sip_message:is_request(Request),
@@ -84,7 +83,7 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 %% @doc
 %% Try to send reply by following RFC 3261 18.2.2.
 %% @end
--spec send_response(connection() | undefined, #sip_message{}) -> {ok, connection()} | {error, Reason :: term()}.
+-spec send_response(connection() | undefined, #sip_message{}) -> ok | {error, Reason :: term()}.
 send_response(undefined, Response) ->
     To = reply_address(Response),
     send_response(To, Response);

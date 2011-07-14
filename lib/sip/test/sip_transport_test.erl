@@ -94,7 +94,7 @@ send_request_udp({_Transport, UDP, _TCP}) ->
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests
-    sip_transport:send_request(To, Request, []),
+    ok = sip_transport:send_request(To, Request, []),
     {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
     ?assertEqual(ExpectedRequestBin, Packet).
 
@@ -111,7 +111,7 @@ send_request_udp_fallback({_Transport, _UDP, TCP}) ->
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
-    sip_transport:send_request(To, Request, []),
+    ok = sip_transport:send_request(To, Request, []),
     {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
 
     {ok, Packet} = gen_tcp:recv(RecvSocket, size(ExpectedRequestBin), ?TIMEOUT),
@@ -134,7 +134,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % Send request
-    sip_transport:send_request(To, Request, [{ttl, 4}]),
+    ok = sip_transport:send_request(To, Request, [{ttl, 4}]),
 
     {ok, {_, _, Packet}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 
@@ -226,7 +226,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
         {request, Conn, Msg} ->
             ?assertEqual(Request, sip_message:parse_all_headers(Msg)),
             % Send response
-            sip_transport:send_response(Conn, Response),
+            ok = sip_transport:send_response(Conn, Response),
             {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
             ?assertEqual(ActualResponse, ResponseBin);
 
@@ -259,7 +259,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
             gen_tcp:close(Socket),
             timer:sleep(?TIMEOUT),
             % Send response
-            sip_transport:send_response(Conn, Response),
+            ok = sip_transport:send_response(Conn, Response),
 
             % Server should retry by opening connection to received:sent-by-port
             {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
@@ -286,12 +286,12 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     % RFC 3261, 18.2.2: Sending Responses (to maddr)
 
     % Should be timeout (membership is not configured yet!)
-    sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(undefined, Response),
     {error, timeout} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 
     % This time we should receive it
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(undefined, Response),
     {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ResponseBin), ?TIMEOUT),
     ?assertEqual(ResponseBin, Packet),
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
@@ -302,7 +302,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),
 
-    sip_transport:send_response(undefined, Response3),
+    ok = sip_transport:send_response(undefined, Response3),
     {ok, {_, _, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
 
     ?assertEqual(ResponseBin3, Packet2),
@@ -320,7 +320,7 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
 
     % check on default port
     {ok, DefaultUDP} = gen_udp:open(5060, [inet, binary, {active, false}]),
-    sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(undefined, Response),
     {ok, {_, _, Packet}} = gen_udp:recv(DefaultUDP, size(ResponseBin), ?TIMEOUT),
     gen_udp:close(DefaultUDP),
     ?assertEqual(ResponseBin, Packet),

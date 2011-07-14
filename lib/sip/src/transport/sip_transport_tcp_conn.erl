@@ -101,12 +101,12 @@ handle_info(Req, State) ->
 
 %% @private
 -spec handle_call({send, #sip_message{}}, _, #state{}) ->
-          {reply, {ok, pid()}, #state{}} | {stop, {unexpected, _}, #state{}}.
+          {reply, ok | {error, Reason :: term()}, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_call({send, Message}, _From, State) ->
     Socket = State#state.socket,
     Packet = sip_message:to_binary(Message),
-    ok = gen_tcp:send(Socket, Packet),
-    {reply, {ok, self()}, State};
+    Result = gen_tcp:send(Socket, Packet),
+    {reply, Result, State};
 
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
