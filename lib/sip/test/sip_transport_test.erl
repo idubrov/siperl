@@ -37,6 +37,7 @@ transport_test_() ->
              ]}]}.
 
 setup() ->
+    application:start(gproc),
     % Listen on 15060
     meck:new(sip_config, [passthrough]),
     meck:expect(sip_config, ports, fun (udp) -> [15060]; (tcp) -> [15060] end),
@@ -77,6 +78,7 @@ cleanup({Pid, UDP, TCP}) ->
     meck:unload(sip_transaction),
     meck:unload(sip_core),
     meck:unload(sip_config),
+    application:stop(gproc),
     ok.
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
@@ -93,7 +95,7 @@ send_request_udp({_Transport, UDP, _TCP}) ->
 
     % RFC 3261, 18.1.1: Sending Requests
     sip_transport:send_request(To, Request, []),
-    {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
+    {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
     ?assertEqual(ExpectedRequestBin, Packet).
 
 send_request_udp_fallback({_Transport, _UDP, TCP}) ->
@@ -134,7 +136,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
     % Send request
     sip_transport:send_request(To, Request, [{ttl, 4}]),
 
-    {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
+    {ok, {_, _, Packet}} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 
     ?assertEqual(ExpectedRequestBin, Packet),
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
@@ -290,7 +292,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     % This time we should receive it
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
     sip_transport:send_response(undefined, Response),
-    {ok, {_, 15060, Packet}} = gen_udp:recv(UDP, size(ResponseBin), ?TIMEOUT),
+    {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ResponseBin), ?TIMEOUT),
     ?assertEqual(ResponseBin, Packet),
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
 
@@ -301,7 +303,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     ResponseBin3 = sip_message:to_binary(Response3),
 
     sip_transport:send_response(undefined, Response3),
-    {ok, {_, 15060, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
+    {ok, {_, _, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
 
     ?assertEqual(ResponseBin3, Packet2),
     ok.
@@ -319,7 +321,7 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
     % check on default port
     {ok, DefaultUDP} = gen_udp:open(5060, [inet, binary, {active, false}]),
     sip_transport:send_response(undefined, Response),
-    {ok, {_, 15060, Packet}} = gen_udp:recv(DefaultUDP, size(ResponseBin), ?TIMEOUT),
+    {ok, {_, _, Packet}} = gen_udp:recv(DefaultUDP, size(ResponseBin), ?TIMEOUT),
     gen_udp:close(DefaultUDP),
     ?assertEqual(ResponseBin, Packet),
     ok.
