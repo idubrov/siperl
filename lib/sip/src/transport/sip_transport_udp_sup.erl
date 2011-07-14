@@ -48,8 +48,7 @@ start_link(Ports) when is_list(Ports) ->
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
     % Start listener
-    Children = [?SPEC(sip_transport_udp_socket_sup, supervisor), % Supervisor for "connected" sockets
-                ?WORKER(sip_transport_udp, [Ports, self()]) | % UDP transport API
+    Children = [?SPEC(sip_transport_udp_socket_sup, supervisor) | % Supervisor for "connected" sockets
                 [?LISTENER(Port) || Port <- Ports] % Listeners
                 ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

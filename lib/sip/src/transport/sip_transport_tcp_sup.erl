@@ -48,8 +48,7 @@ start_link(Ports) when is_list(Ports) ->
 %% @private
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
-    Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor), % Supervisor for connections
-                ?WORKER(sip_transport_tcp, [Ports]) | % TCP transport API
+    Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor) | % Supervisor for connections
                 [?LISTENER(Port) || Port <- Ports] % Listeners
                ],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
