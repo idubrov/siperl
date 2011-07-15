@@ -331,7 +331,7 @@ parse_start_line(StartLine) when is_binary(StartLine) ->
     case binary:split(StartLine, <<" ">>, [global]) of
         [Method, RequestURI, <<?SIPVERSION>>]
           ->
-            {request, sip_binary:try_binary_to_existing_atom(sip_binary:to_upper(Method)), RequestURI};
+            {request, sip_binary:binary_to_existing_atom(sip_binary:to_upper(Method)), RequestURI};
 
         [<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase] when
             $1 =< A andalso A =< $6 andalso % 1xx - 6xx

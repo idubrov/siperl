@@ -1,7 +1,6 @@
 %%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <wfragg@gmail.com>
-%%% @doc
-%%% Utility binary functions.
+%%% @doc Utility functions to work with binary strings.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
@@ -11,8 +10,7 @@
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
--export([to_integer/1, from_integer/1]).
--export([try_binary_to_existing_atom/1, any_to_binary/1]).
+-export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
 -export([is_space_char/1, is_token_char/1]).
 
 %% Include files
@@ -23,13 +21,10 @@
 %% API functions
 %%-----------------------------------------------------------------
 
-%% @doc
-%% Trim leading whitespaces from the binary string.
+%% @doc Trim leading whitespaces from the binary string
 %% @end
 -spec trim_leading(binary()) -> binary().
-trim_leading(<<>>) ->
-    <<>>;
-
+trim_leading(<<>>) -> <<>>;
 trim_leading(Bin) ->
     <<C, Rest/binary>> = Bin,
     IsSpace = is_space_char(C),
@@ -38,41 +33,32 @@ trim_leading(Bin) ->
         true -> Bin
     end.
 
-%% @doc
-%% Trim trailing whitespaces from the binary string.
+%% @doc Trim trailing whitespaces from the binary string
 %% @end
 -spec trim_trailing(binary()) -> binary().
-trim_trailing(<<>>) ->
-    <<>>;
-
+trim_trailing(<<>>) -> <<>>;
 trim_trailing(Bin) ->
     Sz = size(Bin) - 1,
     <<Rest:Sz/binary, C>> = Bin,
     case is_space_char(C) of
-        true ->
-            trim_trailing(Rest);
-
-        _ ->
-            Bin
+        true -> trim_trailing(Rest);
+        _ -> Bin
     end.
 
-%% @doc
-%% Trim both trailing and leading whitespaces from the binary string.
+%% @doc Trim both trailing and leading whitespaces from the binary string
 %% @end
 -spec trim(binary()) -> binary().
 trim(Bin) ->
     trim_trailing(trim_leading(Bin)).
 
-%% @doc
-%% Convert binary UTF-8 encoded string to lowercase. Note that only
+%% @doc Convert binary UTF-8 encoded string to lowercase. Note that only
 %% latin1 characters are actually converted.
 %% @end
 -spec to_lower(binary()) -> binary().
 to_lower(Bin) ->
     << <<(string:to_lower(Char))/utf8>> || <<Char/utf8>> <= Bin >>.
 
-%% @doc
-%% Convert binary UTF-8 encoded string to uppercase. Note that only
+%% @doc Convert binary UTF-8 encoded string to uppercase. Note that only
 %% latin1 characters are actually converted.
 %% @end
 -spec to_upper(binary()) -> binary().
@@ -84,8 +70,7 @@ to_upper(Bin) ->
 %%                   / "_" / "+" / "`" / "'" / "~" )
 
 -spec is_token_char(integer()) -> boolean().
-%% @doc
-%% Check if character is <code>token</code> character (as specified in RFC 3261 25.1)
+%% @doc Check if character is `token' character (as specified in RFC 3261 25.1)
 %% @end
 is_token_char(C) when
   (C >= $0 andalso C =< $9) ;
@@ -99,18 +84,13 @@ is_token_char(C) when
 is_token_char(_) ->
     false.
 
-%% @doc
-%% Check if character is one of the space characters (space, tab, line feed, carriage return)
+%% @doc Check if character is one of the space characters (space, tab, line feed, carriage return)
 %% @end
 -spec is_space_char(integer()) -> boolean().
-is_space_char(C) when C =:= $ ; C =:= $\t ; C =:= $\r ; C =:= $\n ->
-    true;
+is_space_char(C) when C =:= $ ; C =:= $\t ; C =:= $\r ; C =:= $\n -> true;
+is_space_char(_) -> false.
 
-is_space_char(_) ->
-    false.
-
-%% @doc
-%% Parse binary while given predicate function is true.
+%% @doc Parse binary while given predicate function evaluates to `true'
 %% @end
 -spec parse_while(binary(), fun((char()) -> boolean())) -> {Result :: binary(), Rest :: binary()}.
 parse_while(Bin, Fun) ->
@@ -126,8 +106,7 @@ parse_while(Bin, Fun, Pos) when is_function(Fun) ->
         _ ->
             parse_while(Bin, Fun, Pos + 1)
     end.
-%% @doc
-%% Parse binary until given predicate function is true or until given character is encountered.
+%% @doc Parse binary until given predicate function evaluates to `true' or until given character is encountered
 %% @end
 -spec parse_until(binary(), fun((char()) -> boolean()) | char()) -> {Result :: binary(), Rest :: binary()}.
 parse_until(Bin, Char) when is_integer(Char) ->
@@ -135,7 +114,8 @@ parse_until(Bin, Char) when is_integer(Char) ->
 parse_until(Bin, Fun) when is_function(Fun) ->
     parse_while(Bin, fun (C) -> not Fun(C) end, 0).
 
-%% @doc
+%% @doc Extract `token' from the UTF-8 binary string
+%%
 %% Extract <code>token</code> from the UTF-8 binary and return the rest. Note
 %% that leading whitespaces are skipped and the rest is returned
 %% with leading whitespaces trimmed (rest is either empty binary or
@@ -153,7 +133,8 @@ parse_token(Bin) ->
 %%                   / UTF8-NONASCII
 %% quoted-string  =  SWS DQUOTE *(qdtext / quoted-pair ) DQUOTE
 
-%% @doc
+%% @doc Parse `quoted-string' from the UTF-8 binary string
+%%
 %% Extract <code>quoted-string</code> from the UTF-8 binary and return the rest.
 %% Note that leading whitespaces are skipped and the rest is returned
 %% with leading whitespaces trimmed (rest is either empty binary or
@@ -162,28 +143,23 @@ parse_token(Bin) ->
 -spec parse_quoted_string(binary()) -> {QuotedStr :: binary(), Rest :: binary()}.
 parse_quoted_string(Bin) ->
     parse_quoted_string_internal(trim_leading(Bin)).
-
 parse_quoted_string_internal(<<?DQUOTE, _/binary>> = Bin) ->
     parse_quoted_string(Bin, 1).
 
 parse_quoted_string(Bin, Pos) when Pos =:= size(Bin) ->
     {<<>>, Bin};
-
 parse_quoted_string(Bin, Pos) ->
     <<Str:Pos/binary, C, Rest/binary>> = Bin,
     if
         C =:= ?DQUOTE ->
             {<<Str/binary, C>>, trim_leading(Rest)};
-
         C =:= $\\ ->
             parse_quoted_string(Bin, Pos + 2);
-
         true ->
             parse_quoted_string(Bin, Pos + 1)
     end.
 
-%% @doc
-%% Parse <code>token</code> ({@link parse_token/1}) or <code>quoted-string</code> ({@link parse_quoted_string/1}).
+%% @doc Parse either `token' or `quoted-string' from the UTF-8 binary string
 %% @end
 -spec parse_token_or_quoted_string(binary()) -> {Result :: binary(), Rest :: binary()}.
 parse_token_or_quoted_string(Bin) ->
@@ -194,51 +170,48 @@ parse_token_or_quoted_string(Bin) ->
             parse_token(Bin)
     end.
 
-%% @doc
-%% Convert ASCII binary to integer.
+%% @doc Convert UTF-8 binary to integer
 %% @end
--spec to_integer(binary()) -> integer().
-to_integer(Bin) ->
+-spec binary_to_integer(binary()) -> integer().
+binary_to_integer(Bin) ->
     list_to_integer(binary_to_list(Bin)).
 
 %% @doc Convert integer to ASCII binary.
 %% @end
--spec from_integer(integer()) -> binary().
-from_integer(Int) ->
+-spec integer_to_binary(integer()) -> binary().
+integer_to_binary(Int) ->
     list_to_binary(integer_to_list(Int)).
 
-%% @doc
+%% @doc Convert binary to existing atom
+%%
 %% Tries to convert binary to existing atom. If such atom does not exist,
 %% binary is returned as is.
 %% @end
--spec try_binary_to_existing_atom(binary()) -> atom() | binary().
-try_binary_to_existing_atom(Bin) ->
+-spec binary_to_existing_atom(binary()) -> atom() | binary().
+binary_to_existing_atom(Bin) ->
     try binary_to_existing_atom(Bin, utf8)
     catch error:badarg -> Bin
     end.
 
-%% @doc
-%% Converts atoms, binaries, integers, strings or ip addresses to binary.
+%% @doc Convert atoms, binaries, integers or strings to binary.
 %% @end
 -spec any_to_binary(atom() | binary() | integer() | list() | inet:ip_address()) -> binary().
-any_to_binary(Atom) when is_atom(Atom) ->
-    atom_to_binary(Atom, utf8);
+any_to_binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+any_to_binary(Bin) when is_binary(Bin) -> Bin;
+any_to_binary(Int) when is_integer(Int) -> integer_to_binary(Int);
+any_to_binary(List) when is_list(List) -> list_to_binary(List);
+any_to_binary({_, _, _, _} = Ip) -> ip_to_binary(Ip).
 
-any_to_binary(Bin) when is_binary(Bin) ->
-    Bin;
 
-any_to_binary(Int) when is_integer(Int) ->
-    from_integer(Int);
-
-any_to_binary(List) when is_list(List) ->
-    list_to_binary(List);
-
-any_to_binary({A, B, C, D}) when
+%% @doc Convert IP address to binary string
+%% @end
+-spec ip_to_binary(inet:ip_address()) -> binary().
+ip_to_binary({A, B, C, D}) when
   is_integer(A), is_integer(B), is_integer(C), is_integer(D) ->
-    <<(sip_binary:from_integer(A))/binary, $.,
-      (sip_binary:from_integer(B))/binary, $.,
-      (sip_binary:from_integer(C))/binary, $.,
-      (sip_binary:from_integer(D))/binary>>.
+    <<(integer_to_binary(A))/binary, $.,
+      (integer_to_binary(B))/binary, $.,
+      (integer_to_binary(C))/binary, $.,
+      (integer_to_binary(D))/binary>>.
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -276,15 +249,16 @@ binary_test_() ->
      ?_assertEqual({<<"\"so\\nme\"">>, <<"data ">>}, parse_token_or_quoted_string(<<"   \"so\\nme\" data ">>)),
 
      % conversions to and from binary
-     ?_assertEqual(123, to_integer(<<"123">>)),
-     ?_assertEqual(<<"123">>, from_integer(123)),
+     ?_assertEqual(123, binary_to_integer(<<"123">>)),
+     ?_assertEqual(<<"123">>, integer_to_binary(123)),
      ?_assertEqual(<<"some">>, any_to_binary(some)),
      ?_assertEqual(<<"some">>, any_to_binary(<<"some">>)),
      ?_assertEqual(<<"123">>, any_to_binary(123)),
      ?_assertEqual(<<"some">>, any_to_binary("some")),
      ?_assertEqual(<<"10.0.0.1">>, any_to_binary({10, 0, 0, 1})),
-     ?_assertEqual(<<"neverexistingatom">>, try_binary_to_existing_atom(<<"neverexistingatom">>)),
-     ?_assertEqual('existingatom', try_binary_to_existing_atom(<<"existingatom">>)),
+     ?_assertEqual(<<"10.0.0.1">>, ip_to_binary({10, 0, 0, 1})),
+     ?_assertEqual(<<"neverexistingatom">>, binary_to_existing_atom(<<"neverexistingatom">>)),
+     ?_assertEqual('existingatom', binary_to_existing_atom(<<"existingatom">>)),
 
      % parse
      ?_assertEqual({<<"some">>, <<"! rest  ">>}, parse_while(<<"some! rest  ">>, fun (C) -> C =/= $! end)),

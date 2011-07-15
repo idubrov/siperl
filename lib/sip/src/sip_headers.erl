@@ -93,19 +93,19 @@ parse_header('via', Bin) ->
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 parse_header('content-length', Bin) ->
-    sip_binary:to_integer(Bin);
+    sip_binary:binary_to_integer(Bin);
 
 %% CSeq  =  "CSeq" HCOLON 1*DIGIT LWS Method
 parse_header('cseq', Bin) ->
     {SeqBin, Bin2} = sip_binary:parse_token(Bin),
     {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
-    Sequence = sip_binary:to_integer(SeqBin),
-    Method = sip_binary:try_binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    Sequence = sip_binary:binary_to_integer(SeqBin),
+    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
     #sip_hdr_cseq{sequence = Sequence, method = Method};
 
 %% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
 parse_header('max-forwards', Bin) ->
-    sip_binary:to_integer(Bin);
+    sip_binary:binary_to_integer(Bin);
 
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
 parse_header('call-id', Bin) ->
@@ -141,7 +141,7 @@ parse_sent_protocol(Bin) ->
     {Protocol, <<$/, Bin2/binary>>} = sip_binary:parse_token(Bin),
     {Version, <<$/, Bin3/binary>>} = sip_binary:parse_token(Bin2),
     {Transport, Bin4} = sip_binary:parse_token(Bin3),
-    Transport2 = sip_binary:try_binary_to_existing_atom(sip_binary:to_lower(Transport)),
+    Transport2 = sip_binary:binary_to_existing_atom(sip_binary:to_lower(Transport)),
     {{Protocol, Version, Transport2}, Bin4}.
 
 %% sent-by           =  host [ COLON port ]
@@ -151,7 +151,7 @@ parse_sent_by(Bin) ->
                        <<?HCOLON, Rest/binary>>
                          ->
                            {P, Bin4} = sip_binary:parse_token(Rest),
-                           {sip_binary:to_integer(P), Bin4};
+                           {sip_binary:binary_to_integer(P), Bin4};
                        _ ->
                            {undefined, Bin2}
                    end,
@@ -167,11 +167,11 @@ parse_params(<<?SEMI, Bin/binary>>, List) ->
             % Parameter with value
             {Name, <<?EQUAL, Bin2/binary>>} ->
                 {Value, R} = sip_binary:parse_token_or_quoted_string(Bin2),
-                {{sip_binary:try_binary_to_existing_atom(Name), Value}, R};
+                {{sip_binary:binary_to_existing_atom(Name), Value}, R};
 
             % Parameter without a value
             {Name, Bin2} ->
-                {sip_binary:try_binary_to_existing_atom(Name), Bin2}
+                {sip_binary:binary_to_existing_atom(Name), Bin2}
         end,
     parse_params(Rest, [Param|List]);
 
@@ -224,17 +224,17 @@ format_header('via', [Top | Rest]) ->
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 format_header('content-length', Length) when is_integer(Length) ->
-    sip_binary:from_integer(Length);
+    sip_binary:integer_to_binary(Length);
 
 %% CSeq  =  "CSeq" HCOLON 1*DIGIT LWS Method
 format_header('cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
-    SequenceBin = sip_binary:from_integer(CSeq#sip_hdr_cseq.sequence),
+    SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
     MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
     <<SequenceBin/binary, " ", MethodBin/binary>>;
 
 %% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
 format_header('max-forwards', Hops) when is_integer(Hops) ->
-    sip_binary:from_integer(Hops);
+    sip_binary:integer_to_binary(Hops);
 
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
 %% Call id is always a binary, so handled by first case
@@ -278,7 +278,7 @@ append_via_parm(Bin, Value) ->
             <<Bin2/binary, ?SP, Host/binary>>;
 
         {Host, Port} ->
-            <<Bin2/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:from_integer(Port))/binary>>
+            <<Bin2/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
     end,
     append_params(Bin3, Value#sip_hdr_via.params).
 
@@ -363,8 +363,7 @@ binary_to_header_name(<<"l">>) -> 'content-length';
 binary_to_header_name(<<"f">>) -> 'from';
 binary_to_header_name(<<"t">>) -> 'to';
 binary_to_header_name(<<"i">>) -> 'call-id';
-binary_to_header_name(Bin) ->
-    sip_binary:try_binary_to_existing_atom(Bin).
+binary_to_header_name(Bin) -> sip_binary:binary_to_existing_atom(Bin).
 
 %% Converting header name back to binary
 header_name_to_binary('via') -> <<"Via">>;
