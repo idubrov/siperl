@@ -83,11 +83,12 @@ handle_info({tcp, _Socket, Packet}, State) ->
     {ok, ParseState, Msgs} = sip_message:parse_stream(Packet, State#state.parse_state),
 
     % Dispatch to transport layer
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Dispatch =
         fun (Msg) ->
                  case sip_message:is_request(Msg) of
-                     true -> sip_transport:dispatch_request(State#state.remote, self(), Msg);
-                     false -> sip_transport:dispatch_response(State#state.remote, self(), Msg)
+                     true -> sip_transport:dispatch_request(State#state.remote, Connection, Msg);
+                     false -> sip_transport:dispatch_response(State#state.remote, Connection, Msg)
                  end
         end,
     lists:foreach(Dispatch, Msgs),

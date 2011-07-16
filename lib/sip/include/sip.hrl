@@ -34,14 +34,13 @@
 %% SIP transport layer types
 %%-----------------------------------------------------------------
 
-%% @doc
-%% According to the RFC 3261 18, connections are indexed by the tuple
-%% formed from the address, port, and transport protocol at the far end
-%% of the connection
+%% @doc Destination to send 
 %% @end
 -record(sip_destination, {address :: inet:ip_address() | inet:hostname(),
-                          port = 5060 :: integer(),
+                          port = 5060 :: integer() | 'undefined',
                           transport :: atom()}).
+
+-record(sip_connection, {transport :: atom(), connection :: pid() | term()}).
 
 %%-----------------------------------------------------------------
 %% SIP transaction layer

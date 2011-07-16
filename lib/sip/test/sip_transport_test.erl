@@ -126,7 +126,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
     SentBy = {sip_binary:any_to_binary(Hostname), 15060},
-    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {maddr, MAddr}, {ttl, 4}]),
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {maddr, <<"239.0.0.100">>}, {ttl, 4}]),
     ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
@@ -277,7 +277,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
 send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     MAddr = {239, 0, 0, 100},
     SentBy = {<<"127.0.0.1">>, 25060},
-    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {'maddr', MAddr}]),
+    Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {'maddr', <<"239.0.0.100">>}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
     Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),

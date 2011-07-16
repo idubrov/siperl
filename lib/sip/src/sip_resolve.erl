@@ -13,7 +13,7 @@
 %% Exports
 
 %% API
--export([backup_destinations/1]).
+-export([destinations/1, resolve/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
@@ -25,18 +25,23 @@
 %% API functions
 %%-----------------------------------------------------------------
 
-%% @doc Generate list of backup destination for given top `Via:' value.
+resolve(Bin) ->
+    case sip_binary:parse_ip_address(Bin) of
+        {ok, Addr} -> Addr;
+        {error, invalid} ->
+            {ok, Addr} = inet:getaddr(binary_to_list(Bin), inet),
+            Addr
+    end.
+
+%% @doc Generate list of destination for given top `Via:' value.
 %%
 %% See <a href="http://tools.ietf.org/html/rfc3263#section-5">RFC 3263, 5 Server Usage</a>
 %% @end
--spec backup_destinations(#sip_hdr_via{}) -> [#sip_destination{}].
-backup_destinations(#sip_hdr_via{sent_by = {Host, Port}, transport = Transport}) ->
+-spec destinations(#sip_hdr_via{}) -> [#sip_destination{}].
+destinations(#sip_hdr_via{sent_by = {Host, Port}, transport = Transport}) ->
     case sip_binary:parse_ip_address(Host) of
-        {ok, Addr} when Port =/= undefined ->
-            [#sip_destination{address = Addr, port = Port, transport = Transport}];
         {ok, Addr} ->
-            % FIXME: proper default port...
-            [#sip_destination{address = Addr, port = 5060, transport = Transport}];
+            [#sip_destination{address = Addr, port = Port, transport = Transport}];
         {error, invalid} when Port =/= undefined ->
             % If, however, the sent-by field contained a domain name and a port
             % number, the server queries for A or AAAA records with that name.

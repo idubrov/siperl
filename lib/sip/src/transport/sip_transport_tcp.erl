@@ -22,9 +22,10 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec send(#sip_destination{} | pid(), #sip_message{}) -> ok | {error, Reason :: term()}.
+-spec send(#sip_destination{} | #sip_connection{}, #sip_message{}) -> ok | {error, Reason :: term()}.
 send(To, Message) when is_record(To, sip_destination) ->
     {ok, Pid} = sip_transport_tcp_conn_sup:start_connection(To),
-    send(Pid, Message);
-send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
-    sip_transport_tcp_conn:send(Pid, Message).
+    sip_transport_tcp_conn:send(Pid, Message);
+send(Conn, Message) when is_record(Conn, sip_connection),
+                         is_record(Message, sip_message) ->
+    sip_transport_tcp_conn:send(Conn#sip_connection.connection, Message).

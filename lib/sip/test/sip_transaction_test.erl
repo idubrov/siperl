@@ -436,7 +436,7 @@ client_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 server_invite_ok(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Ringing = sip_message:create_response(Request, 180, <<"Ringing">>, undefined),
@@ -487,7 +487,7 @@ server_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_invite_err(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
@@ -548,7 +548,7 @@ server_invite_err(Transport) ->
 %% - transaction terminates due to timeout
 %% @end
 server_invite_timeout(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
@@ -581,7 +581,7 @@ server_invite_timeout(Transport) ->
 %% - transaction is not in the list of transactions
 %% @end
 server_invite_tu_down(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:invite(Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
@@ -623,7 +623,7 @@ server_invite_tu_down(Transport) ->
 %% - transaction terminates
 %% @end
 server_ok(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:request('OPTIONS', Transport),
     Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Trying2 = sip_message:create_response(Request, 100, <<"Trying Again">>, undefined),
@@ -693,7 +693,7 @@ server_ok(Transport) ->
 %% - transaction terminates
 %% @end
 server_err(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:request('OPTIONS', Transport),
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
     IsReliable = sip_transport:is_reliable(Transport),
@@ -723,7 +723,7 @@ server_err(Transport) ->
 %% - transaction is not in the list of transactions
 %% @end
 server_tu_down(Transport) ->
-    Connection = self(),
+    Connection = #sip_connection{transport = tcp, connection = self()},
     Request = sip_test:request('OPTIONS', Transport),
 
     % Prepare TU

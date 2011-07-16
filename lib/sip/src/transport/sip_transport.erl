@@ -36,7 +36,7 @@
 -include_lib("sip.hrl").
 
 %% Types
--type connection() :: pid() | term().
+-type connection() :: #sip_connection{} | undefined.
 -export_type([connection/0]).
 
 -record(state, {}).
@@ -80,29 +80,57 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
         Result -> Result
      end.
 
-%% @doc
-%% Try to send reply by following RFC 3261 18.2.2.
+%% @doc Send response by following RFC 3261 18.2.2
 %% @end
 -spec send_response(connection() | undefined, #sip_message{}) -> ok | {error, Reason :: term()}.
-send_response(undefined, Response) ->
-    % Validate response
-    true = sip_message:is_response(Response),
-
-    To = reply_address(Response),
-    Transport = To#sip_destination.transport,
-    transport_send(Transport, To, Response);
-send_response(Connection, Response) ->
-    % Validate response
-    true = sip_message:is_response(Response),
-
-    % Determine transport to send response with
-    {ok, Via} = sip_message:top_header('via', Response),
-    Transport = Via#sip_hdr_via.transport,
+send_response(undefined, Response) -> send_response_received(Response);
+send_response(Connection, Response) when is_record(Connection, sip_connection) ->
+    Transport = Connection#sip_connection.transport,
     case transport_send(Transport, Connection, Response) of
         ok -> ok;
         {error, _Reason} ->
-            % Try to send again to the address in "received" and port in sent-by
-            send_response(undefined, Response)
+            % Try to open connection to the address in "received" and port in sent-by
+            send_response_received(Response)
+    end.
+
+
+%% @doc See RFC 3261 18.2.2 Sending Responses
+%% @end
+send_response_received(Response) ->
+    {ok, Via} = sip_message:top_header('via', Response),
+    Transport = Via#sip_hdr_via.transport,
+    IsReliable = is_reliable(Transport),
+    {_, Port} = Via#sip_hdr_via.sent_by,
+    case lists:keyfind('maddr', 1, Via#sip_hdr_via.params) of
+        {_, MAddr} when not IsReliable ->
+            % use 'maddr' parameter for unreliable transports
+            Addr = sip_resolve:resolve(MAddr),
+            To = #sip_destination{address = Addr, port = Port, transport = Transport},
+            transport_send(Transport, To, Response);
+        false ->
+            case lists:keyfind('received', 1, Via#sip_hdr_via.params) of
+                {_, Received} ->
+                    % use 'received' parameter, must be IP
+                    {ok, ReceivedAddr} = sip_binary:parse_ip_address(Received),
+                    To = #sip_destination{address = ReceivedAddr, port = Port, transport = Transport},
+                    transport_send(Transport, To, Response);
+                false ->
+                    % Use procedures of Section 5 RFC 3263
+                    Destinations = sip_resolve:destinations(Via),
+                    send_response_fallback(Destinations, Via#sip_hdr_via.transport, Response)
+            end
+    end.
+
+
+%% @doc Try sending response to destinations from the list
+%% @end
+send_response_fallback([], _Transport, _Response) -> {error, no_backup_servers};
+send_response_fallback([To|Rest], Transport, Response) ->
+    case transport_send(Transport, To, Response) of
+        ok -> ok;
+        {error, _Reason} ->
+            % try next destination
+            send_response_fallback(Rest, Transport, Response)
     end.
 
 %%-----------------------------------------------------------------
@@ -215,47 +243,6 @@ add_via_received(#sip_destination{address = Src}, Msg) ->
           end,
     sip_message:update_top_header('via', Fun, Msg).
 
-to_address(List) when is_list(List) ->
-    List;
-
-to_address(Bin) when is_binary(Bin) ->
-    binary_to_list(Bin);
-
-to_address({A, B, C, D} = Addr) when
-  is_integer(A), is_integer(B), is_integer(C), is_integer(D) ->
-    Addr.
-
-%% @doc
-%% See RFC 3261 18.2.2 Sending Responses
-%% @end
-reply_address(Message) ->
-    {ok, Via} = sip_message:top_header('via', Message),
-    Transport = Via#sip_hdr_via.transport,
-    IsReliable = is_reliable(Transport),
-    Addr =
-        case lists:keyfind('maddr', 1, Via#sip_hdr_via.params) of
-            {_, MAddr} when not IsReliable ->
-                to_address(MAddr); % use 'maddr' parameter for unreliable transports
-
-            false ->
-                case lists:keyfind('received', 1, Via#sip_hdr_via.params) of
-                    {_, Received} ->
-                        to_address(Received); % use 'received' parameter
-
-                    false ->
-                        SentBy = element(1, Via#sip_hdr_via.sent_by),
-                        to_address(SentBy) % use 'sent-by' parameter
-                end
-        end,
-    Port = case Via#sip_hdr_via.sent_by of
-               {_, undefined} -> default_port(Transport);
-               {_, P} -> P
-           end,
-    #sip_destination{address = Addr,
-                  port = Port,
-                  transport = Transport}.
-
-
 %% @doc
 %% Default transports ports
 %% @end
@@ -271,6 +258,8 @@ sent_by(Transport) ->
 %% @doc
 %% Send the message through the transport.
 %% @end
+transport_send(Transport, #sip_destination{port = undefined} = To, Message) ->
+    transport_send(Transport, To#sip_destination{port = default_port(Transport)}, Message);
 transport_send(udp, To, Message) -> sip_transport_udp:send(To, Message);
 transport_send(tcp, To, Message) -> sip_transport_tcp:send(To, Message).
 
