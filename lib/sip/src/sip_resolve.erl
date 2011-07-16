@@ -25,6 +25,7 @@
 %% API functions
 %%-----------------------------------------------------------------
 
+-spec resolve(binary()) -> inet:ip_address().
 resolve(Bin) ->
     case sip_binary:parse_ip_address(Bin) of
         {ok, Addr} -> Addr;
