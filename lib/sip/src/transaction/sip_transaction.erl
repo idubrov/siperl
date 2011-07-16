@@ -15,9 +15,10 @@
 
 % Client API
 -export([start_client_tx/3, start_server_tx/3, send_response/2]).
-% Management API
 -export([list_tx/0]).
-% API for transport layer
+-export([tx_key/2]).
+
+% Internal API for transport layer
 -export([handle_request/1, handle_response/1]).
 
 %% Macros

@@ -93,7 +93,7 @@ for_transports(Tests, Transports) ->
 %% - transaction terminates
 %% @end
 client_invite_ok(Transport) ->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
@@ -151,7 +151,7 @@ client_invite_ok(Transport) ->
 %% - transaction terminates
 %% @end
 client_invite_err(Transport)->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     Response = sip_message:create_response(Request, 500, <<"Internal error">>, undefined),
     ACK = sip_message:create_ack(Request, Response),
@@ -216,7 +216,7 @@ client_invite_err(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_calling(Transport)->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
@@ -246,7 +246,7 @@ client_invite_timeout_calling(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_invite_timeout_proceeding(Transport)->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 
@@ -279,7 +279,7 @@ client_invite_timeout_proceeding(Transport)->
 %% - transaction terminates
 %% @end
 client_ok(Transport) ->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
     Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
@@ -363,7 +363,7 @@ client_ok(Transport) ->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_trying(Transport)->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
@@ -393,7 +393,7 @@ client_timeout_trying(Transport)->
 %% - transaction terminates due to the timeout
 %% @end
 client_timeout_proceeding(Transport)->
-    To = #sip_destination{address = "127.0.0.1", port = 5060, transport = Transport},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
     Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
 

@@ -84,7 +84,7 @@ cleanup({Pid, UDP, TCP}) ->
 %% Tests for RFC 3261 18.1.1 Sending Requests
 send_request_udp({_Transport, UDP, _TCP}) ->
     Request = sip_test:invite(udp),
-    To = #sip_destination{address = "127.0.0.1", port = 25060, transport = udp},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 25060, transport = udp},
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
@@ -101,7 +101,7 @@ send_request_udp({_Transport, UDP, _TCP}) ->
 send_request_udp_fallback({_Transport, _UDP, TCP}) ->
     LongBody = sip_test:generate_body(<<$A>>, 1300),
     Request = (sip_test:invite(tcp))#sip_message{body = LongBody},
-    To = #sip_destination{address = "127.0.0.1", port = 25060, transport = udp},
+    To = #sip_destination{address = {127, 0, 0, 1}, port = 25060, transport = udp},
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),

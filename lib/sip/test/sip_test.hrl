@@ -14,7 +14,7 @@
 
 %% Macros
 -define(TIMEOUT, 500).
--define(_fail(Msg), 
+-define(_fail(Msg),
 	.erlang:error({fail,
 				  [{module, ?MODULE},
 				   {line, ?LINE},
@@ -23,7 +23,7 @@
 
 %% Macros for functional testing of transaction layer
 -define(assertReceive(Msg, Pattern, Timeout),
-		(fun () -> receive 
+		(fun () -> receive
 					   Pattern -> ok
 				   after Timeout ->  ?fail(Msg)
 				   end
