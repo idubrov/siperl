@@ -11,7 +11,7 @@
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
 -export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
--export([is_space_char/1, is_token_char/1]).
+-export([is_space_char/1, is_token_char/1, parse_ip_address/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
@@ -212,6 +212,35 @@ ip_to_binary({A, B, C, D}) when
       (integer_to_binary(B))/binary, $.,
       (integer_to_binary(C))/binary, $.,
       (integer_to_binary(D))/binary>>.
+
+%% @doc Check if given binary is ip address
+%%
+%% @end
+-spec parse_ip_address(binary()) -> {ok, inet:ip_address()} | {error, invalid}.
+parse_ip_address(Bin) when is_binary(Bin) ->
+    case binary:split(Bin, <<$.>>, [global]) of
+        List when length(List) =:= 4 ->
+            Addr = [parse_ipv4_octet(Octet) || Octet <- List],
+            case lists:all(fun (false) -> false; (_) -> true end, Addr) of
+                true -> {ok, list_to_tuple(Addr)};
+                false -> {error, invalid}
+            end;
+        _ -> false
+    end.
+
+%% @doc Parse given binary string as IPv4 octet.
+%%
+%% Returns `false' if binary string is invalid (not an integer or out of range).
+%% @end
+parse_ipv4_octet(<<>>) -> false;
+parse_ipv4_octet(Bin) -> parse_ipv4_octet(Bin, 0).
+
+parse_ipv4_octet(<<>>, Acc) when Acc >= 0, Acc =< 255 -> Acc;
+parse_ipv4_octet(<<Char, Rest/binary>>, Acc)
+  when Char >= $0, Char =< $9 ->
+    parse_ipv4_octet(Rest, Acc * 10 + (Char - $0));
+parse_ipv4_octet(_Char, _Acc) -> false.
+
 
 %%-----------------------------------------------------------------
 %% Tests
