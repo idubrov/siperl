@@ -85,8 +85,12 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 %% @end
 -spec send_response(connection() | undefined, #sip_message{}) -> ok | {error, Reason :: term()}.
 send_response(undefined, Response) ->
+    % Validate response
+    true = sip_message:is_response(Response),
+
     To = reply_address(Response),
-    send_response(To, Response);
+    Transport = To#sip_destination.transport,
+    transport_send(Transport, To, Response);
 send_response(Connection, Response) ->
     % Validate response
     true = sip_message:is_response(Response),
