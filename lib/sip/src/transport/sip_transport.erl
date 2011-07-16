@@ -94,10 +94,11 @@ send_response(Connection, Response) ->
     % Determine transport to send response with
     {ok, Via} = sip_message:top_header('via', Response),
     Transport = Via#sip_hdr_via.transport,
-    try transport_send(Transport, Connection, Response)
-    catch exit:{noproc, _Reason} ->
-              % Try to send again to the address in "received" and port in sent-by
-              send_response(undefined, Response)
+    case transport_send(Transport, Connection, Response) of
+        ok -> ok;
+        {error, _Reason} ->
+            % Try to send again to the address in "received" and port in sent-by
+            send_response(undefined, Response)
     end.
 
 %%-----------------------------------------------------------------

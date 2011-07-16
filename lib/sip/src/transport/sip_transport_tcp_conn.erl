@@ -43,7 +43,9 @@ start_link(Remote) ->
 %% @end
 -spec send(pid(), #sip_message{}) -> ok | {error, Reason :: term()}.
 send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
-    gen_server:call(Pid, {send, Message}).
+    try gen_server:call(Pid, {send, Message})
+    catch exit:{noproc, _Reason} -> {error, not_connected}
+    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
