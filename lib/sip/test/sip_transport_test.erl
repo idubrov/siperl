@@ -235,7 +235,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     % Send response
     ok = sip_transport:send_response(Response),
     {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
-    ?assertEqual(ActualResponse, ResponseBin),
+    ?assertEqual(ResponseBin, ActualResponse),
 
     gen_tcp:close(Socket),
     ok.
@@ -270,7 +270,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
     % Server should retry by opening connection to received:sent-by-port
     {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
     {ok, ActualResponse} = gen_tcp:recv(RecvSocket, size(ResponseBin), ?TIMEOUT),
-    ?assertEqual(ActualResponse, ResponseBin),
+    ?assertEqual(ResponseBin, ActualResponse),
     gen_tcp:close(RecvSocket),
 
     gen_tcp:close(Socket),

@@ -59,9 +59,10 @@ init(Remote)
     To = Remote#sip_destination.address,
     Port = Remote#sip_destination.port,
     % FIXME: Should timeout!!
-    {ok, Socket} = gen_tcp:connect(To, Port, [binary, {active, false}]),
-    init(Socket);
-
+    case gen_tcp:connect(To, Port, [binary, {active, false}]) of
+        {ok, Socket} -> init(Socket);
+        {error, Reason} -> {stop, Reason}
+    end;
 init(Socket) ->
     % RFC3261 Section 18
     % These connections are indexed by the tuple formed from the address,

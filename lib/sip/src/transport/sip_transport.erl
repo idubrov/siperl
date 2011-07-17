@@ -71,13 +71,14 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     Request2 = add_via_sentby(Request, To, TTL),
 
     case transport_send(To#sip_destination.transport, To, Request2) of
+        ok -> ok;
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
             error_logger:warning_msg("Message is too big, re-sending using TCP"),
 
             % Change transport
             send_request(To#sip_destination{transport = tcp}, Request, Opts);
-        Result -> Result
+        {error, Reason} -> {error, Reason}
      end.
 
 %% @doc Send response by following RFC 3261 18.2.2

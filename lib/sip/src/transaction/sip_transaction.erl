@@ -54,8 +54,10 @@ start_client_tx(TU, To, Request)
                         tx_user = TU,
                         request = Request2,
                         reliable = Reliable},
-    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
-    {ok, Key}.
+    case sip_transaction_tx_sup:start_tx(Module, TxState) of
+        {ok, _Pid} -> {ok, Key};
+        {error, Reason} -> {error, Reason}
+    end.
 
 %% @doc
 %% Start new server transaction.
