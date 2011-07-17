@@ -26,8 +26,7 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
-
--spec init(#tx_state{}) -> #tx_state{}.
+-spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
 init(#tx_state{tx_key = Key, tx_user = TxUser} = TxState) ->
     % Register transaction under its key
     gproc:add_local_name({tx, Key}),
@@ -39,7 +38,11 @@ init(#tx_state{tx_key = Key, tx_user = TxUser} = TxState) ->
             monitor(process, TxUser);
         _ -> ok
     end,
-    TxState.
+    % Send initialization message to ourselves, to make any heavy-weight
+    % initialization. Also, any failure during the heavy-weight initialization
+    % is appropriately reported to the TU (see 8.1.3.1, RFC 3261)
+    gen_fsm:send_event(self(), init),
+    {ok, 'INIT', TxState}.
 
 -spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
 cancel_timer(TimerIdx, TxState)

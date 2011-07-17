@@ -17,24 +17,20 @@
 -include_lib("sip_transaction.hrl").
 -include_lib("sip.hrl").
 
-%%-----------------------------------------------------------------
-%% Exports
-%%-----------------------------------------------------------------
 %% FSM callbacks
--export([init/1, handle_info/3]).
--export(['TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
-
+-export([handle_info/3]).
+-export(['INIT'/2, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
--spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
-init(Params) ->
-    TxState = ?INIT(Params),
-
+%% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
+%% @end
+-spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
+'INIT'(init, TxState) ->
     % The request MUST be passed to the TU.
     TxState2 = ?TU(TxState#tx_state.request, TxState),
-    {ok, 'TRYING', TxState2}.
+    {next_state, 'TRYING', TxState2}.
 
 -spec handle_info(term(), atom(), #tx_state{}) ->
           {stop, term(), #tx_state{}}.
