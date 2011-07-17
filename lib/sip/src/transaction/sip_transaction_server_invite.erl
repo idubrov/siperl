@@ -42,7 +42,7 @@
 %% Handle case when we expect response from the TU, but it goes down
 %% @end
 handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, 'PROCEEDING', TxState) ->
-    erlang:error({tu_down, TxState#tx_state.tx_user});
+    {stop, {tu_down, TxState#tx_state.tx_user}, TxState};
 
 %% @doc
 %% Send provisional response.
@@ -148,8 +148,8 @@ handle_info(Info, State, TxState) ->
 %% transition to the "Terminated" state, and MUST indicate to the TU
 %% that a transaction failure has occurred.
 %% @end
-'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, _TxState) ->
-    erlang:error(timeout).
+'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, TxState) ->
+    {stop, {timeout, timerH}, TxState}.
 
 %% @doc
 %%  If an ACK is received while the server transaction is in the

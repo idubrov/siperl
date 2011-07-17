@@ -39,7 +39,7 @@
 %% @end
 handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, TxState)
   when State =:= 'TRYING'; State =:= 'PROCEEDING' ->
-    erlang:error({tu_down, TxState#tx_state.tx_user});
+    {stop, {tu_down, TxState#tx_state.tx_user}, TxState};
 
 %% @doc
 %% Let the base module handle the info.
