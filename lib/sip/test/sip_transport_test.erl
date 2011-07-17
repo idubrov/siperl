@@ -66,7 +66,7 @@ setup() ->
     meck:expect(sip_core, handle_request, Handle),
     meck:expect(sip_core, handle_response, Handle),
 
-    meck:new(sip_transaction),
+    meck:new(sip_transaction, [passthrough]),
     meck:expect(sip_transaction, handle_request, fun (_Msg) -> not_handled end),
     meck:expect(sip_transaction, handle_response, fun (_Msg) -> not_handled end),
     {Pid, UDP, TCP}.
@@ -223,18 +223,19 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
 
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
-        {request, Conn, Msg} ->
-            ?assertEqual(Request, sip_message:parse_all_headers(Msg)),
-            % Send response
-            ok = sip_transport:send_response(Conn, Response),
-            {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
-            ?assertEqual(ActualResponse, ResponseBin);
+        {request, _Conn, Msg} ->
+            ?assertEqual(Request, sip_message:parse_all_headers(Msg));
 
         {response, _Conn, _Msg} ->
             ?fail("Response is not expected here")
         after ?TIMEOUT ->
             ?fail("Message expected to be received by transport layer")
     end,
+
+    % Send response
+    ok = sip_transport:send_response(Response),
+    {ok, ActualResponse} = gen_tcp:recv(Socket, size(ResponseBin), ?TIMEOUT),
+    ?assertEqual(ActualResponse, ResponseBin),
 
     gen_tcp:close(Socket),
     ok.
@@ -253,23 +254,24 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
 
     gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
-        {request, Conn, Msg} ->
-            ?assertEqual(Request, sip_message:parse_all_headers(Msg)),
-            % Close connection
-            gen_tcp:close(Socket),
-            timer:sleep(?TIMEOUT),
-            % Send response
-            ok = sip_transport:send_response(Conn, Response),
-
-            % Server should retry by opening connection to received:sent-by-port
-            {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
-            {ok, ActualResponse} = gen_tcp:recv(RecvSocket, size(ResponseBin), ?TIMEOUT),
-            ?assertEqual(ActualResponse, ResponseBin),
-            gen_tcp:close(RecvSocket);
+        {request, _Conn, Msg} ->
+            ?assertEqual(Request, sip_message:parse_all_headers(Msg));
 
         {response, _Conn2, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end,
+
+    % Close connection
+    gen_tcp:close(Socket),
+    timer:sleep(?TIMEOUT),
+    % Send response
+    ok = sip_transport:send_response(Response),
+
+    % Server should retry by opening connection to received:sent-by-port
+    {ok, RecvSocket} = gen_tcp:accept(TCP, ?TIMEOUT),
+    {ok, ActualResponse} = gen_tcp:recv(RecvSocket, size(ResponseBin), ?TIMEOUT),
+    ?assertEqual(ActualResponse, ResponseBin),
+    gen_tcp:close(RecvSocket),
 
     gen_tcp:close(Socket),
     ok.
@@ -286,12 +288,12 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     % RFC 3261, 18.2.2: Sending Responses (to maddr)
 
     % Should be timeout (membership is not configured yet!)
-    ok = sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(Response),
     {error, timeout} = gen_udp:recv(UDP, 2000, ?TIMEOUT),
 
     % This time we should receive it
     inet:setopts(UDP, [{add_membership, {MAddr, {0, 0, 0, 0}}}]),
-    ok = sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(Response),
     {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ResponseBin), ?TIMEOUT),
     ?assertEqual(ResponseBin, Packet),
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
@@ -302,7 +304,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),
 
-    ok = sip_transport:send_response(undefined, Response3),
+    ok = sip_transport:send_response(Response3),
     {ok, {_, _, Packet2}} = gen_udp:recv(UDP, size(ResponseBin3), ?TIMEOUT),
 
     ?assertEqual(ResponseBin3, Packet2),
@@ -320,7 +322,7 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
 
     % check on default port
     {ok, DefaultUDP} = gen_udp:open(5060, [inet, binary, {active, false}]),
-    ok = sip_transport:send_response(undefined, Response),
+    ok = sip_transport:send_response(Response),
     {ok, {_, _, Packet}} = gen_udp:recv(DefaultUDP, size(ResponseBin), ?TIMEOUT),
     gen_udp:close(DefaultUDP),
     ?assertEqual(ResponseBin, Packet),

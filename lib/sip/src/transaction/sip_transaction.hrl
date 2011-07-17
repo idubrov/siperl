@@ -24,7 +24,6 @@
          provisional,   % Most recent provisional response
          response,      % Final response
          to,            % Address to send request to
-         connection,    % Connection request was received on
          reliable       % If request was made via reliable connection
         }).
 

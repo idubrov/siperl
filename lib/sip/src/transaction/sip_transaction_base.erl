@@ -74,8 +74,7 @@ send_request(Msg, TxState) ->
 
 -spec send_response(#sip_message{}, #tx_state{}) -> #tx_state{}.
 send_response(Msg, TxState) ->
-    % Send response using the connection of original request
-    case sip_transport:send_response(TxState#tx_state.connection, Msg) of
+    case sip_transport:send_response(Msg) of
         ok -> ok;
         {error, Reason} -> erlang:error(Reason)
     end,

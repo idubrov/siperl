@@ -14,9 +14,8 @@
 -include_lib("sip_transaction.hrl").
 
 % Client API
--export([start_client_tx/3, start_server_tx/3, send_response/2]).
+-export([start_client_tx/3, start_server_tx/2, send_response/2, tx_key/2]).
 -export([list_tx/0]).
--export([tx_key/2]).
 
 % Internal API for transport layer
 -export([handle_request/1, handle_response/1]).
@@ -61,8 +60,8 @@ start_client_tx(TU, To, Request)
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(pid() | term(), sip_transport:connection(), #sip_message{}) -> {ok, tx_key()}.
-start_server_tx(TU, Connection, Request)
+-spec start_server_tx(pid() | term(), #sip_message{}) -> {ok, tx_key()}.
+start_server_tx(TU, Request)
   when is_record(Request, sip_message) ->
 
     % Check top via in received request to check transport reliability
@@ -71,8 +70,7 @@ start_server_tx(TU, Connection, Request)
 
     Key = tx_key(server, Request),
     Module = tx_module(server, Request),
-    TxState = #tx_state{connection = Connection,
-                        tx_key = Key,
+    TxState = #tx_state{tx_key = Key,
                         tx_user = TU,
                         request = Request,
                         reliable = Reliable},
@@ -129,6 +127,9 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
     Key = tx_key(Kind, Msg),
     tx_send(Key, Msg).
 
+%% @doc Determine transaction unique key
+%% @end
+-spec tx_key(client | server, sip_message:message()) -> tx_key().
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Method = sip_message:method(Msg),
@@ -137,7 +138,7 @@ tx_key(client, Msg) ->
 tx_key(server, Msg) ->
     % RFC 17.2.3
     % for ACK we use INVITE
-    Method = 
+    Method =
         case sip_message:method(Msg) of
             'ACK' -> 'INVITE';
             M -> M

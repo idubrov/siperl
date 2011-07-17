@@ -19,7 +19,7 @@
 
 %% API
 -export([start_link/0]).
--export([send_request/3, send_response/2, is_reliable/1]).
+-export([send_request/3, send_response/1, is_reliable/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -82,17 +82,30 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 
 %% @doc Send response by following RFC 3261 18.2.2
 %% @end
--spec send_response(connection() | undefined, #sip_message{}) -> ok | {error, Reason :: term()}.
-send_response(undefined, Response) -> send_response_received(Response);
-send_response(Connection, Response) when is_record(Connection, sip_connection) ->
-    Transport = Connection#sip_connection.transport,
-    case transport_send(Transport, Connection, Response) of
-        ok -> ok;
-        {error, _Reason} ->
-            % Try to open connection to the address in "received" and port in sent-by
+-spec send_response(#sip_message{}) -> ok | {error, Reason :: term()}.
+send_response(Response) ->
+    {ok, Via} = sip_message:top_header('via', Response),
+    case is_reliable(Via#sip_hdr_via.transport) of
+        true ->
+            % try to lookup the connection
+            Key = sip_transaction:tx_key(server, Response),
+            case gproc:lookup_pids({p, l, {connection, Key}}) of
+                [Pid | _Rest] ->
+                    Connection = #sip_connection{transport = Via#sip_hdr_via.transport, connection = Pid},
+                    case transport_send(Via#sip_hdr_via.transport, Connection, Response) of
+                        ok -> ok;
+                        {error, _Reason} ->
+                            % try to send to address in `received'
+                            send_response_received(Response)
+                    end;
+                [] ->
+                    % no connections for tx, send to address `received'
+                    send_response_received(Response)
+            end;
+        false ->
+            % not reliable -- send to address in `received'
             send_response_received(Response)
     end.
-
 
 %% @doc See RFC 3261 18.2.2 Sending Responses
 %% @end
@@ -138,7 +151,7 @@ send_response_fallback([To|Rest], Transport, Response) ->
 %%-----------------------------------------------------------------
 
 %% @doc
-%% Dispatch request received through given connection. This function
+%% Dispatch request received Connthrough given connection. This function
 %% is called by concrete transport implementations.
 %% @end
 %% @private

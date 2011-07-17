@@ -1,6 +1,6 @@
 %%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <wfragg@gmail.com>
-%%% @doc
+%%% @doc Transport layer TCP connection implementation
 %%%
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
@@ -58,7 +58,7 @@ init(Remote)
     % New connection
     To = Remote#sip_destination.address,
     Port = Remote#sip_destination.port,
-    % FIXME: Opts...
+    % FIXME: Should timeout!!
     {ok, Socket} = gen_tcp:connect(To, Port, [binary, {active, false}]),
     init(Socket);
 
@@ -87,7 +87,12 @@ handle_info({tcp, _Socket, Packet}, State) ->
     Dispatch =
         fun (Msg) ->
                  case sip_message:is_request(Msg) of
-                     true -> sip_transport:dispatch_request(State#state.remote, Connection, Msg);
+                     true ->
+                         % Register as connection that serves this transaction
+                         Key = sip_transaction:tx_key(server, Msg),
+                         gproc:add_local_property({connection, Key}, true),
+
+                         sip_transport:dispatch_request(State#state.remote, Connection, Msg);
                      false -> sip_transport:dispatch_response(State#state.remote, Connection, Msg)
                  end
         end,
