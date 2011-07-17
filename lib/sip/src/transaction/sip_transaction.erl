@@ -131,33 +131,21 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
 
 tx_key(client, Msg) ->
     % RFC 17.1.3
-    case sip_message:top_via_branch(Msg) of
-        % According to RFC 3161 20.42 Branch MUST present for all requests
-        % FIXME: does that mean all responses coming back to client TX will have it too?
-        {ok, Branch} ->
-            case Msg#sip_message.start_line of
-                {request, Method, _} ->
-                    {client, Branch, Method};
-
-                {response, _, _} ->
-                    {ok, CSeq} = sip_message:top_header('cseq', Msg),
-                    Method = CSeq#sip_hdr_cseq.method,
-                    {client, Branch, Method}
-            end
-    end;
-
-tx_key(server, Request) ->
+    Method = sip_message:method(Msg),
+    {ok, Branch} = sip_message:top_via_branch(Msg),
+    {client, Branch, Method};
+tx_key(server, Msg) ->
     % RFC 17.2.3
-
     % for ACK we use INVITE
-    Method = case Request#sip_message.start_line of
-                 {request, 'ACK', _} -> 'INVITE';
-                 {request, M, _} -> M
-             end,
-    case sip_message:top_via_branch(Request) of
+    Method = 
+        case sip_message:method(Msg) of
+            'ACK' -> 'INVITE';
+            M -> M
+        end,
+    case sip_message:top_via_branch(Msg) of
         % Magic cookie
         {ok, <<?MAGIC_COOKIE, _/binary>> = Branch} ->
-            {ok, Via} = sip_message:top_header('via', Request),
+            {ok, Via} = sip_message:top_header('via', Msg),
             SentBy = Via#sip_hdr_via.sent_by,
             {server, SentBy, Branch, Method};
 

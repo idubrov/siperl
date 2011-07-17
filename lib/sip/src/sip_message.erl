@@ -11,7 +11,7 @@
 %% Exports
 %%-----------------------------------------------------------------
 -export([is_request/1, is_response/1, to_binary/1]).
--export([is_provisional_response/1]).
+-export([is_provisional_response/1, method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
 -export([create_ack/2, create_response/4]).
 -export([validate_request/1]).
@@ -40,7 +40,7 @@
 %% Exported types
 -type start_line() :: {'request', Method :: sip_headers:method(), RequestURI :: binary()} |
                       {'response', Status :: integer(), Reason :: binary()}.
--type message() :: message().
+-type message() :: #sip_message{}.
 -export_type([start_line/0, message/0]).
 
 %%-----------------------------------------------------------------
@@ -71,9 +71,19 @@ is_response(Message) ->
 is_provisional_response(#sip_message{start_line = {response, Status, _}})
   when Status >= 100, Status =< 199 ->
     true;
-
 is_provisional_response(#sip_message{start_line = {response, _Status, _}}) ->
     false.
+
+%% @doc Retrieve method of SIP message
+%%
+%% Returns `Method' from `start-line' for requests, `Method' from `CSeq' header
+%% for responses.
+%% @end
+-spec method(message()) -> sip_headers:method().
+method(#sip_message{start_line = {request, Method, _}}) -> Method;
+method(#sip_message{start_line = {response, _, _}} = Msg) ->
+    {ok, CSeq} = sip_message:top_header('cseq', Msg),
+    CSeq#sip_hdr_cseq.method.
 
 -spec to_binary(message()) -> binary().
 to_binary(Message) ->
