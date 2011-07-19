@@ -40,19 +40,16 @@ start_client_tx(TU, To, Request)
   when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
-    % Add generated unique branch
-    Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
-
     % Transport reliability is from To: header
     % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
     Reliable = sip_transport:is_reliable(To#sip_destination.transport),
 
-    Key = tx_key(client, Request2),
-    Module = tx_module(client, Request2),
+    Key = tx_key(client, Request),
+    Module = tx_module(client, Request),
     TxState = #tx_state{to = To,
                         tx_key = Key,
                         tx_user = TU,
-                        request = Request2,
+                        request = Request,
                         reliable = Reliable},
     case sip_transaction_tx_sup:start_tx(Module, TxState) of
         {ok, _Pid} -> {ok, Key};
@@ -187,17 +184,4 @@ tx_send(Key, Msg) when is_record(Msg, sip_message) ->
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
             {ok, Key}
-    end.
-
-%% @doc Generate unique branch for the top Via, if not already present
-%% FIXME: must be added by UAC!
-%% @end
-generate_branch(Via) ->
-    case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
-        {branch, _} -> Via;
-
-        false ->
-            Branch = sip_idgen:generate_branch(),
-            Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
-            Via#sip_hdr_via{params = Params}
     end.
