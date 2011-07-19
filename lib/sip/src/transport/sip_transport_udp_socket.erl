@@ -104,11 +104,12 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
           {noreply, #state{}, infinity} | {stop, _Reason, #state{}}.
 handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
-    {ok, Msg} = sip_message:parse_datagram(Packet),
-
-    case sip_message:is_request(Msg) of
-        true -> sip_transport:dispatch_request(Remote, undefined, Msg);
-        false -> sip_transport:dispatch_response(Remote, undefined, Msg)
+    case sip_message:parse_datagram(Packet) of
+        {ok, Msg} -> sip_transport:dispatch(Remote, undefined, Msg);
+        % just ignore bad responses
+        {error, content_too_small, _Msg} ->
+            % FIXME: send 400 Bad Request response for bad requests
+            ok
     end,
     {noreply, State, State#state.timeout};
 handle_info({udp_error, _Socket, Reason}, State) ->

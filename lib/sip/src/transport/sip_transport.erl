@@ -26,7 +26,7 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Internal API
--export([dispatch_request/3, dispatch_response/3]).
+-export([dispatch/3]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -151,28 +151,21 @@ send_response_fallback([To|Rest], Transport, Response) ->
 %% Internal transport API
 %%-----------------------------------------------------------------
 
-%% @doc
-%% Dispatch request received Connthrough given connection. This function
+%% @doc Dispatch request/response, received by the transport socket.
+%%
+%% Dispatch request/response received through given connection. This function
 %% is called by concrete transport implementations.
 %% @end
 %% @private
--spec dispatch_request(#sip_destination{}, connection(), #sip_message{}) -> ok.
-dispatch_request(From, Connection, Msg) ->
+-spec dispatch(#sip_destination{}, connection(), #sip_message{}) -> ok.
+dispatch(From, Connection, #sip_message{start_line = {request, _, _}} = Msg) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
     case sip_transaction:handle_request(Msg2) of
         not_handled -> sip_core:handle_request(Connection, Msg2);
         {ok, _TxRef} -> ok
-    end.
-
-%% @doc Dispatch response, received by the transport socket.
-%%
-%% Dispatch response received through given connection. This function
-%% is called by concrete transport implementations.
-%% @end
-%% @private
--spec dispatch_response(#sip_destination{}, connection(), #sip_message{}) -> ok.
-dispatch_response(From, Connection, Msg) ->
+    end;
+dispatch(From, Connection, #sip_message{start_line = {response, _, _}} = Msg) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the

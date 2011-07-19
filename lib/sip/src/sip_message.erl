@@ -35,7 +35,7 @@
 %% 'BEFORE' -- state before Start-Line
 %% 'HEADERS' -- state after first Start-Line character was received
 %% {'BODY', StartLine, Headers, Length} -- state after receiving headers, but before body (\r\n\r\n)
--type state() :: {'BEFORE' | 'HEADERS' | {'BODY', start_line(), [sip_headers:header()], integer()}, binary()}.
+-type state() :: {'BEFORE' | 'HEADERS' | 'ERROR' | {'BODY', start_line(), [sip_headers:header()], integer()}, binary()}.
 
 %% Exported types
 -type start_line() :: {'request', Method :: sip_headers:method(), RequestURI :: binary()} |
@@ -98,15 +98,15 @@ to_binary(Message) ->
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 
-%% @doc
-%% Update value of top header with given name. If header value is
-%% multi-value, only first element of the list is updated by the
-%% function.
+%% @doc Update value of top header with given name.
 %%
-%% This function parses the header value if header is in binary form.
+%% If header value is multi-value, only first element of the list (top header)
+%% is updated by the function.
 %%
-%% If no header is found with given name, a new one is generated
-%% by calling update function with `undefined' header value.
+%% <em>Note: this function parses the header value if header is in binary form.</em>
+%% <em>If no header is found with given name, update function is called with
+%% `undefined' parameter. If function returns any value other than `undefined',
+%% a new header with that value is added.</em>
 %% @end
 -spec update_top_header(
         sip_headers:header_name(),
@@ -196,8 +196,7 @@ top_header(Name, Headers) when is_list(Headers) ->
 %% @end
 -spec parse_datagram(Datagram :: binary()) ->
           {ok, message()}
-        | {bad_request, Reason :: term()}
-        | {bad_response, Reason :: term()}.
+        | {error, content_too_small, message()}.
 parse_datagram(Datagram) ->
     [Top, Body] = binary:split(Datagram, <<"\r\n\r\n">>),
     [Start | Tail] = binary:split(Top, <<"\r\n">>),
@@ -213,40 +212,31 @@ parse_datagram(Datagram) ->
         {ok, ContentLength} when ContentLength =< size(Body) ->
             <<Body2:ContentLength/binary, _/binary>> = Body,
             {ok, #sip_message{start_line = StartLine, headers = Headers, body = Body2}};
-        {ok, _} when element(1, StartLine) =:= request ->
-            {bad_request, content_too_small};
         {ok, _} ->
-            {bad_response, content_too_small};
+            {error, content_too_small, #sip_message{start_line = StartLine, headers = Headers, body = <<>>}};
         % Content-Length is not present
         {error, not_found} ->
             {ok, #sip_message{start_line = StartLine, headers = Headers, body = Body}}
     end.
 
--spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
-          {ok, state(), Msgs :: [message()]}
-        | {'bad_request', Reason :: term()}
-        | {'bad_response', Reason :: term()}.
+%% @doc Parses the stream for complete SIP messages.
 
-%% @doc
-%% Parses the stream for complete SIP messages. Return new parser state
-%% and list of complete messages extracted from the stream. The headers
-%% of the returned messages are retained in binary form for performance
-%% reasons. Use {@link parse_whole/1} to parse the whole message or
-%% {@link sip_headers:parse_header/2} to parse single header.
+%% Return new parser state and possibly a message extracted from the
+%% stream. The headers of the returned messages are retained in binary
+%% form for performance reasons. Use {@link parse_whole/1} to parse the
+%% whole message or {@link sip_headers:parse_header/2} to parse single header.
+%%
+%% <em>Note: caller is required to call this method with empty packet (<<>>)
+%% until no new messages are returned</em>
 %% @end
-parse_stream(Packet, none) ->
-    parse_stream(Packet, {'BEFORE', <<>>});
-
+-spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
+          {ok, state()} |
+          {ok, message(), state()} |
+          {error, Reason :: term(), message(), state()}.
+parse_stream(Packet, none) -> parse_stream(Packet, {'BEFORE', <<>>});
 parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
     NewFrame = <<Frame/binary, Packet/binary>>,
-    case pre_parse_stream({State, NewFrame}, size(Frame), []) of
-        {ok, NewState, Msgs} ->
-            {ok, NewState, lists:reverse(Msgs)};
-
-        Error ->
-            Error
-    end.
-
+    parse_stream_internal({State, NewFrame}, size(Frame)).
 
 %% @doc
 %% Parses all headers of the message.
@@ -269,29 +259,23 @@ sort_headers(Msg) when is_record(Msg, sip_message) ->
 %% Internal functions
 %%-----------------------------------------------------------------
 
-%% RFC 3261 7.5  Implementations processing SIP messages over
-%% stream-oriented transports MUST ignore any CRLF appearing before the
-%% start-line
-pre_parse_stream({'BEFORE', <<"\r\n", Rest/binary>>}, _, Msgs) ->
-    pre_parse_stream({'BEFORE', Rest}, 0, Msgs);
-
-%% Frame is empty or "\r" while ignoring \r\n, return same state
-pre_parse_stream({'BEFORE', Frame}, _, Msgs) when Frame =:= <<"\r">>; Frame =:= <<>> ->
-    {ok, {'BEFORE', Frame}, Msgs};
-
-%% Look for headers-body delimiter
-pre_parse_stream({State, Frame}, From, Msgs) when State =:= 'HEADERS'; State =:= 'BEFORE'->
+parse_stream_internal({'BEFORE', <<"\r\n", Rest/binary>>}, _From) ->
+    % RFC 3261 7.5  Implementations processing SIP messages over
+    % stream-oriented transports MUST ignore any CRLF appearing before the
+    % start-line
+    parse_stream_internal({'BEFORE', Rest}, 0);
+parse_stream_internal({'BEFORE', Frame}, _From) when Frame =:= <<"\r">>; Frame =:= <<>> ->
+    % frame is empty or "\r" while ignoring \r\n, return same state
+    {ok, {'BEFORE', Frame}};
+parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 'BEFORE'->
     % Search if header-body delimiter is present
     % We need to look back 3 characters at most
     % (last frame ends with \r\n\r, we have received \n)
     case has_header_delimiter(Frame, From - 3) of
-        false ->
-            {ok, {'HEADERS', Frame}, Msgs};
-
+        false -> {ok, {'HEADERS', Frame}};
         Pos ->
             % Split packet into headers and the rest
             <<Top:Pos/binary, _:4/binary, Rest/binary>> = Frame,
-
             % Get start line and headers
             [Start|Tail] = binary:split(Top, <<"\r\n">>),
             Headers = case Tail of
@@ -304,32 +288,25 @@ pre_parse_stream({State, Frame}, From, Msgs) when State =:= 'HEADERS'; State =:=
             case top_header('content-length', Headers) of
                 {ok, ContentLength} ->
                     % Continue processing the message body
-                    NewState = {'BODY', StartLine, Headers,ContentLength},
-                    pre_parse_stream({NewState, Rest}, 0, Msgs);
-
-                {error, not_found} when element(1, StartLine) =:= request ->
-                    {bad_request, no_content_length};
-
+                    NewState = {'BODY', StartLine, Headers, ContentLength},
+                    parse_stream_internal({NewState, Rest}, 0);
                 {error, not_found} ->
-                    {bad_response, no_content_length}
+                    % return bad message
+                    Msg = #sip_message{start_line = StartLine, headers = Headers},
+                    {error, no_content_length, Msg, 'ERROR'}
             end
     end;
-
-%% Check if we have received the whole body
-pre_parse_stream({{'BODY', StartLine, Headers, ContentLength}, Frame}, _, Msgs)
+parse_stream_internal({{'BODY', StartLine, Headers, ContentLength}, Frame}, _)
   when size(Frame) >= ContentLength ->
-
+    % received the whole body
     <<Body:ContentLength/binary, Rest/binary>> = Frame,
-
     % Process the received packet
-    NewMsgs = [#sip_message{start_line = StartLine, headers = Headers, body = Body} | Msgs],
-
-    % Continue processing the remaining data as it were a new packet
-    pre_parse_stream({'BEFORE', Rest}, 0, NewMsgs);
-
-%% Nothing to parse yet, return current state
-pre_parse_stream(State, _, Msgs) ->
-    {ok, State, Msgs}.
+    Msg = #sip_message{start_line = StartLine, headers = Headers, body = Body},
+    % continue processing the remaining data as it were a new packet
+    {ok, Msg, {'BEFORE', Rest}};
+parse_stream_internal(State, _) ->
+    % nothing to parse yet, return current state
+    {ok, State}.
 
 %% Check if we have header-body delimiter in the received packet
 has_header_delimiter(Data, Offset) when Offset < 0 ->
@@ -475,40 +452,52 @@ parse_stream_test_() ->
                                  headers = [{'content-length', <<"5">>}],
                                  body = <<"Hello">>},
     [ %% Skipping \r\n
-     ?_assertEqual({ok, StartState, []},
+     ?_assertEqual({ok, StartState},
                    parse_stream(<<>>, none)),
-     ?_assertEqual({ok, StartState, []},
+     ?_assertEqual({ok, StartState},
                    parse_stream(<<"\r\n">>, none)),
-     ?_assertEqual({ok, {'BEFORE', <<"\r">>}, []},
+     ?_assertEqual({ok, {'BEFORE', <<"\r">>}},
                    parse_stream(<<"\r">>, none)),
 
      % Test headers-body delimiter test
-     ?_assertEqual({ok, {'HEADERS', <<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r">>}, []},
+     ?_assertEqual({ok, {'HEADERS', <<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r">>}},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r">>, none)),
 
-     ?_assertEqual({ok, {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>}, []},
+     ?_assertEqual({ok, {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>}},
                    parse_stream(<<"\n">>,
                                 {'HEADERS', <<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r">>})),
 
-     ?_assertEqual({ok, {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<"He">>}, []},
+     ?_assertEqual({ok, {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<"He">>}},
                    parse_stream(<<"He">>,
                                 {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>})),
 
      % Parse the whole body
-     ?_assertEqual({ok, StartState, [SampleMessage]},
+     ?_assertEqual({ok, SampleMessage, StartState},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>, none)),
-     ?_assertEqual({ok, StartState, [SampleMessage]},
+     ?_assertEqual({ok, SampleMessage, StartState},
                    parse_stream(<<"Hello">>,
                                 {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>})),
-     ?_assertEqual({ok, StartState,
-                    [SampleMessage#sip_message{headers = [{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}]}]},
+     ?_assertEqual({ok,
+                    SampleMessage#sip_message{headers = [{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}]},
+                    StartState},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\nContent-Length: 5\r\n\r\nHello">>,
                                 StartState)),
 
+     % Multiple messages in stream
+     ?_assertEqual({ok, SampleMessage, {'BEFORE', <<"\r\nINVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>}},
+                   parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello\r\nINVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>, none)),
+
      % No Content-Length
-     ?_assertEqual({bad_request, no_content_length},
+     ?_assertEqual({error,
+                    no_content_length,
+                    #sip_message{start_line = {request, 'INVITE', <<"sip:urn:service:test">>},
+                                                  headers = [{<<"x-custom">>, <<"Nothing">>}]},
+                    'ERROR'},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\n\r\nHello">>, StartState)),
-     ?_assertEqual({bad_response, no_content_length},
+     ?_assertEqual({error,
+                    no_content_length,
+                    #sip_message{start_line = {response, 200, <<"Ok">>}},
+                    'ERROR'},
                    parse_stream(<<"SIP/2.0 200 Ok\r\n\r\n">>, StartState))
     ].
 
@@ -526,9 +515,13 @@ parse_datagram_test_() ->
                    parse_datagram(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\nContent-Length: 5\r\n\r\nHello!!!">>)),
 
      % Message too small
-     ?_assertEqual({bad_request, content_too_small},
+     ?_assertEqual({error, content_too_small,
+                           #sip_message{start_line = {request, 'INVITE', <<"sip:urn:service:test">>},
+                                        headers = [{'content-length', <<"10">>}]}},
                    parse_datagram(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 10\r\n\r\nHello">>)),
-     ?_assertEqual({bad_response, content_too_small},
+     ?_assertEqual({error, content_too_small,
+                           #sip_message{start_line = {response, 200, <<"Ok">>},
+                                        headers = [{'content-length', <<"10">>}]}},
                    parse_datagram(<<"SIP/2.0 200 Ok\r\nContent-Length: 10\r\n\r\n">>)),
 
      % No Content-Length
@@ -542,8 +535,8 @@ parse_datagram_test_() ->
 
 -spec is_test_() -> term().
 is_test_() ->
-    {ok, _, [Request]} = parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nX-Custom: Nothing\r\n\r\nHello">>, none),
-    {ok, _, [Response]} = parse_stream(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, none),
+    {ok, Request, _} = parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nX-Custom: Nothing\r\n\r\nHello">>, none),
+    {ok, Response, _} = parse_stream(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, none),
     {ok, ProvResponse} = parse_datagram(<<"SIP/2.0 100 Trying\r\n\r\n">>),
     [?_assertEqual(true, is_request(Request)),
      ?_assertEqual(false, is_request(Response)),
@@ -585,7 +578,8 @@ header_test_() ->
     Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
-    Fun = fun (Value) when Value =:= Via1 -> Via1Up end,
+    UpdateFun = fun (Value) when Value =:= Via1 -> Via1Up end,
+    InsertFun = fun (undefined) -> Via1Up end,
 
     ViaMsg =  #sip_message{headers = [{'content-length', 123},
                                       {'via', [Via1]},
@@ -593,7 +587,10 @@ header_test_() ->
     ViaMsgUp = #sip_message{headers = [{'content-length', 123},
                                        {'via', [Via1Up]},
                                        {'via', [Via2]}]},
+    ViaMsg2 = #sip_message{headers = [{'content-length', 123}, {'via', [Via1, Via2]}]},
+    ViaMsg2Up = #sip_message{headers = [{'content-length', 123}, {'via', [Via1Up, Via2]}]},
     NoViaMsg = #sip_message{headers = [{'content-length', 123}, {'cseq', CSeq}]},
+    NewViaMsg = #sip_message{headers = [{'content-length', 123}, {'cseq', CSeq}, {'via', Via1Up}]},
 
     URI = <<"sip@nowhere.invalid">>,
     ValidRequest =
@@ -614,8 +611,12 @@ header_test_() ->
      ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [{'via', [Via2]}]})),
 
      % Header update functions
-     ?_assertEqual(ViaMsgUp, update_top_header('via', Fun, ViaMsg)),
+     ?_assertEqual(ViaMsgUp, update_top_header('via', UpdateFun, ViaMsg)),
+     ?_assertEqual(NewViaMsg, update_top_header('via', InsertFun, NoViaMsg)),
+
      ?_assertEqual(NoViaMsg, replace_top_header('via', Via1Up, NoViaMsg)),
+     ?_assertEqual(ViaMsgUp, replace_top_header('via', Via1Up, ViaMsg)),
+     ?_assertEqual(ViaMsg2Up, replace_top_header('via', Via1Up, ViaMsg2)),
 
      % Validation
      ?_assertEqual(ok, validate_request(ValidRequest)),

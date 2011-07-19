@@ -81,30 +81,15 @@ init(Socket) ->
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->
           {noreply, #state{}} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({tcp, _Socket, Packet}, State) ->
-    {ok, ParseState, Msgs} = sip_message:parse_stream(Packet, State#state.parse_state),
+    {ok, NewState, Props} = process_stream(Packet, State, []),
 
-    % Dispatch to transport layer
-    Connection = #sip_connection{transport = tcp, connection = self()},
-    Dispatch =
-        fun (Msg) ->
-                 case sip_message:is_request(Msg) of
-                     true ->
-                         % Register as connection that serves this transaction
-                         Key = sip_transaction:tx_key(server, Msg),
-                         gproc:add_local_property({connection, Key}, true),
+    % register as connection that serves given transactions
+    gproc:mreg(p, l, Props),
 
-                         sip_transport:dispatch_request(State#state.remote, Connection, Msg);
-                     false -> sip_transport:dispatch_response(State#state.remote, Connection, Msg)
-                 end
-        end,
-    lists:foreach(Dispatch, Msgs),
-
-    ok = inet:setopts(State#state.socket, [{active, once}]),
-    {noreply, State#state{parse_state = ParseState}};
-
+    ok = inet:setopts(NewState#state.socket, [{active, once}]),
+    {noreply, NewState};
 handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
-
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
@@ -134,3 +119,31 @@ terminate(_Reason, _State) ->
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+process_stream(Packet, State, Props) ->
+    case sip_message:parse_stream(Packet, State#state.parse_state) of
+        {ok, NewParseState} ->
+            % no more messages to parse -- return
+            {ok, State#state{parse_state = NewParseState}, Props};
+        {ok, Msg, NewParseState} ->
+            % dispatch to transport layer
+            Connection = #sip_connection{transport = tcp, connection = self()},
+            sip_transport:dispatch(State#state.remote, Connection, Msg),
+
+            % add property to register with gproc for requests
+            NewProps =
+                case sip_message:is_request(Msg) of
+                    true ->
+                        Prop = {{connection, sip_transaction:tx_key(server, Msg)}, true},
+                        [Prop | Props];
+                    false -> Props
+                end,
+
+            % there could be more messages to parse, recurse
+            process_stream(<<>>, State#state{parse_state = NewParseState}, NewProps)
+    % FIXME: error handling
+    end.
