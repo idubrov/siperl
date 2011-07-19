@@ -7,6 +7,8 @@
 %%%----------------------------------------------------------------
 -module(sip_pinger).
 
+-behaviour(sip_ua).
+
 %% Exports
 
 %% Include files
@@ -18,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2]).
+-export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/2]).
 
 -record(state, {}).
 
@@ -34,11 +36,6 @@ ping(Pid, To) ->
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------
-
-request_failed(Id, _Request, Reason) ->
-    ?debugFmt("Request ~p failed due to ~p~n", [Id, Reason]),
-    ok.
-
 %% @private
 init({}) ->
     ?debugMsg("Initing~n"),
@@ -63,6 +60,11 @@ handle_call(Req, _From, State) ->
 %% @private
 handle_cast(Req, State) ->
     ?debugFmt("Got cast: ~p~n", [Req]),
+    {noreply, State}.
+
+%% @private
+handle_failure(Req, State) ->
+    ?debugFmt("Got failure: ~p~n", [Req]),
     {noreply, State}.
 
 %% @private

@@ -14,6 +14,9 @@
 -export([start_link/3]).
 -export([create_request/3, send_request/1]).
 
+%% Custom behaviour
+-export([behaviour_info/1]).
+
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
@@ -23,6 +26,11 @@
 -include_lib("sip.hrl").
 
 -record(state, {sending = [], mod, mod_state}).
+
+-spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
+behaviour_info(callbacks) ->
+    [{handle_failure, 2}] ++ gen_server:behaviour_info(callbacks);
+behaviour_info(_) -> undefined.
 
 %% @doc Creates UA process as part of the supervision tree
 %%
@@ -150,8 +158,8 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %% @end
 send_internal(Id, [], Request, #state{mod = Mod} = State) ->
     % no more destinations -- report to callback
-    Mod:request_failed(Id, Request, request_timeout),
-    State;
+    Response = Mod:handle_failure({timeout, Id, Request}, State#state.mod_state),
+    handle_response(Response, State);
 send_internal(Id, [Top|Fallback], Request, State) ->
     % send request to the top destination, remember the transaction id,
     % remember the rest as fallback destinations

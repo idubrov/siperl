@@ -131,18 +131,23 @@ update_header(HeaderName, Fun, [Header | Rest]) ->
     [Header | update_header(HeaderName, Fun, Rest)];
 update_header(HeaderName, Fun, []) ->
     % generate a new header value
-    Value = Fun(undefined),
-    [{HeaderName, Value}].
+    case Fun(undefined) of
+        undefined -> [];
+        Value -> [{HeaderName, Value}]
+    end.
 
 %% @doc
 %% Replace value of top header with given name with provided value. If
 %% header value is multi-value (a list), the first element of the list
 %% is replaced.
+%%
+%% <em>Note that header is not added automatically, if there is no header with given name</em>
 %% @end
 -spec replace_top_header(sip_headers:header_name(), term() | binary(), message()) ->
           message().
 replace_top_header(HeaderName, Value, Message) ->
     UpdateFun = fun
+                   (undefined) -> undefined; % do not add a new one
                    ([_ | Rest]) -> [Value | Rest];
                    (_) -> Value
                 end,
