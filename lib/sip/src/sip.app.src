@@ -12,5 +12,6 @@
 		  {tcp, [5060]},
 		  {t1, 500},
 		  {t2, 4000},
-		  {t4, 5000}
+		  {t4, 5000},
+		  {routes, []} % pre-existing configured routes
 		 ]}]}.

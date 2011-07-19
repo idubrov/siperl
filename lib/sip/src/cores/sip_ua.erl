@@ -54,7 +54,8 @@ create_request(Method, ToValue, ContactValue) when
     RequestURI = ToValue#sip_hdr_address.uri,
 
     % will be updated later (by transport layer)
-    Via = {'via', sip_headers:via(undefined, undefined, [{branch, sip_idgen:generate_branch()}])},
+    % branch will be added before sending
+    Via = {'via', #sip_hdr_via{}},
     MaxForwards = {'max-forwards', 70},
     From = {'from', sip_headers:address(<<"Anonymous">>,
                                         <<"sip:thisis@anonymous.invalid">>,
@@ -66,7 +67,7 @@ create_request(Method, ToValue, ContactValue) when
     Contact = {'contact', ContactValue},
 
     % configure pre-existing route set
-    Routes = [{'route', sip_headers:route(Route, [])} || Route <- sip_config:configured_routes()],
+    Routes = [{'route', sip_headers:route(Route, [])} || Route <- sip_config:routes()],
 
     Msg = #sip_message{start_line = {request, Method, RequestURI},
                        headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes},

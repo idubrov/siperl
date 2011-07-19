@@ -232,7 +232,7 @@ parse_datagram(Datagram) ->
 -spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
           {ok, state()} |
           {ok, message(), state()} |
-          {error, Reason :: term(), message(), state()}.
+          {error, no_content_length, message(), 'ERROR'}.
 parse_stream(Packet, none) -> parse_stream(Packet, {'BEFORE', <<>>});
 parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
     NewFrame = <<Frame/binary, Packet/binary>>,

@@ -116,7 +116,7 @@
 %% @doc
 %% Transaction timed out
 %% @end
--spec 'PROCEEDING'(term(), #tx_state{}) -> none().
+-spec 'PROCEEDING'(term(), #tx_state{}) -> {stop, {timeout, timerB}, #tx_state{}}.
 'PROCEEDING'({timeout, _Ref, {timerB, _}}, TxState) ->
     {stop, {timeout, timerB}, TxState}.
 
