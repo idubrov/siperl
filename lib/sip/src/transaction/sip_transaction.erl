@@ -41,7 +41,7 @@ start_client_tx(TU, To, Request)
        is_record(Request, sip_message) ->
 
     % Add generated unique branch
-    Request2 = sip_message:update_top_header('via', fun generate_branch/2, Request),
+    Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
 
     % Transport reliability is from To: header
     % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
@@ -190,8 +190,9 @@ tx_send(Key, Msg) when is_record(Msg, sip_message) ->
     end.
 
 %% @doc Generate unique branch for the top Via, if not already present
+%% FIXME: must be added by UAC!
 %% @end
-generate_branch('via', Via) ->
+generate_branch(Via) ->
     case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
         {branch, _} -> Via;
 

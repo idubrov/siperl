@@ -202,7 +202,7 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
     % XXX: Only ipv4 for now.
     {ok, To} = inet:getaddr(Addr, inet),
 
-    Fun = fun ('via', Via) ->
+    Fun = fun (Via) ->
                    Params = Via#sip_hdr_via.params,
                    NewParams = case To of
                                    % multicast
@@ -242,7 +242,7 @@ check_sent_by(Transport, Msg) ->
 % server MUST add a "received" parameter to that Via header field value.
 % RFC 3261, 18.2.1
 add_via_received(#sip_destination{address = Src}, Msg) ->
-    Fun = fun ('via', TopVia) ->
+    Fun = fun (TopVia) ->
                    % compare byte-to-byte with packet source address
                    SrcBin = sip_binary:any_to_binary(Src),
                    case TopVia#sip_hdr_via.sent_by of

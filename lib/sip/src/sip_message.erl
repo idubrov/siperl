@@ -104,10 +104,13 @@ to_binary(Message) ->
 %% function.
 %%
 %% This function parses the header value if header is in binary form.
+%%
+%% If no header is found with given name, a new one is generated
+%% by calling update function with `undefined' header value.
 %% @end
 -spec update_top_header(
         sip_headers:header_name(),
-        fun((HeaderName :: sip_headers:header_name(), Value :: any()) -> UpdatedValue :: any()),
+        fun((Value :: any()) -> UpdatedValue :: any()),
         message()) -> message().
 update_top_header(HeaderName, Fun, Request) ->
     Headers = update_header(HeaderName, Fun, Request#sip_message.headers),
@@ -119,15 +122,17 @@ update_header(HeaderName, Fun, [{HeaderName, Value} | Rest]) ->
     UpdatedValue =
         case sip_headers:parse_header(HeaderName, Value) of
             % multi-value header
-            [Top | Rest2] -> [Fun(HeaderName, Top) | Rest2];
+            [Top | Rest2] -> [Fun(Top) | Rest2];
             % single value header
-            Top -> Fun(HeaderName, Top)
+            Top -> Fun(Top)
         end,
     [{HeaderName, UpdatedValue} | Rest];
 update_header(HeaderName, Fun, [Header | Rest]) ->
     [Header | update_header(HeaderName, Fun, Rest)];
-update_header(_HeaderName, _Fun, []) ->
-    [].
+update_header(HeaderName, Fun, []) ->
+    % generate a new header value
+    Value = Fun(undefined),
+    [{HeaderName, Value}].
 
 %% @doc
 %% Replace value of top header with given name with provided value. If
@@ -138,8 +143,8 @@ update_header(_HeaderName, _Fun, []) ->
           message().
 replace_top_header(HeaderName, Value, Message) ->
     UpdateFun = fun
-                   (_, [_ | Rest]) -> [Value | Rest];
-                   (_, _) -> Value
+                   ([_ | Rest]) -> [Value | Rest];
+                   (_) -> Value
                 end,
     update_top_header(HeaderName, UpdateFun, Message).
 
@@ -390,7 +395,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 -spec create_response(message(), integer(), binary(), undefined | binary()) -> message().
 create_response(Request, Status, Reason, Tag) ->
     Headers = [if
-                   Name =:= 'to' -> add_tag({Name, Value}, Tag);
+                   Name =:= 'to' -> {'to', sip_headers:add_tag('to', Value, Tag)};
                    true -> {Name, Value}
                end || {Name, Value} <- Request#sip_message.headers,
                       (Name =:= 'from' orelse Name =:= 'call-id' orelse
@@ -398,15 +403,6 @@ create_response(Request, Status, Reason, Tag) ->
                        Name =:= 'to')],
     Start = {response, Status, Reason},
     #sip_message{start_line = Start, headers = Headers}.
-
-add_tag(Header, undefined) -> Header;
-add_tag({Name, Value}, Tag)
-  when Name =:= 'to' orelse Name =:= 'from' ->
-    Value2 = sip_headers:parse_header(Name, Value),
-
-    Params = lists:keystore('tag', 1, Value2#sip_hdr_address.params, {'tag', Tag}),
-    {Name, Value2#sip_hdr_address{params = Params}}.
-
 
 %% @doc Validate that request contains all required headers
 %% A valid SIP request formulated by a UAC MUST, at a minimum, contain
@@ -584,7 +580,7 @@ header_test_() ->
     Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
-    Fun = fun ('via', Value) when Value =:= Via1 -> Via1Up end,
+    Fun = fun (Value) when Value =:= Via1 -> Via1Up end,
 
     ViaMsg =  #sip_message{headers = [{'content-length', 123},
                                       {'via', [Via1]},

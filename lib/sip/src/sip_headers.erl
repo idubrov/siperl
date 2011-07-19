@@ -12,7 +12,7 @@
 %%-----------------------------------------------------------------
 -export([split_binary/1, to_binary/2]).
 -export([parse_header/2, format_header/2]).
--export([via/3, cseq/2, address/3]).
+-export([via/3, cseq/2, address/3, add_tag/3]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -30,8 +30,11 @@
 -type header() :: {HeaderName :: header_name(), Value :: term() | binary()}.
 -type method() :: binary() | atom().
 -type via_sent_by() :: {Host :: binary(), Port :: integer() | undefined}.
+-type via() :: #sip_hdr_via{}.
+-type address() :: #sip_hdr_address{}.
+-type cseq() :: #sip_hdr_cseq{}.
 
--export_type([header_name/0, header/0, method/0, via_sent_by/0]).
+-export_type([header_name/0, header/0, method/0, via_sent_by/0, via/0, address/0, cseq/0]).
 
 
 
@@ -118,13 +121,35 @@ parse_header('call-id', Bin) ->
 %% from-spec      =  ( name-addr / addr-spec ) *( SEMI from-param )
 %% from-param     =  tag-param / generic-param
 %%
+%% Contact        =  ("Contact" / "m" ) HCOLON
+%%                  ( STAR / (contact-param *(COMMA contact-param)))
+%% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
+%% contact-params     =  c-p-q / c-p-expires
+%%                      / contact-extension
+%% c-p-q              =  "q" EQUAL qvalue
+%% c-p-expires        =  "expires" EQUAL delta-seconds
+%% contact-extension  =  generic-param
+%% delta-seconds      =  1*DIGIT
+%%
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
-parse_header(Name, Value) when Name =:= 'from'; Name =:= 'to' ->
-    {Display, URI, Params} = parse_fromto(sip_binary:trim_leading(Value)),
-    {Params2, <<>>} = parse_params(sip_binary:trim_leading(Params), []),
-    #sip_hdr_address{display_name = sip_binary:trim(Display), uri = URI, params = Params2};
+parse_header(Name, Bin) when Name =:= 'from'; Name =:= 'to'; Name =:= 'contact' ->
+    {Display, URI, Params} = parse_fromto(sip_binary:trim_leading(Bin)),
+    {Params2, Bin2} = parse_params(sip_binary:trim_leading(Params), []),
+    Top = #sip_hdr_address{display_name = sip_binary:trim(Display), uri = URI, params = Params2},
+    case Bin2 of
+        <<?COMMA, Bin3/binary>> when Name =:= 'contact' ->
+            % Parse the rest of the Contact
+            % *(COMMA contact-param)
+            case parse_header('contact', Bin3) of
+                Contact when is_list(Contact) -> [Top | Contact];
+                Contact -> [Top | [Contact]]
+            end;
+        <<>> -> Top
+    end;
+
+
 
 %% Any other header, just return value as is
 parse_header(_Name, Value) ->
@@ -212,15 +237,34 @@ parse_fromto(Bin) ->
 format_header(_Name, Value) when is_binary(Value) ->
     % already formatted to binary
     Value;
-%% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
-format_header('via', [Via]) when is_record(Via, sip_hdr_via) ->
-    format_header('via', Via);
-format_header('via', Via) when is_record(Via, sip_hdr_via) ->
-    format_header('via', append_via_parm(<<>>, Via));
-format_header('via', [Top | Rest]) ->
-    Joiner = fun (Elem, Bin) -> append_via_parm(<<Bin/binary, ?COMMA>>, Elem) end,
-    TopBin = append_via_parm(<<>>, Top),
+% generalized multi-value headers handling
+format_header(Name, [Value]) -> format_header(Name, Value);
+format_header(Name, [Top | Rest]) ->
+    Joiner = fun (Elem, Bin) ->
+                      ElemBin = format_header(Name, Elem),
+                      <<Bin/binary, ?COMMA, ElemBin/binary>>
+             end,
+    TopBin = format_header(Name, Top),
     lists:foldl(Joiner, TopBin, Rest);
+%% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
+%% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
+%% via-params        =  via-ttl / via-maddr
+%%                      / via-received / via-branch
+%%                      / via-extension
+%% sent-protocol     =  protocol-name SLASH protocol-version
+%%                      SLASH transport
+format_header('via', Via) when is_record(Via, sip_hdr_via) ->
+    Version = Via#sip_hdr_via.version,
+    Transport = sip_binary:to_upper(sip_binary:any_to_binary(Via#sip_hdr_via.transport)),
+    Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
+    Bin2 = case Via#sip_hdr_via.sent_by of
+        {Host, undefined} ->
+            <<Bin/binary, ?SP, Host/binary>>;
+
+        {Host, Port} ->
+            <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
+    end,
+    append_params(Bin2, Via#sip_hdr_via.params);
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 format_header('content-length', Length) when is_integer(Length) ->
@@ -246,11 +290,21 @@ format_header('max-forwards', Hops) when is_integer(Hops) ->
 %% from-spec      =  ( name-addr / addr-spec ) *( SEMI from-param )
 %% from-param     =  tag-param / generic-param
 %%
+%% Contact        =  ("Contact" / "m" ) HCOLON
+%%                  ( STAR / (contact-param *(COMMA contact-param)))
+%% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
+%% contact-params     =  c-p-q / c-p-expires
+%%                      / contact-extension
+%% c-p-q              =  "q" EQUAL qvalue
+%% c-p-expires        =  "expires" EQUAL delta-seconds
+%% contact-extension  =  generic-param
+%% delta-seconds      =  1*DIGIT
+%%
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
 format_header(Name, Addr) when
-  is_record(Addr, sip_hdr_address), (Name =:= 'from' orelse Name =:= 'to') ->
+  is_record(Addr, sip_hdr_address), (Name =:= 'from' orelse Name =:= 'to' orelse Name =:= 'contact') ->
 
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
@@ -262,25 +316,6 @@ format_header(Name, Addr) when
 %% Any other header
 format_header(_Name, Value) ->
     sip_binary:any_to_binary(Value).
-
-%% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
-%% via-params        =  via-ttl / via-maddr
-%%                      / via-received / via-branch
-%%                      / via-extension
-%% sent-protocol     =  protocol-name SLASH protocol-version
-%%                      SLASH transport
-append_via_parm(Bin, Value) ->
-    Version = Value#sip_hdr_via.version,
-    Transport = sip_binary:to_upper(sip_binary:any_to_binary(Value#sip_hdr_via.transport)),
-    Bin2 = <<Bin/binary, "SIP/", Version/binary, $/, Transport/binary>>,
-    Bin3 = case Value#sip_hdr_via.sent_by of
-        {Host, undefined} ->
-            <<Bin2/binary, ?SP, Host/binary>>;
-
-        {Host, Port} ->
-            <<Bin2/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
-    end,
-    append_params(Bin3, Value#sip_hdr_via.params).
 
 %% @doc
 %% Append parameters to the binary
@@ -335,6 +370,16 @@ address(DisplayName, URI, Params) when
   is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
 
+%% @doc Add tag to the `From:' or `To:` header.
+%% @end
+-spec add_tag(atom(), #sip_hdr_address{}, binary() | undefined) -> #sip_hdr_address{}.
+add_tag(Name, Value, undefined) when Name =:= 'to'; Name =:= 'from' -> Value;
+add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
+    Value2 = sip_headers:parse_header(Name, Value),
+    Params = lists:keystore('tag', 1, Value2#sip_hdr_address.params, {'tag', Tag}),
+    Value2#sip_hdr_address{params = Params}.
+
+
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -363,6 +408,7 @@ binary_to_header_name(<<"l">>) -> 'content-length';
 binary_to_header_name(<<"f">>) -> 'from';
 binary_to_header_name(<<"t">>) -> 'to';
 binary_to_header_name(<<"i">>) -> 'call-id';
+binary_to_header_name(<<"m">>) -> 'contact';
 binary_to_header_name(Bin) -> sip_binary:binary_to_existing_atom(Bin).
 
 %% Converting header name back to binary
@@ -373,6 +419,7 @@ header_name_to_binary('max-forwards') -> <<"Max-Forwards">>;
 header_name_to_binary('call-id') -> <<"Call-Id">>;
 header_name_to_binary('from') -> <<"From">>;
 header_name_to_binary('to') -> <<"To">>;
+header_name_to_binary('contact') -> <<"Contact">>;
 header_name_to_binary(Name) -> sip_binary:any_to_binary(Name).
 
 %%-----------------------------------------------------------------
@@ -439,6 +486,19 @@ parse_test_() ->
                    format_header('from', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('to', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+
+     % Contact
+     ?_assertEqual(address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                   parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
+                   parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>)),
+
+     ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1">>,
+                   format_header('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
+     ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>,
+                   format_header('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                                             address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
 
      % Via
      ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
