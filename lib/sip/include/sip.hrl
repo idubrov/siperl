@@ -52,3 +52,12 @@
 %% See RFC 3261, 20.42 Via
 %% @end
 -define(MAGIC_COOKIE, "z9hG4bK").
+
+
+%%-----------------------------------------------------------------
+%% SIP dialogs
+%%-----------------------------------------------------------------
+
+%% @doc Dialog is identified by call-id, local and remote tags.
+%% @end
+-record(sip_dialog, {local_tag, remote_tag, call_id}).

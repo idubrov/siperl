@@ -8,7 +8,7 @@
 -module(sip_config).
 
 %% Exports
--export([t1/0, t2/0, t4/0, ports/1, self/0]).
+-export([t1/0, t2/0, t4/0, ports/1, self/0, configured_routes/0]).
 
 %% Includes
 -include_lib("sip_common.hrl").
@@ -47,6 +47,10 @@ ports(tcp) -> entry(tcp, [5060]).
 self() ->
     {ok, Hostname} = inet:gethostname(),
     entry(self, list_to_binary(Hostname)).
+
+-spec configured_routes() -> [binary()].
+configured_routes() ->
+    [].
 
 %%%----------------------------------------------------------------
 %% Internal functions

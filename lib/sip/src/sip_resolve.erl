@@ -25,6 +25,16 @@
 %% API functions
 %%-----------------------------------------------------------------
 
+%% @doc Generate list of destination for given URI.
+%%
+%% See <a href="http://tools.ietf.org/html/rfc3263#section-4">RFC 3263, 4 Client Usage</a>
+%% @end
+-spec client_resolve(term()) -> [#sip_destination{}].
+client_resolve(URI) ->
+    [#sip_destination{address = {127,0,0,1}, port = 15060, transport = udp},
+     #sip_destination{address = {127,0,0,1}, port = 25060, transport = udp}
+     ].
+
 -spec resolve(binary()) -> inet:ip_address().
 resolve(Bin) ->
     case sip_binary:parse_ip_address(Bin) of

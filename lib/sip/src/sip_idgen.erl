@@ -11,6 +11,7 @@
 
 %% API
 -export([generate_tag/0, generate_branch/0, generate_call_id/0, generate_cseq/0]).
+-export([generate_id/1]).
 
 %% Include files
 -include_lib("sip.hrl").
@@ -59,6 +60,15 @@ generate_call_id() ->
 -spec generate_cseq() -> integer().
 generate_cseq() ->
     crypto:rand_uniform(1, 2147483648).
+
+%% @doc Generate new identifier
+%%
+%% Generate new string binary identifier for general usage (like, identifying
+%% the request in the UA core).
+%% @end
+-spec generate_id(integer()) -> binary().
+generate_id(Len) ->
+    rand_binary(Len, <<>>).
 
 
 %%-----------------------------------------------------------------
