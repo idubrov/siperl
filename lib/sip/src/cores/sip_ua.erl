@@ -22,7 +22,7 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
--record(state, {sending = [], callback, cstate}).
+-record(state, {sending = [], mod, mod_state}).
 
 %% @doc Creates UA process as part of the supervision tree
 %%
@@ -94,16 +94,15 @@ send_request(Request) ->
 %%-----------------------------------------------------------------
 %% @private
 -spec init({module(), term()}) -> {ok, #state{}}.
-init({Callback, Args}) ->
-    {ok, CState} = Callback:init(Args),
-    State = #state{callback = Callback, cstate = CState},
+init({Mod, Args}) ->
+    {ok, ModState} = Mod:init(Args),
+    State = #state{mod = Mod, mod_state = ModState},
     {ok, State}.
 
 %% @private
 -spec handle_call(term(), term(), #state{}) -> any().
-handle_call(Req, From, State) ->
-    Callback = State#state.callback,
-    Response = Callback:handle_call(Req, From, State#state.cstate),
+handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
+    Response = Mod:handle_call(Req, From, ModState),
     handle_response(Response, State).
 
 %% @private
@@ -111,9 +110,8 @@ handle_call(Req, From, State) ->
 handle_cast({send, Id, Destinations, Request}, State) ->
     State2 = send_internal(Id, Destinations, Request, State),
     {noreply, State2};
-handle_cast(Req, State) ->
-    Callback = State#state.callback,
-    Response = Callback:handle_cast(Req, State#state.cstate),
+handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
+    Response = Mod:handle_cast(Req, ModState),
     handle_response(Response, State).
 
 %% @private
@@ -126,24 +124,21 @@ handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
     {Id, TxKey, Fallback, Request} = lists:keyfind(TxKey, 2, State#state.sending),
     State2 = send_internal(Id, Fallback, Request, State),
     {noreply, State2};
-handle_info(Req, State) ->
-    Callback = State#state.callback,
-    Response = Callback:handle_info(Req, State#state.cstate),
+handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
+    Response = Mod:handle_info(Req, ModState),
     handle_response(Response, State).
 
 
 %% @private
 -spec terminate(term(), #state{}) -> ok.
-terminate(Reason, State) ->
-    Callback = State#state.callback,
-    Callback:terminate(Reason, State#state.cstate).
+terminate(Reason, #state{mod = Mod, mod_state = ModState}) ->
+    Mod:terminate(Reason, ModState).
 
 %% @private
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(OldVsn, State, Extra) ->
-    Callback = State#state.callback,
-    {ok, CState} = Callback:code_change(OldVsn, State#state.cstate, Extra),
-    {ok, State#state{cstate = CState}}.
+code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
+    {ok, ModState} = Mod:code_change(OldVsn, State#state.mod_state, Extra),
+    {ok, State#state{mod_state = ModState}}.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -153,10 +148,9 @@ code_change(OldVsn, State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_internal(Id, [], Request, State) ->
+send_internal(Id, [], Request, #state{mod = Mod} = State) ->
     % no more destinations -- report to callback
-    Callback = State#state.callback,
-    Callback:request_failed(Id, Request, request_timeout),
+    Mod:request_failed(Id, Request, request_timeout),
     State;
 send_internal(Id, [Top|Fallback], Request, State) ->
     % send request to the top destination, remember the transaction id,
@@ -174,9 +168,9 @@ generate_branch(Via) ->
 
 %% @doc Wrap client state back into the `#state{}'
 %% @end
-handle_response({reply, Reply, CState}, State) -> {reply, Reply, State#state{cstate = CState}};
-handle_response({reply, Reply, CState, Timeout}, State) -> {reply, Reply, State#state{cstate = CState}, Timeout};
-handle_response({noreply, CState}, State) -> {noreply, State#state{cstate = CState}};
-handle_response({noreply, CState, Timeout}, State) -> {noreply, State#state{cstate = CState}, Timeout};
-handle_response({stop, Reason, Reply, CState}, State) -> {stop, Reason, Reply, State#state{cstate = CState}};
-handle_response({stop, Reason, CState}, State) -> {stop, Reason, State#state{cstate = CState}}.
+handle_response({reply, Reply, ModState}, State) -> {reply, Reply, State#state{mod_state = ModState}};
+handle_response({reply, Reply, ModState, Timeout}, State) -> {reply, Reply, State#state{mod_state = ModState}, Timeout};
+handle_response({noreply, ModState}, State) -> {noreply, State#state{mod_state = ModState}};
+handle_response({noreply, ModState, Timeout}, State) -> {noreply, State#state{mod_state = ModState}, Timeout};
+handle_response({stop, Reason, Reply, ModState}, State) -> {stop, Reason, Reply, State#state{mod_state = ModState}};
+handle_response({stop, Reason, ModState}, State) -> {stop, Reason, State#state{mod_state = ModState}}.
