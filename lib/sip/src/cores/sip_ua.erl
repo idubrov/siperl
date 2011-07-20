@@ -69,7 +69,7 @@ create_request(Method, ToValue, ContactValue) when
     % configure pre-existing route set
     Routes = [{'route', sip_headers:route(Route, [])} || Route <- sip_config:routes()],
 
-    Msg = #sip_message{start_line = {request, Method, RequestURI},
+    Msg = #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
                        headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes},
 
     Msg.
@@ -78,7 +78,7 @@ create_request(Method, ToValue, ContactValue) when
 %% @end
 -spec send_request(sip_message:message()) -> {ok, binary()}.
 send_request(Request) ->
-    {request, _Method, RequestURI} = Request#sip_message.start_line,
+    RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
         case sip_message:top_header('route', Request) of
             {error, not_found} ->

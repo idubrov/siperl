@@ -159,20 +159,24 @@ tx_key(server, Msg) ->
 %% Get transaction module based on the transaction type and method.
 %% @end
 tx_module(client, Request) ->
-    case Request#sip_message.start_line of
-        {request, 'INVITE', _} -> sip_transaction_client_invite;
-        {request, _, _} -> sip_transaction_client
+    case Request#sip_message.kind#sip_request.method of
+        'INVITE' -> sip_transaction_client_invite;
+        _Method -> sip_transaction_client
     end;
 tx_module(server, Request) ->
-    case Request#sip_message.start_line of
-        {request, 'INVITE', _} -> sip_transaction_server_invite;
-        {request, 'ACK', _} -> sip_transaction_server_invite;
-        {request, _, _} -> sip_transaction_server
+    case Request#sip_message.kind#sip_request.method of
+        'INVITE' -> sip_transaction_server_invite;
+        'ACK' -> sip_transaction_server_invite;
+        _Method -> sip_transaction_server
      end.
 
 tx_send(undefined, _Msg) -> not_handled;
 tx_send(Key, Msg) when is_record(Msg, sip_message) ->
-    {Kind, Param, _} = Msg#sip_message.start_line,
+    {Kind, Param} =
+        case Msg#sip_message.kind of
+            #sip_request{method = Method} -> {request, Method};
+            #sip_response{status = Status} -> {response, Status}
+        end,
     % RFC 17.1.3/17.2.3
     case gproc:lookup_local_name({tx, Key}) of
         % no transaction

@@ -163,7 +163,7 @@ send_response_fallback([To|Rest], Response) ->
 -spec dispatch(#sip_destination{}, connection(),
                {ok, #sip_message{}} | {error, Reason :: term(), sip_message:message()}) ->
           ok | {reply, #sip_message{}}.
-dispatch(From, Connection, {ok, #sip_message{start_line = {request, _, _}} = Msg}) ->
+dispatch(From, Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
     case sip_transaction:handle_request(Msg2) of
@@ -171,7 +171,7 @@ dispatch(From, Connection, {ok, #sip_message{start_line = {request, _, _}} = Msg
         {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, Connection, {ok, #sip_message{start_line = {response, _, _}} = Msg}) ->
+dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -193,7 +193,7 @@ dispatch(From, Connection, {ok, #sip_message{start_line = {response, _, _}} = Ms
                                          {msg, Msg}])
     end,
     ok;
-dispatch(From, _Connection, {error, Reason, #sip_message{start_line = {request, _, _}} = Msg}) ->
+dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
     % reply with 400 Bad Request
     error_logger:warning_report(['bad_request',
                                  {reason, Reason},
@@ -205,7 +205,7 @@ dispatch(From, _Connection, {error, Reason, #sip_message{start_line = {request, 
     % via the same transport
     ?debugHere,
     {reply, Response};
-dispatch(From, _Connection, {error, Reason, #sip_message{start_line = {response, _, _}} = Msg}) ->
+dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_response{}} = Msg}) ->
     % discard malformed responses
     error_logger:warning_report(['message_discarded',
                                  {reason, Reason},

@@ -85,7 +85,11 @@ send_response(Msg, TxState) ->
 
 -spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
 pass_to_tu(Msg, TxState) ->
-    {Kind, _, _} = Msg#sip_message.start_line,
+    Kind =
+        case Msg#sip_message.kind of
+            #sip_request{} -> request;
+            #sip_response{} -> response
+        end,
     notify_tu(TxState, {tx, TxState#tx_state.tx_key, {Kind, Msg}}),
     TxState.
 

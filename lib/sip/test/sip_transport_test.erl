@@ -58,7 +58,11 @@ setup() ->
     meck:new(sip_core),
     Handle =
         fun (Connection, Msg) ->
-                 {Kind, _ , _} = Msg#sip_message.start_line,
+                 Kind =
+                     case Msg#sip_message.kind of
+                         #sip_request{} -> request;
+                         #sip_response{} -> response
+                     end,
                  TestPid = sip_test:pid_from_branch(Msg),
                  TestPid ! {Kind, Connection, Msg},
                  {ok, undefined}
@@ -300,7 +304,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
     Via3 = #sip_hdr_via{sent_by = {<<"localhost">>, 25060}, transport = udp, params = [{'received', <<"127.0.0.1">>}]},
-    Response3 = #sip_message{start_line = {response, 200, <<"Ok">>},
+    Response3 = #sip_message{kind = #sip_response{status = 200, reason = <<"Ok">>},
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),
 

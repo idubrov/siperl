@@ -15,7 +15,9 @@
 %% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
 %% @see RFC 3261 Chapter 7
 %% @end
--record(sip_message, {start_line :: sip_message:start_line(),
+-record(sip_request, {method :: binary() | atom(), uri :: binary()}).
+-record(sip_response, {status :: integer() | atom(), reason :: binary()}).
+-record(sip_message, {kind :: #sip_request{} | #sip_response{},
                       headers = [] :: [sip_headers:header()],
                       body = <<"">> :: binary()}).
 
