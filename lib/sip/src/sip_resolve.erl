@@ -49,7 +49,7 @@ resolve(Bin) ->
 %% See <a href="http://tools.ietf.org/html/rfc3263#section-5">RFC 3263, 5 Server Usage</a>
 %% @end
 -spec destinations(#sip_hdr_via{}) -> [#sip_destination{}].
-destinations(#sip_hdr_via{sent_by = {Host, Port}, transport = Transport}) ->
+destinations(#sip_hdr_via{host = Host, port = Port, transport = Transport}) ->
     case sip_binary:parse_ip_address(Host) of
         {ok, Addr} ->
             [#sip_destination{address = Addr, port = Port, transport = Transport}];

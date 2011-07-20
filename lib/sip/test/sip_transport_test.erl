@@ -303,7 +303,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
-    Via3 = #sip_hdr_via{sent_by = {<<"localhost">>, 25060}, transport = udp, params = [{'received', <<"127.0.0.1">>}]},
+    Via3 = #sip_hdr_via{host = <<"localhost">>, port = 25060, transport = udp, params = [{'received', <<"127.0.0.1">>}]},
     Response3 = #sip_message{kind = #sip_response{status = 200, reason = <<"Ok">>},
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),

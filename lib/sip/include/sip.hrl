@@ -18,15 +18,16 @@
 -record(sip_request, {method :: binary() | atom(), uri :: binary()}).
 -record(sip_response, {status :: integer() | atom(), reason :: binary()}).
 -record(sip_message, {kind :: #sip_request{} | #sip_response{},
-                      headers = [] :: [sip_headers:header()],
+                      headers = [] :: [{Name :: atom() | binary(), Value :: binary() | term()}],
                       body = <<"">> :: binary()}).
 
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
 					  transport :: atom(),
-					  sent_by = {<<"_HOST_">>, 0} :: sip_headers:via_sent_by(),
+                      host = <<>> :: binary(), % sent-by hostname
+                      port = 'undefined' :: integer() | 'undefined', % sent-by port
 					  params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
 
--record(sip_hdr_cseq, {sequence :: integer(), method :: sip_headers:method()}).
+-record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 -record(sip_hdr_address, {display_name = <<>> :: binary(),
                          uri = <<>> :: binary(),
                          params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).

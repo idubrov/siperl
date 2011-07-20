@@ -46,7 +46,7 @@ start_link(Module, Args, Options) ->
 %% `From:', `To:', `CSeq:', `Call-Id', `Contact:'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(sip_headers:method(), sip_headers:address(), sip_headers:address()) -> sip_message:message().
+-spec create_request(atom() | binary(), #sip_hdr_address{}, #sip_hdr_address{}) -> #sip_message{}.
 create_request(Method, ToValue, ContactValue) when
   is_record(ToValue, sip_hdr_address), is_record(ContactValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
@@ -76,7 +76,7 @@ create_request(Method, ToValue, ContactValue) when
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
--spec send_request(sip_message:message()) -> {ok, binary()}.
+-spec send_request(#sip_message{}) -> {ok, binary()}.
 send_request(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =

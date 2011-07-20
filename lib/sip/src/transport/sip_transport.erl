@@ -114,7 +114,7 @@ send_response_received(Response) ->
     {ok, Via} = sip_message:top_header('via', Response),
     Transport = Via#sip_hdr_via.transport,
     IsReliable = is_reliable(Transport),
-    {_, Port} = Via#sip_hdr_via.sent_by,
+    Port = Via#sip_hdr_via.port,
     case lists:keyfind('maddr', 1, Via#sip_hdr_via.params) of
         {_, MAddr} when not IsReliable ->
             % use 'maddr' parameter for unreliable transports
@@ -218,7 +218,7 @@ dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_response{}}
 %%-----------------------------------------------------------------
 -spec add_via_sentby(#sip_message{}, #sip_destination{}, integer()) -> #sip_message{}.
 add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport}, TTL) ->
-    SentBy = sent_by(Transport),
+    {Host, Port} = sent_by(Transport),
     % XXX: Only ipv4 for now.
     {ok, To} = inet:getaddr(Addr, inet),
 
@@ -234,7 +234,7 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
 
                                    _Other -> Params
                                end,
-                   #sip_hdr_via{transport = Transport, sent_by = SentBy, params = NewParams}
+                   #sip_hdr_via{transport = Transport, host = Host, port = Port, params = NewParams}
           end,
     sip_message:update_top_header('via', Fun, Message).
 
@@ -246,11 +246,12 @@ check_sent_by(Transport, Msg) ->
 
     % take top via sent-by
     {ok, Via} = sip_message:top_header('via', Msg),
-    case Via#sip_hdr_via.sent_by of
+    case Via#sip_hdr_via.port of
         % Default port, RFC 3261 18.1
-        {SentByAddr, undefined} ->
-            SentBy = {SentByAddr, default_port(Transport)};
-        _ -> SentBy = Via#sip_hdr_via.sent_by
+        undefined ->
+            SentBy = {Via#sip_hdr_via.host, default_port(Transport)};
+        Port ->
+            SentBy = {Via#sip_hdr_via.host, Port}
     end,
     if
         SentBy =:= ExpectedSentBy -> true;
@@ -265,13 +266,11 @@ add_via_received(#sip_destination{address = Src}, Msg) ->
     Fun = fun (TopVia) ->
                    % compare byte-to-byte with packet source address
                    SrcBin = sip_binary:any_to_binary(Src),
-                   case TopVia#sip_hdr_via.sent_by of
-                       {SrcBin, _} ->
-                           TopVia;
-
+                   case TopVia#sip_hdr_via.host of
+                       SrcBin -> TopVia;
                        _ ->
-                           Params = lists:keystore('received', 1, TopVia#sip_hdr_via.params,
-                                                   {'received', SrcBin}),
+                           Params = lists:keystore(received, 1, TopVia#sip_hdr_via.params,
+                                                   {received, SrcBin}),
                            TopVia#sip_hdr_via{params = Params}
                    end
           end,

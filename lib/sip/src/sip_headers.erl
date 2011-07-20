@@ -25,19 +25,6 @@
 -include_lib("sip_parse.hrl").
 -include_lib("sip.hrl").
 
-%% Types
--type header_name() :: atom() | binary().
--type header() :: {HeaderName :: header_name(), Value :: term() | binary()}.
--type method() :: binary() | atom().
--type via_sent_by() :: {Host :: binary(), Port :: integer() | undefined}.
--type via() :: #sip_hdr_via{}.
--type address() :: #sip_hdr_address{}.
--type cseq() :: #sip_hdr_cseq{}.
-
--export_type([header_name/0, header/0, method/0, via_sent_by/0, via/0, address/0, cseq/0]).
-
-
-
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
@@ -46,15 +33,14 @@
 %% Convert binary containing headers into list of non-parsed headers
 %% (with binary values).
 %% @end
--spec split_binary(binary()) -> [sip_headers:header()].
+-spec split_binary(binary()) -> [{Name :: atom() | binary(), Value :: binary() | term()}].
 split_binary(Headers) when is_binary(Headers) ->
     Lines = binary:split(Headers, <<"\r\n">>, [global]),
     lists:reverse(lists:foldl(fun (Bin, List) -> fold_header(Bin, List) end, [], Lines)).
 
-%% @doc
-%% Convert header name and value into binary.
+%% @doc Convert header name and value into the binary
 %% @end
--spec to_binary(header_name(), term()) -> binary().
+-spec to_binary(atom() | binary(), binary() | term()) -> binary().
 to_binary(Name, Value) ->
     NameBin = header_name_to_binary(Name),
     ValueBin = format_header(Name, Value),
@@ -63,11 +49,13 @@ to_binary(Name, Value) ->
 %%-----------------------------------------------------------------
 %% Header parsing/format functions
 %%-----------------------------------------------------------------
--spec parse_header(HeaderName :: sip_headers:header_name(), Value :: any()) -> term().
+
+%% @doc Parse header binary value into term representation
+%% @end
+-spec parse_header(Name :: atom() | binary(), Value :: any()) -> term().
 parse_header(_Name, Header) when not is_binary(Header) ->
     % Already parsed
     Header;
-
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -75,19 +63,20 @@ parse_header(_Name, Header) when not is_binary(Header) ->
 %%                      / via-extension
 parse_header('via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
-    {SentBy, Bin4} = parse_sent_by(Bin2),
+    {Host, Port, Bin3} = parse_sent_by(Bin2),
     % Parse parameters (which should start with semicolon)
-    {Params, Bin7} = parse_params(Bin4, []),
+    {Params, Bin4} = parse_params(Bin3, []),
 
     Top = #sip_hdr_via{transport = Transport,
                        version = Version,
-                       sent_by = SentBy,
+                       host = Host,
+                       port = Port,
                        params = Params},
-    case Bin7 of
-        <<?COMMA, Bin8/binary>> ->
+    case Bin4 of
+        <<?COMMA, Bin5/binary>> ->
             % Parse the rest of the Via
             % *(COMMA via-parm)
-            case parse_header('via', Bin8) of
+            case parse_header('via', Bin5) of
                 Via when is_list(Via) -> [Top | Via];
                 Via -> [Top | [Via]]
             end;
@@ -180,7 +169,7 @@ parse_sent_by(Bin) ->
                        _ ->
                            {undefined, Bin2}
                    end,
-    {{Host, Port}, Bin3}.
+    {Host, Port, Bin3}.
 
 %% Parse parameters lists
 %% *( SEMI param )
@@ -233,7 +222,7 @@ parse_fromto(Bin) ->
 %% @doc
 %% Format header into the binary.
 %% @end
--spec format_header(header_name(), term()) -> binary().
+-spec format_header(atom() | binary(), binary() | term()) -> binary().
 format_header(_Name, Value) when is_binary(Value) ->
     % already formatted to binary
     Value;
@@ -257,11 +246,11 @@ format_header('via', Via) when is_record(Via, sip_hdr_via) ->
     Version = Via#sip_hdr_via.version,
     Transport = sip_binary:to_upper(sip_binary:any_to_binary(Via#sip_hdr_via.transport)),
     Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
-    Bin2 = case Via#sip_hdr_via.sent_by of
-        {Host, undefined} ->
+    Host = Via#sip_hdr_via.host,
+    Bin2 = case Via#sip_hdr_via.port of
+        undefined ->
             <<Bin/binary, ?SP, Host/binary>>;
-
-        {Host, Port} ->
+        Port ->
             <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
     end,
     append_params(Bin2, Via#sip_hdr_via.params);
@@ -343,17 +332,17 @@ format_param(Name, Bin) ->
 %% @doc
 %% Construct Via header value.
 %% @end
--spec via(atom(), via_sent_by() | binary(), [any()]) -> #sip_hdr_via{}.
+-spec via(atom(), {binary(), integer() | 'undefined'} | binary(), [any()]) -> #sip_hdr_via{}.
 via(Transport, {Host, Port}, Params) when
   is_atom(Transport), is_list(Params) ->
-    #sip_hdr_via{transport = Transport, sent_by = {Host, Port}, params = Params};
+    #sip_hdr_via{transport = Transport, host = Host, port = Port, params = Params};
 via(Transport, Host, Params) ->
     via(Transport, {Host, 5060}, Params).
 
 %% @doc
 %% Construct CSeq header value.
 %% @end
--spec cseq(integer(), method()) -> #sip_hdr_cseq{}.
+-spec cseq(integer(), atom() | binary()) -> #sip_hdr_cseq{}.
 cseq(Sequence, Method) when
   is_integer(Sequence),
   (is_atom(Method) orelse is_binary(Method)) ->

@@ -26,7 +26,7 @@
 
 %% Types
 -type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} |
-                  {server, SentBy :: sip_headers:via_sent_by(), Branch :: binary(), Method :: sip_message:method()}.
+                  {server, Host :: binary(), Port :: integer() | 'undefined', Branch :: binary(), Method :: sip_message:method()}.
 -export_type([tx_key/0]).
 
 %%-----------------------------------------------------------------
@@ -128,7 +128,7 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
 
 %% @doc Determine transaction unique key
 %% @end
--spec tx_key(client | server, sip_message:message()) -> tx_key().
+-spec tx_key(client | server, #sip_message{}) -> tx_key().
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Method = sip_message:method(Msg),
@@ -146,8 +146,9 @@ tx_key(server, Msg) ->
         % Magic cookie
         {ok, <<?MAGIC_COOKIE, _/binary>> = Branch} ->
             {ok, Via} = sip_message:top_header('via', Msg),
-            SentBy = Via#sip_hdr_via.sent_by,
-            {server, SentBy, Branch, Method};
+            Host = Via#sip_hdr_via.host,
+            Port = Via#sip_hdr_via.port,
+            {server, Host, Port, Branch, Method};
 
         % No branch or does not start with magic cookie
         _ ->
