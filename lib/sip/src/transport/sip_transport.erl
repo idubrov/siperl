@@ -180,7 +180,6 @@ dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
                 not_handled -> sip_core:handle_response(Connection, Msg);
                 {ok, _TxRef} -> ok
             end;
-
         {ExpectedSentBy, SentBy} ->
             error_logger:warning_report(['message_discarded',
                                          {reason, sent_by_mismatch},
@@ -237,8 +236,7 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
 -spec check_sent_by(atom(), #sip_message{}) -> true | {Expected :: term(), Actual :: term()}.
 %% Check message sent by matches one inserted by the transport layer
 check_sent_by(Transport, Msg) ->
-    {Addr, Port} = sent_by(Transport),
-    ExpectedSentBy = {sip_binary:any_to_binary(Addr), Port},
+    ExpectedSentBy = sent_by(Transport),
 
     % take top via sent-by
     {ok, Via} = sip_message:top_header('via', Msg),
