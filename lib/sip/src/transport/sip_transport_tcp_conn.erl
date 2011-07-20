@@ -101,7 +101,6 @@ handle_call({send, Message}, _From, State) ->
     Packet = sip_message:to_binary(Message),
     Result = gen_tcp:send(Socket, Packet),
     {reply, Result, State};
-
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
 
@@ -120,7 +119,6 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
@@ -131,10 +129,13 @@ process_stream(Packet, State, Props) ->
             {ok, State#state{parse_state = NewParseState}, Props};
         {ok, Msg, NewParseState} ->
             % dispatch to transport layer
-            Connection = #sip_connection{transport = tcp, connection = self()},
-            sip_transport:dispatch(State#state.remote, Connection, Msg),
+            Result = sip_transport:dispatch(State#state.remote, connection(), {ok, Msg}),
+            immediate_reply(Result, State),
 
             % add property to register with gproc for requests
+            % each property is a marker that this process handles
+            % given server transaction, so we could find proper
+            % connection when sending responses
             NewProps =
                 case sip_message:is_request(Msg) of
                     true ->
@@ -144,6 +145,27 @@ process_stream(Packet, State, Props) ->
                 end,
 
             % there could be more messages to parse, recurse
-            process_stream(<<>>, State#state{parse_state = NewParseState}, NewProps)
-    % FIXME: error handling
+            process_stream(<<>>, State#state{parse_state = NewParseState}, NewProps);
+        {error, Reason, Msg, NewParseState} ->
+            % dispatch to transport layer
+            Result = sip_transport:dispatch(State#state.remote, connection(), {error, Reason, Msg}),
+            immediate_reply(Result, State),
+
+            % there could be more messages to parse, recurse
+            process_stream(<<>>, State#state{parse_state = NewParseState}, Props)
     end.
+
+%% @doc When transport returns `{reply, Msg}' on `dispatch/3' call, we need to reply immediately
+%%
+%% This functionality is used for sending responses on bad requests,
+%% so the sip_transport:dispatch/3 does not block on regular `sip_transport_tcp:send/2' call
+%% @end
+immediate_reply(ok, _State) -> ok;
+immediate_reply({reply, Message}, State) ->
+    % send response
+    Socket = State#state.socket,
+    Packet = sip_message:to_binary(Message),
+    gen_tcp:send(Socket, Packet).
+
+connection() ->
+    #sip_connection{transport = tcp, connection = self()}.

@@ -35,7 +35,7 @@
 %% 'BEFORE' -- state before Start-Line
 %% 'HEADERS' -- state after first Start-Line character was received
 %% {'BODY', StartLine, Headers, Length} -- state after receiving headers, but before body (\r\n\r\n)
--type state() :: {'BEFORE' | 'HEADERS' | 'ERROR' | {'BODY', start_line(), [sip_headers:header()], integer()}, binary()}.
+-type state() :: {'BEFORE' | 'HEADERS' | {'BODY', start_line(), [sip_headers:header()], integer()}, binary()}.
 
 %% Exported types
 -type start_line() :: {'request', Method :: sip_headers:method(), RequestURI :: binary()} |
@@ -232,7 +232,7 @@ parse_datagram(Datagram) ->
 -spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
           {ok, state()} |
           {ok, message(), state()} |
-          {error, no_content_length, message(), 'ERROR'}.
+          {error, no_content_length, message(), state()}.
 parse_stream(Packet, none) -> parse_stream(Packet, {'BEFORE', <<>>});
 parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
     NewFrame = <<Frame/binary, Packet/binary>>,
@@ -292,8 +292,8 @@ parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 
                     parse_stream_internal({NewState, Rest}, 0);
                 {error, not_found} ->
                     % return bad message
-                    Msg = #sip_message{start_line = StartLine, headers = Headers},
-                    {error, no_content_length, Msg, 'ERROR'}
+                    Msg = #sip_message{start_line = StartLine, headers = Headers, body = Rest},
+                    {error, no_content_length, Msg, {'BEFORE', <<>>}}
             end
     end;
 parse_stream_internal({{'BODY', StartLine, Headers, ContentLength}, Frame}, _)
@@ -446,15 +446,14 @@ parse_request_line_test_() ->
 
 -spec parse_stream_test_() -> term().
 parse_stream_test_() ->
-    StartState = {'BEFORE', <<>>},
     SampleRequest = {request, 'INVITE', <<"sip:urn:service:test">>},
     SampleMessage = #sip_message{start_line = SampleRequest,
                                  headers = [{'content-length', <<"5">>}],
                                  body = <<"Hello">>},
     [ %% Skipping \r\n
-     ?_assertEqual({ok, StartState},
+     ?_assertEqual({ok, {'BEFORE', <<>>}},
                    parse_stream(<<>>, none)),
-     ?_assertEqual({ok, StartState},
+     ?_assertEqual({ok, {'BEFORE', <<>>}},
                    parse_stream(<<"\r\n">>, none)),
      ?_assertEqual({ok, {'BEFORE', <<"\r">>}},
                    parse_stream(<<"\r">>, none)),
@@ -472,16 +471,16 @@ parse_stream_test_() ->
                                 {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>})),
 
      % Parse the whole body
-     ?_assertEqual({ok, SampleMessage, StartState},
+     ?_assertEqual({ok, SampleMessage, {'BEFORE', <<>>}},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>, none)),
-     ?_assertEqual({ok, SampleMessage, StartState},
+     ?_assertEqual({ok, SampleMessage, {'BEFORE', <<>>}},
                    parse_stream(<<"Hello">>,
                                 {{'BODY', SampleRequest, [{'content-length', <<"5">>}], 5}, <<>>})),
      ?_assertEqual({ok,
                     SampleMessage#sip_message{headers = [{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}]},
-                    StartState},
+                    {'BEFORE', <<>>}},
                    parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\nContent-Length: 5\r\n\r\nHello">>,
-                                StartState)),
+                                {'BEFORE', <<>>})),
 
      % Multiple messages in stream
      ?_assertEqual({ok, SampleMessage, {'BEFORE', <<"\r\nINVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>}},
@@ -491,14 +490,17 @@ parse_stream_test_() ->
      ?_assertEqual({error,
                     no_content_length,
                     #sip_message{start_line = {request, 'INVITE', <<"sip:urn:service:test">>},
-                                                  headers = [{<<"x-custom">>, <<"Nothing">>}]},
-                    'ERROR'},
-                   parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\n\r\nHello">>, StartState)),
+                                 headers = [{<<"x-custom">>, <<"Nothing">>}],
+                                 body = <<"Hello">>},
+                    {'BEFORE', <<>>}},
+                   parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\n\r\nHello">>,
+                                {'BEFORE', <<>>})),
      ?_assertEqual({error,
                     no_content_length,
                     #sip_message{start_line = {response, 200, <<"Ok">>}},
-                    'ERROR'},
-                   parse_stream(<<"SIP/2.0 200 Ok\r\n\r\n">>, StartState))
+                    {'BEFORE', <<>>}},
+                   parse_stream(<<"SIP/2.0 200 Ok\r\n\r\n">>,
+                                {'BEFORE', <<>>}))
     ].
 
 -spec parse_datagram_test_() -> term().

@@ -70,7 +70,7 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     TTL = proplists:get_value(ttl, Opts, 1),
     Request2 = add_via_sentby(Request, To, TTL),
 
-    case transport_send(To#sip_destination.transport, To, Request2) of
+    case transport_send(To, Request2) of
         ok -> ok;
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
@@ -93,7 +93,7 @@ send_response(Response) ->
             case gproc:lookup_pids({p, l, {connection, Key}}) of
                 [Pid | _Rest] ->
                     Connection = #sip_connection{transport = Via#sip_hdr_via.transport, connection = Pid},
-                    case transport_send(Via#sip_hdr_via.transport, Connection, Response) of
+                    case transport_send(Connection, Response) of
                         ok -> ok;
                         {error, _Reason} ->
                             % try to send to address in `received'
@@ -120,31 +120,31 @@ send_response_received(Response) ->
             % use 'maddr' parameter for unreliable transports
             Addr = sip_resolve:resolve(MAddr),
             To = #sip_destination{address = Addr, port = Port, transport = Transport},
-            transport_send(Transport, To, Response);
+            transport_send(To, Response);
         false ->
             case lists:keyfind('received', 1, Via#sip_hdr_via.params) of
                 {_, Received} ->
                     % use 'received' parameter, must be IP
                     {ok, ReceivedAddr} = sip_binary:parse_ip_address(Received),
                     To = #sip_destination{address = ReceivedAddr, port = Port, transport = Transport},
-                    transport_send(Transport, To, Response);
+                    transport_send(To, Response);
                 false ->
                     % Use procedures of Section 5 RFC 3263
                     Destinations = sip_resolve:destinations(Via),
-                    send_response_fallback(Destinations, Via#sip_hdr_via.transport, Response)
+                    send_response_fallback(Destinations, Response)
             end
     end.
 
 
 %% @doc Try sending response to destinations from the list
 %% @end
-send_response_fallback([], _Transport, _Response) -> {error, no_backup_servers};
-send_response_fallback([To|Rest], Transport, Response) ->
-    case transport_send(Transport, To, Response) of
+send_response_fallback([], _Response) -> {error, no_backup_servers};
+send_response_fallback([To|Rest], Response) ->
+    case transport_send(To, Response) of
         ok -> ok;
         {error, _Reason} ->
             % try next destination
-            send_response_fallback(Rest, Transport, Response)
+            send_response_fallback(Rest, Response)
     end.
 
 %%-----------------------------------------------------------------
@@ -155,17 +155,23 @@ send_response_fallback([To|Rest], Transport, Response) ->
 %%
 %% Dispatch request/response received through given connection. This function
 %% is called by concrete transport implementations.
+%%
+%% <em>`{reply, #sip_message{}}' is used for sending reply immediately,
+%% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
--spec dispatch(#sip_destination{}, connection(), #sip_message{}) -> ok.
-dispatch(From, Connection, #sip_message{start_line = {request, _, _}} = Msg) ->
+-spec dispatch(#sip_destination{}, connection(),
+               {ok, #sip_message{}} | {error, Reason :: term(), sip_message:message()}) ->
+          ok | {reply, #sip_message{}}.
+dispatch(From, Connection, {ok, #sip_message{start_line = {request, _, _}} = Msg}) ->
     Msg2 = add_via_received(From, Msg),
     % 18.1.2: route to client transaction or to core
     case sip_transaction:handle_request(Msg2) of
         not_handled -> sip_core:handle_request(Connection, Msg2);
         {ok, _TxRef} -> ok
-    end;
-dispatch(From, Connection, #sip_message{start_line = {response, _, _}} = Msg) ->
+    end,
+    ok;
+dispatch(From, Connection, {ok, #sip_message{start_line = {response, _, _}} = Msg}) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -181,10 +187,31 @@ dispatch(From, Connection, #sip_message{start_line = {response, _, _}} = Msg) ->
 
         {ExpectedSentBy, SentBy} ->
             error_logger:warning_report(['message_discarded',
+                                         {reason, sent_by_mismatch},
                                          {'expected_sent_by', ExpectedSentBy},
                                          {'sent_by', SentBy},
                                          {msg, Msg}])
-    end.
+    end,
+    ok;
+dispatch(From, _Connection, {error, Reason, #sip_message{start_line = {request, _, _}} = Msg}) ->
+    % reply with 400 Bad Request
+    error_logger:warning_report(['bad_request',
+                                 {reason, Reason},
+                                 {from, From},
+                                 {msg, Msg}]),
+    Response = sip_message:create_response(Msg, 400, sip_binary:any_to_binary(Reason), undefined),
+
+    % we are not going to go through whole procedures for sending response, just try to send
+    % via the same transport
+    ?debugHere,
+    {reply, Response};
+dispatch(From, _Connection, {error, Reason, #sip_message{start_line = {response, _, _}} = Msg}) ->
+    % discard malformed responses
+    error_logger:warning_report(['message_discarded',
+                                 {reason, Reason},
+                                 {from, From},
+                                 {msg, Msg}]),
+    ok.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -256,8 +283,7 @@ add_via_received(#sip_destination{address = Src}, Msg) ->
 default_port(udp) -> 5060;
 default_port(tcp) -> 5060.
 
-%% @doc
-%% Get the value for the via sent-by.
+%% @doc Get the value for the via sent-by.
 %% @end
 sent_by(Transport) ->
     gen_server:call(?SERVER, {get_sentby, Transport}).
@@ -265,10 +291,17 @@ sent_by(Transport) ->
 %% @doc
 %% Send the message through the transport.
 %% @end
-transport_send(Transport, #sip_destination{port = undefined} = To, Message) ->
-    transport_send(Transport, To#sip_destination{port = default_port(Transport)}, Message);
-transport_send(udp, To, Message) -> sip_transport_udp:send(To, Message);
-transport_send(tcp, To, Message) -> sip_transport_tcp:send(To, Message).
+transport_send(#sip_destination{port = undefined} = To, Message) ->
+    transport_send(To#sip_destination{port = default_port(To#sip_destination.transport)}, Message);
+transport_send(To, Message) when is_record(To, sip_destination)->
+    Module = transport_module(To#sip_destination.transport),
+    Module:send(To, Message);
+transport_send(To, Message) when is_record(To, sip_connection) ->
+    Module = transport_module(To#sip_connection.transport),
+    Module:send(To, Message).
+
+transport_module(udp) -> sip_transport_udp;
+transport_module(tcp) -> sip_transport_tcp.
 
 %%-----------------------------------------------------------------
 %% Server callbacks

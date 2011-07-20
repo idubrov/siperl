@@ -1,0 +1,3 @@
+INVITE sip:test@localhost SIP/2.0
+
+Some body

@@ -102,14 +102,19 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
 %% @private
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->
           {noreply, #state{}, infinity} | {stop, _Reason, #state{}}.
-handle_info({udp, _Socket, SrcAddress, SrcPort, Packet}, State) ->
+handle_info({udp, Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
-    case sip_message:parse_datagram(Packet) of
-        {ok, Msg} -> sip_transport:dispatch(Remote, undefined, Msg);
-        % just ignore bad responses
-        {error, content_too_small, _Msg} ->
-            % FIXME: send 400 Bad Request response for bad requests
-            ok
+    Result = sip_message:parse_datagram(Packet),
+    % result is either {ok, Msg} or {error, Reason, Msg}
+    case sip_transport:dispatch(Remote, undefined, Result) of
+        ok -> ok;
+        {reply, Response} ->
+            % we need to reply immediately
+            % this functionality is used for sending responses on bad requests
+            % so the sip_transport:dispatch/3 does not block on regular
+            % `sip_transport_udp:send/2' call
+            Packet = sip_message:to_binary(Response),
+            gen_udp:send(Socket, SrcAddress, SrcPort, Packet)
     end,
     {noreply, State, State#state.timeout};
 handle_info({udp_error, _Socket, Reason}, State) ->
