@@ -102,7 +102,6 @@ parse_header('max-forwards', Bin) ->
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
 parse_header('call-id', Bin) ->
     Bin;
-
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
 %%
@@ -110,6 +109,12 @@ parse_header('call-id', Bin) ->
 %% from-spec      =  ( name-addr / addr-spec ) *( SEMI from-param )
 %% from-param     =  tag-param / generic-param
 %%
+%% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
+%% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
+%% display-name   =  *(token LWS)/ quoted-string
+parse_header(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
+    {Top, <<>>} = parse_address(Bin),
+    Top;
 %% Contact        =  ("Contact" / "m" ) HCOLON
 %%                  ( STAR / (contact-param *(COMMA contact-param)))
 %% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
@@ -120,26 +125,28 @@ parse_header('call-id', Bin) ->
 %% contact-extension  =  generic-param
 %% delta-seconds      =  1*DIGIT
 %%
+%% Route              =  "Route" HCOLON route-param *(COMMA route-param)
+%% route-param        =  name-addr *( SEMI rr-param )
+%% rr-param           =  generic-param
+%%
+%% Record-Route       =  "Record-Route" HCOLON rec-route *(COMMA rec-route)
+%% rec-route          =  name-addr *( SEMI rr-param )
+%%
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
-parse_header(Name, Bin) when Name =:= 'from'; Name =:= 'to'; Name =:= 'contact' ->
-    {Display, URI, Params} = parse_fromto(sip_binary:trim_leading(Bin)),
-    {Params2, Bin2} = parse_params(sip_binary:trim_leading(Params), []),
-    Top = #sip_hdr_address{display_name = sip_binary:trim(Display), uri = URI, params = Params2},
-    case Bin2 of
-        <<?COMMA, Bin3/binary>> when Name =:= 'contact' ->
-            % Parse the rest of the Contact
-            % *(COMMA contact-param)
-            case parse_header('contact', Bin3) of
-                Contact when is_list(Contact) -> [Top | Contact];
-                Contact -> [Top | [Contact]]
+parse_header('contact', <<"*">>) -> '*';
+parse_header(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-route' ->
+    case parse_address(Bin) of
+        {Top, <<?COMMA, Bin2/binary>>} ->
+            % Parse the rest of the Contact, Route or Record-Route headers
+            % *(COMMA contact-param / route-param / rec-route)
+            case parse_header(Name, Bin2) of
+                Value when is_list(Value) -> [Top | Value];
+                Value -> [Top | [Value]]
             end;
-        <<>> -> Top
+        {Top, <<>>} -> Top
     end;
-
-
-
 %% Any other header, just return value as is
 parse_header(_Name, Value) ->
     Value.
@@ -193,19 +200,23 @@ parse_params(Bin, List) ->
     {lists:reverse(List), sip_binary:trim_leading(Bin)}.
 
 
-%% @doc
-%% Parse From/To header into display name, URI and binary with all the rest parameters
+%% @doc Parse address-like header into display name, URI and binary with the parameters
+%%
+%% Parses values like
+%% ```
+%% value       = ( name-addr / addr-spec )
+%% '''
 %% @end
-parse_fromto(<<?DQUOTE, _/binary>> = Bin) ->
+parse_address_uri(<<?DQUOTE, _/binary>> = Bin) ->
     % name-addr with quoted-string display-name
     {Display, <<?LAQUOT, Rest/binary>>} = sip_binary:parse_quoted_string(Bin),
     {URI, <<?RAQUOT, Params/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
     {Display, URI, Params};
-parse_fromto(<<?LAQUOT, Rest/binary>>) ->
+parse_address_uri(<<?LAQUOT, Rest/binary>>) ->
     % name-addr without display-name
-    {URI, <<?RAQUOT, Rest2/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
-    {<<>>, URI, Rest2};
-parse_fromto(Bin) ->
+    {URI, <<?RAQUOT, Params/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
+    {<<>>, URI, Params};
+parse_address_uri(Bin) ->
     % either addr-spec or name-addr with token-based display-name
     case sip_binary:parse_until(Bin, ?LAQUOT) of
         {_Any, <<>>} ->
@@ -215,9 +226,25 @@ parse_fromto(Bin) ->
 
         {Display, <<?LAQUOT, Rest/binary>>} ->
             % name-addr with token-based display-name
-            {URI, <<?RAQUOT, Rest2/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
-            {Display, URI, Rest2}
+            {URI, <<?RAQUOT, Params/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
+            {Display, URI, Params}
     end.
+
+%% @doc Parse address-like header together with all parameters
+%%
+%% Parses values like
+%% ```
+%% value       = ( name-addr / addr-spec ) *( SEMI param )
+%% param       =  tag-param / generic-param
+%% '''
+%% @end
+parse_address(Bin) ->
+    {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
+    {Params, Bin3} = parse_params(sip_binary:trim_leading(Bin2), []),
+    Value = #sip_hdr_address{display_name = sip_binary:trim(Display),
+                             uri = URI,
+                             params = Params},
+    {Value, Bin3}.
 
 %% @doc
 %% Format header into the binary.
@@ -289,11 +316,23 @@ format_header('max-forwards', Hops) when is_integer(Hops) ->
 %% contact-extension  =  generic-param
 %% delta-seconds      =  1*DIGIT
 %%
+%% Route              =  "Route" HCOLON route-param *(COMMA route-param)
+%% route-param        =  name-addr *( SEMI rr-param )
+%% rr-param           =  generic-param
+%%
+%% Record-Route       =  "Record-Route" HCOLON rec-route *(COMMA rec-route)
+%% rec-route          =  name-addr *( SEMI rr-param )
+%%
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
-format_header(Name, Addr) when
-  is_record(Addr, sip_hdr_address), (Name =:= 'from' orelse Name =:= 'to' orelse Name =:= 'contact') ->
+format_header('contact', '*') -> <<"*">>;
+format_header(Name, #sip_hdr_address{} = Addr) when
+  Name =:= 'from';
+  Name =:= 'to';
+  Name =:= 'contact';
+  Name =:= 'route';
+  Name =:= 'record-route' ->
 
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
@@ -482,12 +521,25 @@ parse_test_() ->
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                     address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
                    parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>)),
+     ?_assertEqual('*', parse_header('contact', <<"*">>)),
 
      ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1">>,
                    format_header('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
      ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>,
                    format_header('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                              address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
+     ?_assertEqual(<<"*">>, format_header('contact', '*')),
+
+     % Route, Record-Route
+     ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),
+                   parse_header('route', <<"<sip:p1.example.com;lr>">>)),
+     ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),
+                   parse_header('record-route', <<"<sip:p1.example.com;lr>">>)),
+
+     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
+                   format_header('route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
+     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
+                   format_header('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
      % Via
      ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
