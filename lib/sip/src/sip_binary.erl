@@ -12,6 +12,7 @@
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
 -export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
 -export([is_space_char/1, is_token_char/1, parse_ip_address/1]).
+-export([parse_host_port/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
@@ -77,8 +78,7 @@ is_token_char(C) when
   (C >= $a andalso C =< $z) ;
   (C >= $A andalso C =< $Z) ;
   C =:= $- ; C =:= $. ; C =:= $! ; C =:= $% ; C =:= $* ;
-  C =:= $_ ; C =:= $+ ; C =:= $` ; C =:= $' ; C =:= $~
-  ->
+  C =:= $_ ; C =:= $+ ; C =:= $` ; C =:= $' ; C =:= $~ ->
     true;
 
 is_token_char(_) ->
@@ -169,6 +169,22 @@ parse_token_or_quoted_string(Bin) ->
         _ ->
             parse_token(Bin)
     end.
+
+
+%% @doc Parse `host [":" port]' expressions
+%% @end
+-spec parse_host_port(binary()) -> {Host :: binary(), Port :: integer(), Rest :: binary()}.
+parse_host_port(Bin) ->
+    {Host, Bin2} = sip_binary:parse_token(Bin),
+    {Port, Bin3} = case Bin2 of
+                       <<":", Rest/binary>> ->
+                           {P, Bin4} = sip_binary:parse_token(Rest),
+                           {sip_binary:binary_to_integer(P), Bin4};
+                       _ ->
+                           {undefined, Bin2}
+                   end,
+    {Host, Port, Bin3}.
+
 
 %% @doc Convert UTF-8 binary to integer
 %% @end
@@ -296,6 +312,8 @@ binary_test_() ->
      ?_assertEqual({<<"somerest">>, <<>>}, parse_until(<<"somerest">>, fun is_space_char/1)),
      ?_assertEqual({<<"some">>, <<"! rest  ">>}, parse_until(<<"some! rest  ">>, $!)),
      ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$))
+
+     % FIXME: parse_host_port!
     ].
 
 -endif.

@@ -63,7 +63,7 @@ parse_header(_Name, Header) when not is_binary(Header) ->
 %%                      / via-extension
 parse_header('via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
-    {Host, Port, Bin3} = parse_sent_by(Bin2),
+    {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
     % Parse parameters (which should start with semicolon)
     {Params, Bin4} = parse_params(Bin3, []),
 
@@ -165,19 +165,6 @@ parse_sent_protocol(Bin) ->
     Transport2 = sip_binary:binary_to_existing_atom(sip_binary:to_lower(Transport)),
     {{Protocol, Version, Transport2}, Bin4}.
 
-%% sent-by           =  host [ COLON port ]
-parse_sent_by(Bin) ->
-    {Host, Bin2} = sip_binary:parse_token(Bin),
-    {Port, Bin3} = case Bin2 of
-                       <<?HCOLON, Rest/binary>>
-                         ->
-                           {P, Bin4} = sip_binary:parse_token(Rest),
-                           {sip_binary:binary_to_integer(P), Bin4};
-                       _ ->
-                           {undefined, Bin2}
-                   end,
-    {Host, Port, Bin3}.
-
 %% Parse parameters lists
 %% *( SEMI param )
 %% param  =  token [ EQUAL value ]
@@ -195,7 +182,6 @@ parse_params(<<?SEMI, Bin/binary>>, List) ->
                 {sip_binary:binary_to_existing_atom(Name), Bin2}
         end,
     parse_params(Rest, [Param|List]);
-
 parse_params(Bin, List) ->
     {lists:reverse(List), sip_binary:trim_leading(Bin)}.
 
@@ -337,6 +323,7 @@ format_header(Name, #sip_hdr_address{} = Addr) when
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
               <<>> -> <<?LAQUOT, URI/binary, ?RAQUOT>>;
+              % FIXME: escaping!
               DisplayName -> <<DisplayName/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
           end,
     append_params(Bin, Addr#sip_hdr_address.params);

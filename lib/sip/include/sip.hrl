@@ -10,6 +10,16 @@
 %% SIP core messages
 %%-----------------------------------------------------------------
 
+
+-record(sip_uri, {scheme = sip :: 'sip' | 'sips',
+                  user = <<>> :: binary(),
+                  password = <<>> :: binary(),
+                  host = <<>> :: binary(),
+                  port = undefined :: integer() | 'undefined',
+                  params = [],
+                  headers = []}).
+-record(tel_uri, {phone = <<>> :: binary()}).
+
 %% @doc
 %% SIP message types.
 %% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
@@ -29,7 +39,7 @@
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 -record(sip_hdr_address, {display_name = <<>> :: binary(),
-                         uri = <<>> :: binary(),
+                         uri = <<>> :: binary() | #sip_uri{},
                          params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
 % FIXME: default uri should be "Anonymous" <sip:thisis@anonymous.invalid>
 
