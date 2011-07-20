@@ -24,18 +24,13 @@
 -define(SERVER, ?MODULE).
 -define(TX_SUP(Name, TxModule), ?SPEC(Name, sip_transaction_tx_sup, supervisor, [TxModule])).
 
-%% Types
--type tx_key() :: {client, Branch :: binary(), Method :: sip_message:method()} |
-                  {server, Host :: binary(), Port :: integer() | 'undefined', Branch :: binary(), Method :: sip_message:method()}.
--export_type([tx_key/0]).
-
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
 %% @doc
 %% Start new client transaction.
 %% @end
--spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, tx_key()}.
+-spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, To, Request)
   when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
@@ -59,7 +54,7 @@ start_client_tx(TU, To, Request)
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(pid() | term(), #sip_message{}) -> {ok, tx_key()}.
+-spec start_server_tx(pid() | term(), #sip_message{}) -> {ok, #sip_tx_server{}}.
 start_server_tx(TU, Request)
   when is_record(Request, sip_message) ->
 
@@ -76,7 +71,7 @@ start_server_tx(TU, Request)
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
--spec list_tx() -> [tx_key()].
+-spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].
 list_tx() ->
     gproc:select(names,
                  [{{'$1','$2','$3'},
@@ -90,7 +85,7 @@ list_tx() ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_request(#sip_message{}) -> not_handled | {ok, tx_key()}.
+-spec handle_request(#sip_message{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
 handle_request(Msg) when is_record(Msg, sip_message) ->
     true = sip_message:is_request(Msg),
     handle_internal(server, Msg).
@@ -100,7 +95,7 @@ handle_request(Msg) when is_record(Msg, sip_message) ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_response(#sip_message{}) -> not_handled | {ok, tx_key()}.
+-spec handle_response(#sip_message{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
 handle_response(Msg) ->
     true = sip_message:is_response(Msg),
     handle_internal(client, Msg).
@@ -108,7 +103,8 @@ handle_response(Msg) ->
 %% @doc
 %% Pass given response from the TU to the given transaction.
 %% @end
--spec send_response(tx_key(), #sip_message{}) -> not_handled | {ok, tx_key()}.
+-spec send_response(#sip_tx_client{} | #sip_tx_server{}, #sip_message{}) ->
+          not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
 send_response(Key, Msg) ->
     true = sip_message:is_response(Msg),
     tx_send(Key, Msg).
@@ -128,12 +124,12 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
 
 %% @doc Determine transaction unique key
 %% @end
--spec tx_key(client | server, #sip_message{}) -> tx_key().
+-spec tx_key(client | server, #sip_message{}) -> #sip_tx_client{} | #sip_tx_server{}.
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Method = sip_message:method(Msg),
     {ok, Branch} = sip_message:top_via_branch(Msg),
-    {client, Branch, Method};
+    #sip_tx_client{branch = Branch, method = Method};
 tx_key(server, Msg) ->
     % RFC 17.2.3
     % for ACK we use INVITE
@@ -148,7 +144,7 @@ tx_key(server, Msg) ->
             {ok, Via} = sip_message:top_header('via', Msg),
             Host = Via#sip_hdr_via.host,
             Port = Via#sip_hdr_via.port,
-            {server, Host, Port, Branch, Method};
+            #sip_tx_server{host = Host, port = Port, branch = Branch, method = Method};
 
         % No branch or does not start with magic cookie
         _ ->

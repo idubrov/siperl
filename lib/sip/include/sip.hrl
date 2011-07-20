@@ -51,11 +51,20 @@
 %% SIP transaction layer
 %%-----------------------------------------------------------------
 
-%% @doc
-%% See RFC 3261, 20.42 Via
+%% @doc See RFC 3261, 20.42 Via
 %% @end
 -define(MAGIC_COOKIE, "z9hG4bK").
 
+%% @doc Client transaction unique key
+%% @end
+-record(sip_tx_client, {branch :: binary(), method :: atom() | binary()}).
+
+%% @doc Server transaction unique key
+%% @end
+-record(sip_tx_server, {host :: binary(), % via sent-by host
+                        port :: integer() | 'undefined', % via sent-by port,
+                        branch :: binary(),
+                        method :: atom() | binary()}).
 
 %%-----------------------------------------------------------------
 %% SIP dialogs

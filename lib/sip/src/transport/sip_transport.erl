@@ -35,10 +35,6 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
-%% Types
--type connection() :: #sip_connection{} | undefined.
--export_type([connection/0]).
-
 -record(state, {}).
 
 %%-----------------------------------------------------------------
@@ -160,7 +156,7 @@ send_response_fallback([To|Rest], Response) ->
 %% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
--spec dispatch(#sip_destination{}, connection(),
+-spec dispatch(#sip_destination{}, #sip_connection{},
                {ok, #sip_message{}} | {error, Reason :: term(), sip_message:message()}) ->
           ok | {reply, #sip_message{}}.
 dispatch(From, Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->

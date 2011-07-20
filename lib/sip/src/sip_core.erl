@@ -34,12 +34,12 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
--spec handle_request(sip_transport:connection(), #sip_message{}) -> ok.
+-spec handle_request(#sip_connection{}, #sip_message{}) -> ok.
 handle_request(_Connection, Msg) when is_record(Msg, sip_message) ->
     sip_transaction:start_server_tx(whereis(sip_core), Msg),
     ok.
 
--spec handle_response(sip_transport:connection(), #sip_message{}) -> ok.
+-spec handle_response(#sip_connection{}, #sip_message{}) -> ok.
 handle_response(_Connection, Msg) when is_record(Msg, sip_message) ->
     ok.
 

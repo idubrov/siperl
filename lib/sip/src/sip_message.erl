@@ -64,7 +64,7 @@ is_provisional_response(#sip_message{kind = #sip_response{status = Status}}) ->
 %% Returns `Method' from `start-line' for requests, `Method' from `CSeq' header
 %% for responses.
 %% @end
--spec method(#sip_message{}) -> sip_headers:method().
+-spec method(#sip_message{}) -> atom() | binary().
 method(#sip_message{kind = #sip_request{method = Method}}) -> Method;
 method(#sip_message{kind = #sip_response{}} = Msg) ->
     {ok, CSeq} = sip_message:top_header('cseq', Msg),
@@ -95,7 +95,7 @@ to_binary(Message) ->
 %% a new header with that value is added.</em>
 %% @end
 -spec update_top_header(
-        sip_headers:header_name(),
+        atom() | binary(),
         fun((Value :: any()) -> UpdatedValue :: any()),
         #sip_message{}) -> #sip_message{}.
 update_top_header(HeaderName, Fun, Request) ->
@@ -158,7 +158,7 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
 %%
 %% This function parses the header value if header is in binary form.
 %% @end
--spec top_header(sip_headers:header_name(), #sip_message{} | [sip_headers:header()]) ->
+-spec top_header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
           {ok, term()} | {error, not_found}.
 top_header(Name, Message) when is_record(Message, sip_message) ->
     top_header(Name, Message#sip_message.headers);
