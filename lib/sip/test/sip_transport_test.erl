@@ -147,7 +147,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
     ok.
 
 receive_response_udp({_Transport, UDP, _TCP}) ->
-    Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>),
 
     % send with updated via
     {ok, Hostname} = inet:gethostname(),
@@ -167,7 +167,7 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
     end.
 
 receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
-    Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>),
     Via = sip_headers:via(udp, {<<"incorrect-sent-by">>, 35060}, [{branch, sip_test:branch_from_pid()}]),
     WrongResponse = sip_message:replace_top_header('via', Via, Response),
 
@@ -218,7 +218,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, same connection)
@@ -249,7 +249,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, server reopens connection)
@@ -286,7 +286,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {'maddr', <<"239.0.0.100">>}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to maddr)
@@ -319,7 +319,7 @@ send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, undefined),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
     ResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to sent-by and default port)

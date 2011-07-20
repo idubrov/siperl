@@ -194,7 +194,7 @@ dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_request{}} 
                                  {reason, Reason},
                                  {from, From},
                                  {msg, Msg}]),
-    Response = sip_message:create_response(Msg, 400, sip_binary:any_to_binary(Reason), undefined),
+    Response = sip_message:create_response(Msg, 400, sip_binary:any_to_binary(Reason)),
 
     % we are not going to go through whole procedures for sending response, just try to send
     % via the same transport

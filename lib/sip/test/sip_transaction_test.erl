@@ -95,8 +95,8 @@ for_transports(Tests, Transports) ->
 client_invite_ok(Transport) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
 
@@ -153,7 +153,7 @@ client_invite_ok(Transport) ->
 client_invite_err(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Response = sip_message:create_response(Request, 500, <<"Internal error">>, undefined),
+    Response = sip_message:create_response(Request, 500, <<"Internal error">>),
     ACK = sip_message:create_ack(Request, Response),
     IsReliable = sip_transport:is_reliable(Transport),
 
@@ -248,7 +248,7 @@ client_invite_timeout_calling(Transport)->
 client_invite_timeout_proceeding(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
@@ -281,8 +281,8 @@ client_invite_timeout_proceeding(Transport)->
 client_ok(Transport) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
 
@@ -395,7 +395,7 @@ client_timeout_trying(Transport)->
 client_timeout_proceeding(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
@@ -437,9 +437,9 @@ client_timeout_proceeding(Transport)->
 %% @end
 server_invite_ok(Transport) ->
     Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Ringing = sip_message:create_response(Request, 180, <<"Ringing">>, undefined),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
+    Ringing = sip_message:create_response(Request, 180, <<"Ringing">>),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
@@ -487,8 +487,8 @@ server_invite_ok(Transport) ->
 %% @end
 server_invite_err(Transport) ->
     Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>),
     ACK = sip_message:create_ack(Request, Response),
     IsReliable = sip_transport:is_reliable(Transport),
 
@@ -547,8 +547,8 @@ server_invite_err(Transport) ->
 %% @end
 server_invite_timeout(Transport) ->
     Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
@@ -579,7 +579,7 @@ server_invite_timeout(Transport) ->
 %% @end
 server_invite_tu_down(Transport) ->
     Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
 
     % Prepare TU
     TUFun =
@@ -620,10 +620,10 @@ server_invite_tu_down(Transport) ->
 %% @end
 server_ok(Transport) ->
     Request = sip_test:request('OPTIONS', Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>, undefined),
-    Trying2 = sip_message:create_response(Request, 100, <<"Trying Again">>, undefined),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>, <<"sometag">>),
-    Response2 = sip_message:create_response(Request, 200, <<"Another Ok">>, <<"sometag">>),
+    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
+    Trying2 = sip_message:create_response(Request, 100, <<"Trying Again">>),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    Response2 = sip_message:create_response(Request, 200, <<"Another Ok">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received
@@ -689,7 +689,7 @@ server_ok(Transport) ->
 %% @end
 server_err(Transport) ->
     Request = sip_test:request('OPTIONS', Transport),
-    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>, <<"sometag">>),
+    Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>),
     IsReliable = sip_transport:is_reliable(Transport),
 
     % Request is received

@@ -63,7 +63,7 @@ handle_call(Req, _From, State) ->
 handle_info({tx, {_, Pid}, {request, Request}}, State) ->
     %% send response...
     %?debugFmt("Got message from ~p data ~p~n", [Pid, Data]),
-    Response = sip_message:create_response(Request, 486, <<"Busy here">>, <<"anytag">>),
+    Response = sip_message:create_response(Request, 486, <<"Busy here">>),
     gen_fsm:sync_send_event(Pid, {response, 486, Response}),
     {noreply, State};
 handle_info({tx, _, _TxReq}, State) ->

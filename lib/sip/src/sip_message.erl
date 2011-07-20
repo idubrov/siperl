@@ -13,7 +13,7 @@
 -export([is_request/1, is_response/1, to_binary/1]).
 -export([is_provisional_response/1, method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
--export([create_ack/2, create_response/4]).
+-export([create_ack/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
 -export([top_header/2, top_via_branch/1]).
@@ -356,19 +356,14 @@ create_ack(Request, Response) when is_record(Request, sip_message),
                  headers = [{'via', Via}, {'to', To} | ReqHeaders]}.
 
 
-%% @doc
-%% 8.2.6.1 Sending a Provisional Response
-%% FIXME: adding tag...
+%% @doc Create response for given request
 %% @end
--spec create_response(#sip_message{}, integer(), binary(), undefined | binary()) -> #sip_message{}.
-create_response(Request, Status, Reason, Tag) ->
-    Headers = [if
-                   Name =:= 'to' -> {'to', sip_headers:add_tag('to', Value, Tag)};
-                   true -> {Name, Value}
-               end || {Name, Value} <- Request#sip_message.headers,
-                      (Name =:= 'from' orelse Name =:= 'call-id' orelse
-                       Name =:= 'cseq' orelse Name =:= 'via' orelse
-                       Name =:= 'to')],
+-spec create_response(#sip_message{}, integer(), binary()) -> #sip_message{}.
+create_response(Request, Status, Reason) ->
+    Headers = [{Name, Value} || {Name, Value} <- Request#sip_message.headers,
+                                (Name =:= 'from' orelse Name =:= 'call-id' orelse
+                                 Name =:= 'cseq' orelse Name =:= 'via' orelse
+                                 Name =:= 'to')],
     Kind = #sip_response{status = Status, reason = Reason},
     #sip_message{kind = Kind, headers = Headers}.
 
