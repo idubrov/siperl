@@ -1,7 +1,8 @@
 %%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <wfragg@gmail.com>
-%%% @doc
-%%% SIP headers parsing/generation.
+%%% @doc SIP headers parsing/generation and utility functions
+%%%
+%%% FIXME: need to verify that all binary generation properly unescapes/escapes characters!
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
@@ -323,7 +324,6 @@ format_header(Name, #sip_hdr_address{} = Addr) when
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
               <<>> -> <<?LAQUOT, URI/binary, ?RAQUOT>>;
-              % FIXME: escaping!
               DisplayName -> <<DisplayName/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
           end,
     append_params(Bin, Addr#sip_hdr_address.params);
@@ -332,8 +332,7 @@ format_header(Name, #sip_hdr_address{} = Addr) when
 format_header(_Name, Value) ->
     sip_binary:any_to_binary(Value).
 
-%% @doc
-%% Append parameters to the binary
+%% @doc Append parameters to the binary
 %% @end
 append_params(Bin, Params) ->
     lists:foldl(fun format_param/2, Bin, Params).

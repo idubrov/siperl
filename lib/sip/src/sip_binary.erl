@@ -11,15 +11,100 @@
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
 -export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
--export([is_space_char/1, is_token_char/1, parse_ip_address/1]).
--export([parse_host_port/1]).
+-export([is_space_char/1, is_alphanum_char/1, is_unreserved_char/1, is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
+-export([parse_ip_address/1, parse_host_port/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
 -include_lib("sip_parse.hrl").
 
 %%-----------------------------------------------------------------
-%% API functions
+%% is_* functions
+%%-----------------------------------------------------------------
+
+%% @doc Check if character is alphanumeric
+%%
+%% ```
+%% alphanum  =  ALPHA / DIGIT
+%% '''
+%% @end
+-spec is_alphanum_char(integer()) -> boolean().
+is_alphanum_char(C) when
+  C >= $0, C =< $9;
+  C >= $a, C =< $z;
+  C >= $A, C =< $Z ->
+    true;
+is_alphanum_char(_C) ->
+    false.
+
+
+%% @doc Check if character is `token' character (as specified in RFC 3261 25.1)
+%%
+%% ```
+%% token          =  1*(alphanum / "-" / "." / "!" / "%" / "*"
+%%                   / "_" / "+" / "`" / "'" / "~" )
+%% '''
+%% @end
+-spec is_token_char(integer()) -> boolean().
+is_token_char(C) when
+  C =:= $- ; C =:= $. ; C =:= $! ;
+  C =:= $% ; C =:= $* ; C =:= $_ ;
+  C =:= $+ ; C =:= $` ; C =:= $' ;
+  C =:= $~ -> true;
+is_token_char(C) ->
+    is_alphanum_char(C).
+
+
+%% @doc Check if character is `unreserved' character
+%%
+%% ```
+%% unreserved  =  alphanum / mark
+%% mark        =  "-" / "_" / "." / "!" / "~" / "*" / "'"
+%%                / "(" / ")"
+%% '''
+%% @end
+-spec is_unreserved_char(integer()) -> boolean().
+is_unreserved_char(C) when
+  C =:= $- ; C =:= $_ ; C =:= $. ;
+  C =:= $! ; C =:= $~ ; C =:= $* ;
+  C =:= $' ; C =:= $( ; C =:= $) -> true;
+is_unreserved_char(C) ->
+    is_alphanum_char(C).
+
+%% @doc Check if character is `user-unreserved' character
+%%
+%% ```
+%% user-unreserved  =  "&" / "=" / "+" / "$" / "," / ";" / "?" / "/"
+%% '''
+%% @end
+-spec is_user_unreserved_char(integer()) -> boolean().
+is_user_unreserved_char(C) when
+  C =:= $& ; C =:= $= ; C =:= $+ ;
+  C =:= $$ ; C =:= $, ; C =:= $; ;
+  C =:= $? ; C =:= $/ -> true.
+
+%% @doc Check if character is `reserved' character
+%%
+%% ```
+%% reserved    =  ";" / "/" / "?" / ":" / "@" / "&" / "=" / "+"
+%%                / "$" / ","
+%% '''
+%% @end
+-spec is_reserved_char(integer()) -> boolean().
+is_reserved_char(C) when
+  C =:= $; ; C =:= $/ ; C =:= $? ;
+  C =:= $: ; C =:= $@ ; C =:= $& ;
+  C =:= $= ; C =:= $+ ; C =:= $$ ;
+  C =:= $, -> true.
+
+%% @doc Check if character is one of the space characters (space, tab, line feed, carriage return)
+%% @end
+-spec is_space_char(integer()) -> boolean().
+is_space_char(C) when C =:= $ ; C =:= $\t ; C =:= $\r ; C =:= $\n -> true;
+is_space_char(_) -> false.
+
+%%-----------------------------------------------------------------
+%% Conversions upper to/from lower
 %%-----------------------------------------------------------------
 
 %% @doc Trim leading whitespaces from the binary string
@@ -67,28 +152,9 @@ to_upper(Bin) ->
     << <<(string:to_upper(Char))/utf8>> || <<Char/utf8>> <= Bin >>.
 
 
-%% token          =  1*(alphanum / "-" / "." / "!" / "%" / "*"
-%%                   / "_" / "+" / "`" / "'" / "~" )
-
--spec is_token_char(integer()) -> boolean().
-%% @doc Check if character is `token' character (as specified in RFC 3261 25.1)
-%% @end
-is_token_char(C) when
-  (C >= $0 andalso C =< $9) ;
-  (C >= $a andalso C =< $z) ;
-  (C >= $A andalso C =< $Z) ;
-  C =:= $- ; C =:= $. ; C =:= $! ; C =:= $% ; C =:= $* ;
-  C =:= $_ ; C =:= $+ ; C =:= $` ; C =:= $' ; C =:= $~ ->
-    true;
-
-is_token_char(_) ->
-    false.
-
-%% @doc Check if character is one of the space characters (space, tab, line feed, carriage return)
-%% @end
--spec is_space_char(integer()) -> boolean().
-is_space_char(C) when C =:= $ ; C =:= $\t ; C =:= $\r ; C =:= $\n -> true;
-is_space_char(_) -> false.
+%%-----------------------------------------------------------------
+%% Parse functions
+%%-----------------------------------------------------------------
 
 %% @doc Parse binary while given predicate function evaluates to `true'
 %% @end
