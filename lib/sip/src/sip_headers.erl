@@ -260,7 +260,7 @@ format_header('via', Via) when is_record(Via, sip_hdr_via) ->
     Version = Via#sip_hdr_via.version,
     Transport = sip_binary:to_upper(sip_binary:any_to_binary(Via#sip_hdr_via.transport)),
     Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
-    Host = Via#sip_hdr_via.host,
+    Host = sip_binary:addr_to_binary(Via#sip_hdr_via.host),
     Bin2 = case Via#sip_hdr_via.port of
         undefined ->
             <<Bin/binary, ?SP, Host/binary>>;
@@ -528,21 +528,21 @@ parse_test_() ->
                    format_header('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
      % Via
-     ?_assertEqual(via(udp, {<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual(via(udp, {{8193,3512,0,0,0,0,44577,44306}, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
                    parse_header('via', <<"SIP/2.0/UDP [2001:0db8:0000:0000:0000:0000:ae21:ad12];branch=z9hG4bK776asdhds">>)),
      ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
                    parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual([via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
+     ?_assertEqual([via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                     via(tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual([via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
+     ?_assertEqual([via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                     via(tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
                     via(udp, {<<"pc22.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK43nthoeu3">>}])],
                    parse_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com;branch=z9hG4bK776asdhds,SIP/2.0/UDP pc22.atlanta.com;branch=z9hG4bK43nthoeu3">>)),
      ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>,
                    format_header('via', [via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])])),
      ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com:5060;branch=z9hG4bK776asdhds">>,
-                   format_header('via', [via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),
+                   format_header('via', [via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                                          via(tcp, <<"pc33.atlanta.com">>, [{branch, <<"z9hG4bK776asdhds">>}])])),
      ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>,
                    format_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>)),

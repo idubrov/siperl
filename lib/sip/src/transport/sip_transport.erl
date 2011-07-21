@@ -119,10 +119,10 @@ send_response_received(Response) ->
             transport_send(To, Response);
         false ->
             case lists:keyfind('received', 1, Via#sip_hdr_via.params) of
-                {_, Received} ->
-                    % use 'received' parameter, must be IP
-                    {ok, ReceivedAddr} = sip_binary:parse_ip_address(Received),
-                    To = #sip_destination{address = ReceivedAddr, port = Port, transport = Transport},
+                % use 'received' parameter, must be IP
+                {_, Received} when is_tuple(Received),
+                                   (size(Received) =:= 4 orelse size(Received) =:= 8) ->
+                    To = #sip_destination{address = Received, port = Port, transport = Transport},
                     transport_send(To, Response);
                 false ->
                     % Use procedures of Section 5 RFC 3263
@@ -260,12 +260,11 @@ check_sent_by(Transport, Msg) ->
 add_via_received(#sip_destination{address = Src}, Msg) ->
     Fun = fun (TopVia) ->
                    % compare byte-to-byte with packet source address
-                   SrcBin = sip_binary:any_to_binary(Src),
                    case TopVia#sip_hdr_via.host of
-                       SrcBin -> TopVia;
+                       Src -> TopVia;
                        _ ->
                            Params = lists:keystore(received, 1, TopVia#sip_hdr_via.params,
-                                                   {received, SrcBin}),
+                                                   {received, Src}),
                            TopVia#sip_hdr_via{params = Params}
                    end
           end,
@@ -310,8 +309,9 @@ init({}) ->
 -spec handle_call(_, _, #state{}) -> {reply, {term(), integer()}, #state{}} | {stop, _, #state{}}.
 handle_call({get_sentby, Transport}, _From, State) ->
     Self = sip_config:self(),
+    {Host, undefined, <<>>} = sip_binary:parse_host_port(Self),
     [Port | _] = sip_config:ports(Transport),
-    {reply, {Self, Port}, State};
+    {reply, {Host, Port}, State};
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
 

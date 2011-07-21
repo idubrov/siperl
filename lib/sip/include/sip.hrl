@@ -14,7 +14,7 @@
 -record(sip_uri, {scheme = sip :: 'sip' | 'sips',
                   user = <<>> :: binary(),
                   password = <<>> :: binary(),
-                  host = <<>> :: binary(),
+                  host = <<>> :: binary() | inet:ip_address(),
                   port = undefined :: integer() | 'undefined',
                   params = [],
                   headers = []}).

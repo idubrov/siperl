@@ -3,6 +3,7 @@
 %%% @doc SIP DNS resolution procedures
 %%%
 %%% TODO: IPv6 support
+%%% FIXME: should have already parsed adresses...
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3263</a> for details.
 %%% @reference See <a href="http://tools.ietf.org/html/rfc2782">RFC 2782</a> for DNS SRV.
@@ -36,13 +37,10 @@ client_resolve(_URI) ->
      ].
 
 -spec resolve(binary()) -> inet:ip_address().
-resolve(Bin) ->
-    case sip_binary:parse_ip_address(Bin) of
-        {ok, Addr} -> Addr;
-        {error, invalid} ->
-            {ok, Addr} = inet:getaddr(binary_to_list(Bin), inet),
-            Addr
-    end.
+resolve(Bin) when is_binary(Bin) ->
+    {ok, Addr} = inet:getaddr(binary_to_list(Bin), inet),
+    Addr;
+resolve(Addr) -> Addr. % must be an IPv4 or IPv6
 
 %% @doc Generate list of destination for given top `Via:' value.
 %%
@@ -50,14 +48,18 @@ resolve(Bin) ->
 %% @end
 -spec destinations(#sip_hdr_via{}) -> [#sip_destination{}].
 destinations(#sip_hdr_via{host = Host, port = Port, transport = Transport}) ->
-    case sip_binary:parse_ip_address(Host) of
-        {ok, Addr} ->
-            [#sip_destination{address = Addr, port = Port, transport = Transport}];
-        {error, invalid} when Port =/= undefined ->
+    case Host of
+        {_, _, _, _} ->
+            % IPv4
+            [#sip_destination{address = Host, port = Port, transport = Transport}];
+        {_, _, _, _, _, _, _, _} ->
+            % IPv6
+            [#sip_destination{address = Host, port = Port, transport = Transport}];
+        _HostName when Port =/= undefined ->
             % If, however, the sent-by field contained a domain name and a port
             % number, the server queries for A or AAAA records with that name.
             lookup_destinations(binary_to_list(Host), Port, Transport);
-        {error, invalid} -> % domain name, no port
+        _HostName -> % domain name, no port
             % If, however, the sent-by field contained a domain name and no port,
             % the server queries for SRV records at that domain name
             SRVs = inet_res:lookup(transport_to_prefix(Transport) ++ binary_to_list(Host), in, srv),

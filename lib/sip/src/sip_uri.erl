@@ -132,7 +132,7 @@ parse_test_() ->
                    parse(<<"sip:+1-212-555-1212:1234@gateway.com;user=phone">>)),
      ?_assertEqual(#sip_uri{scheme = sips, user = <<"1212">>, host = <<"gateway.com">>},
                    parse(<<"sips:1212@gateway.com">>)),
-     ?_assertEqual(#sip_uri{scheme = sip, user = <<"alice">>, host = <<"192.0.2.4">>},
+     ?_assertEqual(#sip_uri{scheme = sip, user = <<"alice">>, host = {192, 0, 2, 4}},
                    parse(<<"sip:alice@192.0.2.4">>)),
      ?_assertEqual(#sip_uri{scheme = sip, host = <<"atlanta.com">>, params = [{method, <<"REGISTER">>}],
                             headers = [{to, <<"alice%40atlanta.com">>}]},
@@ -145,9 +145,9 @@ parse_test_() ->
                             params = [{maddr, <<"239.255.255.1">>}, {ttl, <<"15">>}]},
                    parse(<<"sips:alice@atlanta.com;maddr=239.255.255.1;ttl=15">>)),
      ?_assertEqual(#sip_uri{scheme = sip, user = <<"j%40s0n">>, host = <<"atlanta.com">>},
-                   parse(<<"sip:j%40s0n@atlanta.com">>))
-
-
+                   parse(<<"sip:j%40s0n@atlanta.com">>)),
+     ?_assertEqual(#sip_uri{scheme = sip, user = <<"alice">>, host = {8193,3512,0,0,0,0,44577,44306}, port = 5060},
+                   parse(<<"sip:alice@[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060">>))
      ].
 
 -endif.

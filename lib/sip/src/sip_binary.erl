@@ -13,7 +13,7 @@
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
--export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
+-export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, addr_to_binary/1]).
 -export([is_digit_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
 -export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
@@ -271,28 +271,50 @@ parse_token_or_quoted_string(Bin) ->
 %% port           =  1*DIGIT
 %% '''
 %% @end
-%% alphanum, $-, $., $[, $], $:
--spec parse_host_port(binary()) -> {Host :: binary(), Port :: integer(), Rest :: binary()}.
+-spec parse_host_port(binary()) -> {Host :: binary() | inet:ip_address(), Port :: integer(), Rest :: binary()}.
 parse_host_port(<<"[", Bin/binary>>) ->
     % IPv6 reference
     IsValidChar = fun ($:) -> true; (C) -> is_alphanum_char(C) end,
-    case parse_while(Bin, IsValidChar) of
-        {Host, <<"]:", PortBin/binary>>} ->
-            {Port, Rest} = sip_binary:parse_number(PortBin),
-            {<<"[", Host/binary, "]">>, Port, Rest};
-        {Host, <<"]", Rest/binary>>} ->
-            {<<"[", Host/binary, "]">>, undefined, Rest}
-    end;
+    {HostBin, <<"]", Rest/binary>>} = parse_while(Bin, IsValidChar),
+    {ok, IPv6} = parse_ip_address(HostBin),
+    host_port(IPv6, Rest);
 parse_host_port(Bin) ->
-    % domain name or IPv4
+    % host name or IPv4
     IsValidChar = fun ($-) -> true; ($.) -> true; (C) -> is_alphanum_char(C) end,
-    case parse_while(Bin, IsValidChar) of
-        {Host, <<":", PortBin/binary>>} ->
-            {Port, Rest} = sip_binary:parse_number(PortBin),
-            {Host, Port, Rest};
-        {Host, Rest} ->
-            {Host, undefined, Rest}
-    end.
+    {HostBin, Rest} = parse_while(Bin, IsValidChar),
+    case maybe_ipv4(HostBin) of
+        true -> {ok, Host} = parse_ip_address(HostBin);
+        false -> Host = HostBin
+    end,
+    host_port(Host, Rest).
+
+host_port(Host, <<":", PortBin/binary>>) ->
+    {Port, Rest} = sip_binary:parse_number(PortBin),
+    {Host, Port, Rest};
+host_port(HostBin, Rest) ->
+    {HostBin, undefined, Rest}.
+
+maybe_ipv4(<<>>) -> true;
+maybe_ipv4(<<C, Rest/binary>>) when
+  C =:= $. ;
+  C >= $0, C =< $9 ->
+    maybe_ipv4(Rest);
+maybe_ipv4(_) -> false.
+
+%% @doc Parse IP address
+%%
+%% ```
+%% IPv4address    =  1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT
+%% IPv6address    =  hexpart [ ":" IPv4address ]
+%% hexpart        =  hexseq / hexseq "::" [ hexseq ] / "::" [ hexseq ]
+%% hexseq         =  hex4 *( ":" hex4)
+%% hex4           =  1*4HEXDIG
+%% '''
+%% @end
+-spec parse_ip_address(binary()) -> {ok, inet:ip_address()} | {error, Reason :: term()}.
+parse_ip_address(Bin) ->
+    inet_parse:address(binary_to_list(Bin)).
+
 
 %% @doc Convert UTF-8 binary to integer
 %% @end
@@ -324,46 +346,42 @@ any_to_binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
 any_to_binary(Bin) when is_binary(Bin) -> Bin;
 any_to_binary(Int) when is_integer(Int) -> integer_to_binary(Int);
 any_to_binary(List) when is_list(List) -> list_to_binary(List);
-any_to_binary({_, _, _, _} = Ip) -> ip_to_binary(Ip).
+any_to_binary(MaybeAddr) -> addr_to_binary(MaybeAddr).
 
 
-%% @doc Convert IP address to binary string
+%% @doc Convert address (IPv4, IPv6 or hostname) to binary string
 %% @end
--spec ip_to_binary(inet:ip_address()) -> binary().
-ip_to_binary({A, B, C, D}) when
+-spec addr_to_binary(inet:ip_address() | binary()) -> binary().
+addr_to_binary(Bin) when is_binary(Bin) -> Bin;
+addr_to_binary({A, B, C, D}) when
   is_integer(A), is_integer(B), is_integer(C), is_integer(D) ->
     <<(integer_to_binary(A))/binary, $.,
       (integer_to_binary(B))/binary, $.,
       (integer_to_binary(C))/binary, $.,
-      (integer_to_binary(D))/binary>>.
+      (integer_to_binary(D))/binary>>;
+addr_to_binary({A, B, C, D, E, F, G, H}) when
+  is_integer(A), is_integer(B), is_integer(C), is_integer(D),
+  is_integer(E), is_integer(F), is_integer(G), is_integer(H) ->
+    Bin1 = hex4(A, <<"[">>),
+    Bin2 = hex4(B, <<Bin1/binary, ":">>),
+    Bin3 = hex4(C, <<Bin2/binary, ":">>),
+    Bin4 = hex4(D, <<Bin3/binary, ":">>),
+    Bin5 = hex4(E, <<Bin4/binary, ":">>),
+    Bin6 = hex4(F, <<Bin5/binary, ":">>),
+    Bin7 = hex4(G, <<Bin6/binary, ":">>),
+    Bin8 = hex4(H, <<Bin7/binary, ":">>),
+    <<Bin8/binary, "]">>.
 
-%% @doc Check if given binary is ip address
-%%
-%% @end
--spec parse_ip_address(binary()) -> {ok, inet:ip_address()} | {error, invalid}.
-parse_ip_address(Bin) when is_binary(Bin) ->
-    case binary:split(Bin, <<$.>>, [global]) of
-        List when length(List) =:= 4 ->
-            Addr = [parse_ipv4_octet(Octet) || Octet <- List],
-            case lists:all(fun (false) -> false; (_) -> true end, Addr) of
-                true -> {ok, list_to_tuple(Addr)};
-                false -> {error, invalid}
-            end;
-        _ -> false
-    end.
 
-%% @doc Parse given binary string as IPv4 octet.
-%%
-%% Returns `false' if binary string is invalid (not an integer or out of range).
-%% @end
-parse_ipv4_octet(<<>>) -> false;
-parse_ipv4_octet(Bin) -> parse_ipv4_octet(Bin, 0).
+hex4(N, Bin) ->
+    A = hex(N div 4096),
+    B = hex((N rem 4096) div 256),
+    C = hex((N rem 256) div 16),
+    D = hex(N rem 16),
+    <<Bin/binary, A, B, C, D>>.
 
-parse_ipv4_octet(<<>>, Acc) when Acc >= 0, Acc =< 255 -> Acc;
-parse_ipv4_octet(<<Char, Rest/binary>>, Acc)
-  when Char >= $0, Char =< $9 ->
-    parse_ipv4_octet(Rest, Acc * 10 + (Char - $0));
-parse_ipv4_octet(_Char, _Acc) -> false.
+hex(N) when N >= 0, N =< 9 -> N + $0;
+hex(N) when N >= 10, N =< 15 -> N - 10 + $a.
 
 
 %%-----------------------------------------------------------------
@@ -409,7 +427,7 @@ binary_test_() ->
      ?_assertEqual(<<"123">>, any_to_binary(123)),
      ?_assertEqual(<<"some">>, any_to_binary("some")),
      ?_assertEqual(<<"10.0.0.1">>, any_to_binary({10, 0, 0, 1})),
-     ?_assertEqual(<<"10.0.0.1">>, ip_to_binary({10, 0, 0, 1})),
+     ?_assertEqual(<<"10.0.0.1">>, addr_to_binary({10, 0, 0, 1})),
      ?_assertEqual(<<"neverexistingatom">>, binary_to_existing_atom(<<"neverexistingatom">>)),
      ?_assertEqual('existingatom', binary_to_existing_atom(<<"existingatom">>)),
 
@@ -423,8 +441,8 @@ binary_test_() ->
 
      % host[:port]
      ?_assertEqual({<<"atlanta.com">>, undefined, <<";param">>}, parse_host_port(<<"atlanta.com;param">>)),
-     ?_assertEqual({<<"127.0.0.1">>, 5060, <<";param">>}, parse_host_port(<<"127.0.0.1:5060;param">>)),
-     ?_assertEqual({<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]">>, 5060, <<";param">>},
+     ?_assertEqual({{127, 0, 0, 1}, 5060, <<";param">>}, parse_host_port(<<"127.0.0.1:5060;param">>)),
+     ?_assertEqual({{8193,3512,0,0,0,0,44577,44306}, 5060, <<";param">>},
                    parse_host_port(<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060;param">>))
     ].
 

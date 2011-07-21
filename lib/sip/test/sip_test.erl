@@ -27,8 +27,8 @@ invite(Transport) ->
 request(Method, Transport) ->
     % FIXME: Update sip_headers.
     Headers = [{'cseq', sip_headers:cseq(232908, Method)},
-               {'via', sip_headers:via(Transport, {<<"127.0.0.1">>, 25060}, [{branch, branch_from_pid()}])},
-               {'via', sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])},
+               {'via', sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, branch_from_pid()}])},
+               {'via', sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])},
                {'from', sip_headers:address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}])},
                {'contact', sip_headers:address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [])},
                {'to', sip_headers:address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{'tag', <<"839408234">>}])},

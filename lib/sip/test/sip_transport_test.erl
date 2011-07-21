@@ -180,7 +180,7 @@ receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
     end.
 
 receive_request_udp({_Transport, UDP, _TCP}) ->
-    SentBy = {<<"127.0.0.1">>, 25060},
+    SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
@@ -205,7 +205,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
     receive
         {request, _Conn, Msg} ->
             ExpectedVia = sip_headers:via(udp, {<<"localhost">>, 25060}, [{branch, sip_test:branch_from_pid()},
-                                                                          {received, <<"127.0.0.1">>}]),
+                                                                          {received, {127, 0, 0, 1}}]),
             ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia, Request),
             ?assertEqual(ExpectedRequest, sip_message:parse_all_headers(Msg));
 
@@ -214,7 +214,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
     end.
 
 send_response_tcp({_Transport, _UDP, _TCP}) ->
-    SentBy = {<<"127.0.0.1">>, 25060},
+    SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
@@ -245,7 +245,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     ok.
 
 send_response_tcp2({_Transport, _UDP, TCP}) ->
-    SentBy = {<<"127.0.0.1">>, 25060},
+    SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
@@ -282,7 +282,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
 
 send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     MAddr = {239, 0, 0, 100},
-    SentBy = {<<"127.0.0.1">>, 25060},
+    SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {'maddr', <<"239.0.0.100">>}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
@@ -303,7 +303,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
-    Via3 = #sip_hdr_via{host = <<"localhost">>, port = 25060, transport = udp, params = [{'received', <<"127.0.0.1">>}]},
+    Via3 = #sip_hdr_via{host = <<"localhost">>, port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
     Response3 = #sip_message{kind = #sip_response{status = 200, reason = <<"Ok">>},
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),
@@ -315,7 +315,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     ok.
 
 send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
-    SentBy = {<<"127.0.0.1">>, undefined},
+    SentBy = {{127, 0, 0, 1}, undefined},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
