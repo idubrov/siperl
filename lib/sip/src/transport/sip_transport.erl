@@ -236,6 +236,7 @@ add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport},
 -spec check_sent_by(atom(), #sip_message{}) -> true | {Expected :: term(), Actual :: term()}.
 %% Check message sent by matches one inserted by the transport layer
 check_sent_by(Transport, Msg) ->
+    % port is explicit in expected sent-by
     ExpectedSentBy = sent_by(Transport),
 
     % take top via sent-by

@@ -81,7 +81,7 @@ parse_header('via', Bin) ->
                 Via when is_list(Via) -> [Top | Via];
                 Via -> [Top | [Via]]
             end;
-        _ -> Top
+        <<>> -> Top
                end;
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
@@ -528,6 +528,8 @@ parse_test_() ->
                    format_header('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
      % Via
+     ?_assertEqual(via(udp, {<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+                   parse_header('via', <<"SIP/2.0/UDP [2001:0db8:0000:0000:0000:0000:ae21:ad12];branch=z9hG4bK776asdhds">>)),
      ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
                    parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
      ?_assertEqual([via(udp, {<<"127.0.0.1">>, 15060}, [{param, <<"value">>}, flag]),

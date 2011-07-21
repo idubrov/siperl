@@ -1,6 +1,9 @@
 %%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <wfragg@gmail.com>
-%%% @doc Utility functions to work with binary strings.
+%%% @doc Utility functions to work with binary strings
+%%%
+%%% Parsing SIP basic elements, checking if character is in given
+%%% class, etc.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
@@ -11,8 +14,9 @@
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
 -export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, ip_to_binary/1]).
--export([is_space_char/1, is_alphanum_char/1, is_unreserved_char/1, is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
--export([parse_ip_address/1, parse_host_port/1]).
+-export([is_digit_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
+-export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
+-export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
@@ -22,6 +26,12 @@
 %% is_* functions
 %%-----------------------------------------------------------------
 
+%% @doc Check if character is digit
+%% @end
+-spec is_digit_char(integer()) -> boolean().
+is_digit_char(C) when C >= $0, C =< $9 -> true;
+is_digit_char(_C) -> false.
+
 %% @doc Check if character is alphanumeric
 %%
 %% ```
@@ -29,13 +39,8 @@
 %% '''
 %% @end
 -spec is_alphanum_char(integer()) -> boolean().
-is_alphanum_char(C) when
-  C >= $0, C =< $9;
-  C >= $a, C =< $z;
-  C >= $A, C =< $Z ->
-    true;
-is_alphanum_char(_C) ->
-    false.
+is_alphanum_char(C) when C >= $a, C =< $z; C >= $A, C =< $Z -> true;
+is_alphanum_char(C) -> is_digit_char(C).
 
 
 %% @doc Check if character is `token' character (as specified in RFC 3261 25.1)
@@ -156,6 +161,17 @@ to_upper(Bin) ->
 %% Parse functions
 %%-----------------------------------------------------------------
 
+%% @doc Parse number from the binary and return the rest
+%% @end
+-spec parse_number(binary()) -> integer().
+parse_number(<<C, _/binary>> = Bin) when C >= $0, C =< $9 ->
+    parse_number(Bin, 0).
+
+parse_number(<<C, Rest/binary>>, Acc) when C >= $0, C =< $9 ->
+    parse_number(Rest, Acc * 10 + (C - $0));
+parse_number(<<Rest/binary>>, Acc) ->
+    {Acc, Rest}.
+
 %% @doc Parse binary while given predicate function evaluates to `true'
 %% @end
 -spec parse_while(binary(), fun((char()) -> boolean())) -> {Result :: binary(), Rest :: binary()}.
@@ -238,19 +254,45 @@ parse_token_or_quoted_string(Bin) ->
 
 
 %% @doc Parse `host [":" port]' expressions
+%%
+%% ```
+%% hostport       =  host [ ":" port ]
+%% host           =  hostname / IPv4address / IPv6reference
+%% hostname       =  *( domainlabel "." ) toplabel [ "." ]
+%% domainlabel    =  alphanum
+%%                   / alphanum *( alphanum / "-" ) alphanum
+%% toplabel       =  ALPHA / ALPHA *( alphanum / "-" ) alphanum
+%% IPv4address    =  1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT
+%% IPv6reference  =  "[" IPv6address "]"
+%% IPv6address    =  hexpart [ ":" IPv4address ]
+%% hexpart        =  hexseq / hexseq "::" [ hexseq ] / "::" [ hexseq ]
+%% hexseq         =  hex4 *( ":" hex4)
+%% hex4           =  1*4HEXDIG
+%% port           =  1*DIGIT
+%% '''
 %% @end
+%% alphanum, $-, $., $[, $], $:
 -spec parse_host_port(binary()) -> {Host :: binary(), Port :: integer(), Rest :: binary()}.
+parse_host_port(<<"[", Bin/binary>>) ->
+    % IPv6 reference
+    IsValidChar = fun ($:) -> true; (C) -> is_alphanum_char(C) end,
+    case parse_while(Bin, IsValidChar) of
+        {Host, <<"]:", PortBin/binary>>} ->
+            {Port, Rest} = sip_binary:parse_number(PortBin),
+            {<<"[", Host/binary, "]">>, Port, Rest};
+        {Host, <<"]", Rest/binary>>} ->
+            {<<"[", Host/binary, "]">>, undefined, Rest}
+    end;
 parse_host_port(Bin) ->
-    {Host, Bin2} = sip_binary:parse_token(Bin),
-    {Port, Bin3} = case Bin2 of
-                       <<":", Rest/binary>> ->
-                           {P, Bin4} = sip_binary:parse_token(Rest),
-                           {sip_binary:binary_to_integer(P), Bin4};
-                       _ ->
-                           {undefined, Bin2}
-                   end,
-    {Host, Port, Bin3}.
-
+    % domain name or IPv4
+    IsValidChar = fun ($-) -> true; ($.) -> true; (C) -> is_alphanum_char(C) end,
+    case parse_while(Bin, IsValidChar) of
+        {Host, <<":", PortBin/binary>>} ->
+            {Port, Rest} = sip_binary:parse_number(PortBin),
+            {Host, Port, Rest};
+        {Host, Rest} ->
+            {Host, undefined, Rest}
+    end.
 
 %% @doc Convert UTF-8 binary to integer
 %% @end
@@ -377,9 +419,13 @@ binary_test_() ->
      ?_assertEqual({<<"some">>, <<" rest  ">>}, parse_until(<<"some rest  ">>, fun is_space_char/1)),
      ?_assertEqual({<<"somerest">>, <<>>}, parse_until(<<"somerest">>, fun is_space_char/1)),
      ?_assertEqual({<<"some">>, <<"! rest  ">>}, parse_until(<<"some! rest  ">>, $!)),
-     ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$))
+     ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$)),
 
-     % FIXME: parse_host_port!
+     % host[:port]
+     ?_assertEqual({<<"atlanta.com">>, undefined, <<";param">>}, parse_host_port(<<"atlanta.com;param">>)),
+     ?_assertEqual({<<"127.0.0.1">>, 5060, <<";param">>}, parse_host_port(<<"127.0.0.1:5060;param">>)),
+     ?_assertEqual({<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]">>, 5060, <<";param">>},
+                   parse_host_port(<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060;param">>))
     ].
 
 -endif.
