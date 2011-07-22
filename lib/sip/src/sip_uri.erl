@@ -96,7 +96,7 @@ parse_params(<<$;, Bin/binary>>, List) ->
         end,
     parse_params(Rest, [Param|List]);
 parse_params(Bin, List) ->
-    {lists:reverse(List), sip_binary:trim_leading(Bin)}.
+    {lists:reverse(List), Bin}.
 
 
 %% headers         =  "?" header *( "&" header )
@@ -104,6 +104,10 @@ parse_params(Bin, List) ->
 %% hname           =  1*( hnv-unreserved / unreserved / escaped )
 %% hvalue          =  *( hnv-unreserved / unreserved / escaped )
 %% hnv-unreserved  =  "[" / "]" / "/" / "?" / ":" / "+" / "$"
+%% unreserved      =  alphanum / mark
+%% mark            =  "-" / "_" / "." / "!" / "~" / "*" / "'"
+%%                    / "(" / ")"
+%% escaped         =  "%" HEXDIG HEXDIG
 parse_headers(<<>>) -> [];
 parse_headers(<<$?, Bin/binary>>) ->
     Headers = [binary:split(Header, <<$=>>) || Header <- binary:split(Bin, <<$&>>)],

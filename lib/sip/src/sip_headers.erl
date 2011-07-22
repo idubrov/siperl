@@ -415,7 +415,7 @@ address(DisplayName, URI, Params) when
   is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
 
-%% @doc Add tag to the `From:' or `To:` header.
+%% @doc Add tag to the `From:' or `To:' header.
 %% @end
 -spec add_tag(atom(), #sip_hdr_address{}, binary() | undefined) -> #sip_hdr_address{}.
 add_tag(Name, Value, undefined) when Name =:= 'to'; Name =:= 'from' -> Value;

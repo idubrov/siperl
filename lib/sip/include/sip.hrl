@@ -11,20 +11,22 @@
 %%-----------------------------------------------------------------
 
 
--record(sip_uri, {scheme = sip :: 'sip' | 'sips',
-                  user = <<>> :: binary(),
-                  password = <<>> :: binary(),
-                  host = <<>> :: binary() | inet:ip_address(),
-                  port = undefined :: integer() | 'undefined',
+%% Parsed SIP URI representation
+%%
+%% <em>Note that `user' can have escape sequences in it. It is not
+%% unescaped, so the original URI can be always reconstructed from
+%% the parts</em>.
+-record(sip_uri, {scheme = sip      :: 'sip' | 'sips',                  
+                  user = <<>>       :: binary(),
+                  password = <<>>   :: binary(),
+                  host = <<>>       :: binary() | inet:ip_address(),
+                  port = undefined  :: integer() | 'undefined',
                   params = [],
                   headers = []}).
 -record(tel_uri, {phone = <<>> :: binary()}).
 
-%% @doc
 %% SIP message types.
 %% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
-%% @see RFC 3261 Chapter 7
-%% @end
 -record(sip_request, {method :: binary() | atom(), uri :: binary()}).
 -record(sip_response, {status :: integer() | atom(), reason :: binary()}).
 -record(sip_message, {kind :: #sip_request{} | #sip_response{},
@@ -38,39 +40,36 @@
 					  params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
--record(sip_hdr_address, {display_name = <<>> :: binary(),
-                         uri = <<>> :: binary() | #sip_uri{},
-                         params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
-% FIXME: default uri should be "Anonymous" <sip:thisis@anonymous.invalid>
+
+%% Value for address headers (`Route:', `Record-Route', `To:', `From:', `Contact')
+-record(sip_hdr_address, 
+        {display_name = <<>> :: binary(), % display name is unquoted (all escapes are unescaped)
+         uri = <<>>          :: binary() | #sip_uri{},
+         params = []         :: [{binary() | atom(), term()} | binary() | atom()]}).
 
 %%-----------------------------------------------------------------
 %% SIP transport layer types
 %%-----------------------------------------------------------------
 
-%% @doc Destination to send message to
-%% @end
+%% Destination to send message to
 -record(sip_destination, {address :: inet:ip_address(),
                           port = 5060 :: integer() | 'undefined',
                           transport :: atom()}).
 
-%% @doc Transport layer connection
-%% @end
+%% Transport layer connection
 -record(sip_connection, {transport :: atom(), connection :: pid() | term()}).
 
 %%-----------------------------------------------------------------
 %% SIP transaction layer
 %%-----------------------------------------------------------------
 
-%% @doc See RFC 3261, 20.42 Via
-%% @end
+%% See RFC 3261, 20.42 Via
 -define(MAGIC_COOKIE, "z9hG4bK").
 
-%% @doc Client transaction unique key
-%% @end
+%% Client transaction unique key
 -record(sip_tx_client, {branch :: binary(), method :: atom() | binary()}).
 
-%% @doc Server transaction unique key
-%% @end
+%% Server transaction unique key
 -record(sip_tx_server, {host :: binary(), % via sent-by host
                         port :: integer() | 'undefined', % via sent-by port,
                         branch :: binary(),
@@ -80,6 +79,5 @@
 %% SIP dialogs
 %%-----------------------------------------------------------------
 
-%% @doc Dialog is identified by call-id, local and remote tags.
-%% @end
+%% Dialog is identified by call-id, local and remote tags.
 -record(sip_dialog, {local_tag, remote_tag, call_id}).
