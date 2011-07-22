@@ -12,8 +12,9 @@
 %% API
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
--export([parse_token/1, parse_quoted_string/1, parse_token_or_quoted_string/1]).
--export([binary_to_integer/1, integer_to_binary/1, binary_to_existing_atom/1, any_to_binary/1, addr_to_binary/1]).
+-export([parse_token/1, parse_quoted_string/1, quote_string/1]).
+-export([integer_to_binary/1, any_to_binary/1, addr_to_binary/1]).
+-export([binary_to_integer/1, binary_to_existing_atom/1]).
 -export([is_digit_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
 -export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
@@ -217,41 +218,41 @@ parse_token(Bin) ->
 
 %% @doc Parse `quoted-string' from the UTF-8 binary string
 %%
-%% Extract <code>quoted-string</code> from the UTF-8 binary and return the rest.
-%% Note that leading whitespaces are skipped and the rest is returned
-%% with leading whitespaces trimmed (rest is either empty binary or
-%% starts with non-whitespace character).
+%% Extract <code>quoted-string</code> from the UTF-8 binary, unquote it
+%% and return the rest. Note that leading whitespaces are skipped and
+%% the rest is returned with leading whitespaces trimmed (rest is
+%% either empty binary or starts with non-whitespace character).
 %% @end
 -spec parse_quoted_string(binary()) -> {QuotedStr :: binary(), Rest :: binary()}.
 parse_quoted_string(Bin) ->
-    parse_quoted_string_internal(trim_leading(Bin)).
-parse_quoted_string_internal(<<?DQUOTE, _/binary>> = Bin) ->
-    parse_quoted_string(Bin, 1).
+    <<?DQUOTE, Bin2/binary>> = trim_leading(Bin),
+    parse_quoted_loop(Bin2, <<>>).
 
-parse_quoted_string(Bin, Pos) when Pos =:= size(Bin) ->
-    {<<>>, Bin};
-parse_quoted_string(Bin, Pos) ->
-    <<Str:Pos/binary, C, Rest/binary>> = Bin,
-    if
-        C =:= ?DQUOTE ->
-            {<<Str/binary, C>>, trim_leading(Rest)};
-        C =:= $\\ ->
-            parse_quoted_string(Bin, Pos + 2);
-        true ->
-            parse_quoted_string(Bin, Pos + 1)
-    end.
+parse_quoted_loop(<<?DQUOTE, Rest/binary>>, Acc) ->
+    {Acc, sip_binary:trim_leading(Rest)};
+parse_quoted_loop(<<$\\, C, Rest/binary>>, Acc) when
+  C >= 16#00, C =< 16#09;
+  C >= 16#0B, C =< 16#0C;
+  C >= 16#0E, C =< 16#7F ->
+    parse_quoted_loop(Rest, <<Acc/binary, C>>);
+parse_quoted_loop(<<C, Rest/binary>>, Acc) when C =/= $\\ ->
+    parse_quoted_loop(Rest, <<Acc/binary, C>>).
 
-%% @doc Parse either `token' or `quoted-string' from the UTF-8 binary string
+%% @doc Generate quoted string
+%%
+%% Generate valid quoted-string by replacing all `\' and `"' occurences
+%% with escaped pair.
 %% @end
--spec parse_token_or_quoted_string(binary()) -> {Result :: binary(), Rest :: binary()}.
-parse_token_or_quoted_string(Bin) ->
-    case trim_leading(Bin) of
-        <<?DQUOTE, _/binary>> ->
-            parse_quoted_string(Bin);
-        _ ->
-            parse_token(Bin)
-    end.
+-spec quote_string(binary()) -> binary().
+quote_string(Bin) ->
+    quote_string_loop(Bin, <<?DQUOTE>>).
 
+quote_string_loop(<<>>, Acc) ->
+    <<Acc/binary, ?DQUOTE>>;
+quote_string_loop(<<C, Rest/binary>>, Acc) when C =:= $\\; C =:= $" ->
+    quote_string_loop(Rest, <<Acc/binary, $\\, C>>);
+quote_string_loop(<<C, Rest/binary>>, Acc) when C >= 16#20 ->
+    quote_string_loop(Rest, <<Acc/binary, C>>).
 
 %% @doc Parse `host [":" port]' expressions
 %%
@@ -410,14 +411,8 @@ binary_test_() ->
      ?_assertEqual({<<"some">>, <<"data ">>}, parse_token(<<"   some data ">>)),
      ?_assertEqual({<<"some">>, <<>>}, parse_token(<<"   some">>)),
      ?_assertEqual({<<"some">>, <<"=value">>}, parse_token(<<"some=value">>)),
-     ?_assertEqual({<<"\"some\"">>, <<"data ">>}, parse_quoted_string(<<"   \"some\" data ">>)),
-     ?_assertEqual({<<>>, <<"\"some">>}, parse_quoted_string(<<"   \"some">>)),
-     ?_assertEqual({<<"\"so\\nme\"">>, <<"data ">>}, parse_quoted_string(<<"   \"so\\nme\" data ">>)),
-     ?_assertEqual({<<"some">>, <<"data ">>}, parse_token_or_quoted_string(<<"   some data ">>)),
-     ?_assertEqual({<<"some">>, <<>>}, parse_token_or_quoted_string(<<"   some">>)),
-     ?_assertEqual({<<"\"some\"">>, <<"data ">>}, parse_token_or_quoted_string(<<"   \"some\" data ">>)),
-     ?_assertEqual({<<>>, <<"\"some">>}, parse_token_or_quoted_string(<<"   \"some">>)),
-     ?_assertEqual({<<"\"so\\nme\"">>, <<"data ">>}, parse_token_or_quoted_string(<<"   \"so\\nme\" data ">>)),
+     ?_assertEqual({<<"some">>, <<"data ">>}, parse_quoted_string(<<"   \"some\" data ">>)),
+     ?_assertEqual({<<"so\"me">>, <<"data ">>}, parse_quoted_string(<<"   \"so\\\"me\" data ">>)),
 
      % conversions to and from binary
      ?_assertEqual(123, binary_to_integer(<<"123">>)),

@@ -64,9 +64,9 @@ parse_header(_Name, Header) when not is_binary(Header) ->
 %%                      / via-extension
 parse_header('via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
-    {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
     % Parse parameters (which should start with semicolon)
-    {Params, Bin4} = parse_params(Bin3, []),
+    {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
+    {Params, Bin4} = parse_params(Bin3),
 
     Top = #sip_hdr_via{transport = Transport,
                        version = Version,
@@ -101,8 +101,15 @@ parse_header('max-forwards', Bin) ->
     sip_binary:binary_to_integer(Bin);
 
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
-parse_header('call-id', Bin) ->
-    Bin;
+%% callid   =  word [ "@" word ]
+%% word     =  1*(alphanum / "-" / "." / "!" / "%" / "*" /
+%%             "_" / "+" / "`" / "'" / "~" /
+%%             "(" / ")" / "<" / ">" /
+%%             ":" / "\" / DQUOTE /
+%%             "/" / "[" / "]" / "?" /
+%%             "{" / "}" )
+parse_header('call-id', Bin) -> Bin;
+
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
 %%
@@ -170,22 +177,30 @@ parse_sent_protocol(Bin) ->
 %% *( SEMI param )
 %% param  =  token [ EQUAL value ]
 %% value  =  token / host / quoted-string
-parse_params(<<?SEMI, Bin/binary>>, List) ->
-    {Param, Rest} =
-        case sip_binary:parse_token(Bin) of
-            % Parameter with value
-            {Name, <<?EQUAL, Bin2/binary>>} ->
-                {Value, R} = sip_binary:parse_token_or_quoted_string(Bin2),
-                {{sip_binary:binary_to_existing_atom(Name), Value}, R};
+parse_params(Bin) ->
+    parse_params_loop(sip_binary:trim_leading(Bin), []).
 
-            % Parameter without a value
-            {Name, Bin2} ->
-                {sip_binary:binary_to_existing_atom(Name), Bin2}
+parse_params_loop(<<?SEMI, Bin/binary>>, List) ->
+    {Name, MaybeValue} = sip_binary:parse_token(Bin),
+    {Value, Rest} =
+        case MaybeValue of
+            % Parameter with value
+            <<?EQUAL, Bin2/binary>> ->
+                parse_token_or_quoted(Bin2);
+            % Parameter without a value ('true' value)
+            Next ->
+                {true, Next}
         end,
-    parse_params(Rest, [Param|List]);
-parse_params(Bin, List) ->
+    Property = proplists:property(sip_binary:binary_to_existing_atom(Name), Value),
+    parse_params_loop(Rest, [Property | List]);
+parse_params_loop(Bin, List) ->
     {lists:reverse(List), sip_binary:trim_leading(Bin)}.
 
+parse_token_or_quoted(Bin) ->
+    case sip_binary:trim_leading(Bin) of
+        <<?DQUOTE, _Rest/binary>> -> sip_binary:parse_quoted_string(Bin);
+        _Token -> sip_binary:parse_token(Bin)
+    end.
 
 %% @doc Parse address-like header into display name, URI and binary with the parameters
 %%
@@ -227,7 +242,7 @@ parse_address_uri(Bin) ->
 %% @end
 parse_address(Bin) ->
     {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
-    {Params, Bin3} = parse_params(sip_binary:trim_leading(Bin2), []),
+    {Params, Bin3} = parse_params(Bin2),
     Value = #sip_hdr_address{display_name = sip_binary:trim(Display),
                              uri = URI,
                              params = Params},
@@ -258,7 +273,7 @@ format_header(Name, [Top | Rest]) ->
 %%                      SLASH transport
 format_header('via', Via) when is_record(Via, sip_hdr_via) ->
     Version = Via#sip_hdr_via.version,
-    Transport = sip_binary:to_upper(sip_binary:any_to_binary(Via#sip_hdr_via.transport)),
+    Transport = sip_binary:to_upper(atom_to_binary(Via#sip_hdr_via.transport, latin1)),
     Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
     Host = sip_binary:addr_to_binary(Via#sip_hdr_via.host),
     Bin2 = case Via#sip_hdr_via.port of
@@ -324,7 +339,9 @@ format_header(Name, #sip_hdr_address{} = Addr) when
     URI = Addr#sip_hdr_address.uri,
     Bin = case Addr#sip_hdr_address.display_name of
               <<>> -> <<?LAQUOT, URI/binary, ?RAQUOT>>;
-              DisplayName -> <<DisplayName/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
+              DisplayName ->
+                  Quoted = sip_binary:quote_string(DisplayName),
+                  <<Quoted/binary, " ", ?LAQUOT, URI/binary, ?RAQUOT>>
           end,
     append_params(Bin, Addr#sip_hdr_address.params);
 
@@ -344,12 +361,26 @@ append_params(Bin, Params) ->
 %% @end
 format_param({Name, Value}, Bin) ->
     Name2 = sip_binary:any_to_binary(Name),
-    Value2 = sip_binary:any_to_binary(Value),
-    <<Bin/binary, ?SEMI, Name2/binary, ?EQUAL, Value2/binary>>;
 
+    % If contains non-token characters, write as quoted string
+    Value2 = case need_quoting(Value) of
+                 true -> sip_binary:quote_string(Value);
+                 false -> Value
+             end,
+    Value3 = sip_binary:any_to_binary(Value2),
+    <<Bin/binary, ?SEMI, Name2/binary, ?EQUAL, Value3/binary>>;
 format_param(Name, Bin) ->
     Name2 = sip_binary:any_to_binary(Name),
     <<Bin/binary, ?SEMI, Name2/binary>>.
+
+need_quoting(Value) when not is_binary(Value) ->
+    % no need to escape non-binary values
+    % (it could be number, IP address, atom)
+    false;
+need_quoting(<<>>) ->
+    false;
+need_quoting(<<C, Rest/binary>>)  ->
+    (not sip_binary:is_token_char(C)) orelse need_quoting(Rest).
 
 %%-----------------------------------------------------------------
 %% Header-specific helpers
@@ -408,7 +439,6 @@ fold_header(<<C/utf8, _/binary>> = Line, [{Name, Value} | Tail]) when
     Line2 = sip_binary:trim_leading(Line),
     Value2 = sip_binary:trim_trailing(Value),
     [{Name, <<Value2/binary, ?SP, Line2/binary>>} | Tail];
-
 fold_header(HeaderLine, List) ->
     [Name, Value] = binary:split(HeaderLine, <<?HCOLON>>),
     Name2 = sip_binary:to_lower(sip_binary:trim_trailing(Name)),
@@ -434,7 +464,8 @@ header_name_to_binary('call-id') -> <<"Call-Id">>;
 header_name_to_binary('from') -> <<"From">>;
 header_name_to_binary('to') -> <<"To">>;
 header_name_to_binary('contact') -> <<"Contact">>;
-header_name_to_binary(Name) -> sip_binary:any_to_binary(Name).
+header_name_to_binary(Name) when is_binary(Name) -> Name;
+header_name_to_binary(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -487,31 +518,33 @@ parse_test_() ->
                    parse_header('from', <<"sip:bob@biloxi.com ;tag=1928301774">>)),
      ?_assertEqual(address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse_header('from', <<"<sip:bob@biloxi.com>;tag=1928301774">>)),
-     ?_assertEqual(address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
+     ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse_header('from', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
 
-     ?_assertEqual(<<"Bob  Zert <sip:bob@biloxi.com>;tag=1928301774">>,
+     ?_assertEqual(<<"\"Bob  Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"<sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"<sip:bob@biloxi.com>;tag=1928301774">>,
                    format_header('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
-                   format_header('from', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+                   format_header('from', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
-                   format_header('to', address(<<"\"Bob Zert\"">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+                   format_header('to', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+     ?_assertEqual(<<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
+                   format_header('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
      % Contact
      ?_assertEqual(address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                    parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                     address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
-                   parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>)),
+                   parse_header('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>)),
      ?_assertEqual('*', parse_header('contact', <<"*">>)),
 
-     ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1">>,
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
                    format_header('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
-     ?_assertEqual(<<"Bob <sip:bob@biloxi.com>;q=0.1,Alice <sip:alice@atlanta.com>;q=0.2">>,
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
                    format_header('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                              address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
      ?_assertEqual(<<"*">>, format_header('contact', '*')),
@@ -532,6 +565,8 @@ parse_test_() ->
                    parse_header('via', <<"SIP/2.0/UDP [2001:0db8:0000:0000:0000:0000:ae21:ad12];branch=z9hG4bK776asdhds">>)),
      ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
                    parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
+     ?_assertEqual(via(udp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+                   parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com ; branch=z9hG4bK776asdhds">>)),
      ?_assertEqual([via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                     via(tcp, {<<"pc33.atlanta.com">>, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
@@ -546,6 +581,8 @@ parse_test_() ->
                                          via(tcp, <<"pc33.atlanta.com">>, [{branch, <<"z9hG4bK776asdhds">>}])])),
      ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>,
                    format_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>)),
+     ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;extra=\"Hello world\"">>,
+                   format_header('via', [via(udp, {<<"pc33.atlanta.com">>, undefined}, [{extra, <<"Hello world">>}])])),
 
      % Formatting
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
