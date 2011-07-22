@@ -16,7 +16,7 @@
 %% <em>Note that `user' can have escape sequences in it. It is not
 %% unescaped, so the original URI can be always reconstructed from
 %% the parts</em>.
--record(sip_uri, {scheme = sip      :: 'sip' | 'sips',                  
+-record(sip_uri, {scheme = sip      :: 'sip' | 'sips',
                   user = <<>>       :: binary(),
                   password = <<>>   :: binary(),
                   host = <<>>       :: binary() | inet:ip_address(),
@@ -42,7 +42,7 @@
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 
 %% Value for address headers (`Route:', `Record-Route', `To:', `From:', `Contact')
--record(sip_hdr_address, 
+-record(sip_hdr_address,
         {display_name = <<>> :: binary(), % display name is unquoted (all escapes are unescaped)
          uri = <<>>          :: binary() | #sip_uri{},
          params = []         :: [{binary() | atom(), term()} | binary() | atom()]}).

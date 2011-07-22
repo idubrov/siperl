@@ -12,13 +12,11 @@
 %% Exports
 
 %% API
--export([parse/1]).
+-export([parse/1, format/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
 -include_lib("sip.hrl").
-
--compile(export_all).
 
 %%-----------------------------------------------------------------
 %% API functions
@@ -36,6 +34,22 @@ parse(<<"sips:", Rest/binary>>) -> parse_sip(sips, Rest);
 parse(Bin) when is_binary(Bin) ->
     Bin.
 
+%% @doc Parse SIP URI
+%% ```
+%% SIP-URI          =  "sip:" [ userinfo ] hostport
+%%                     uri-parameters [ headers ]
+%% SIPS-URI         =  "sips:" [ userinfo ] hostport
+%%                     uri-parameters [ headers ]
+%% userinfo         =  ( user / telephone-subscriber ) [ ":" password ] "@"
+%% user             =  1*( unreserved / escaped / user-unreserved )
+%% hostport         =  host [ ":" port ]
+%% uri-parameters   =  *( ";" uri-parameter)
+%% uri-parameter    =  transport-param / user-param / method-param
+%%                     / ttl-param / maddr-param / lr-param / other-param
+%% headers          =  "?" header *( "&" header )
+%% header           =  hname "=" hvalue
+%% '''
+%% @end
 parse_sip(Scheme, Bin) ->
     case binary:split(Bin, <<$@>>) of
         [UserInfo, Rest] ->
@@ -59,7 +73,8 @@ parse_sip(Scheme, Bin) ->
              params = Params}.
 
 
-%% Parse parameters lists
+%% @doc Parse SIP URI parameters lists
+%%
 %% uri-parameters    =  *( ";" uri-parameter)
 %% uri-parameter     =  transport-param / user-param / method-param
 %%                      / ttl-param / maddr-param / lr-param / other-param
@@ -78,6 +93,7 @@ parse_sip(Scheme, Bin) ->
 %% pvalue            =  1*paramchar
 %% paramchar         =  param-unreserved / unreserved / escaped
 %% param-unreserved  =  "[" / "]" / "/" / ":" / "&" / "+" / "$"
+%% @end
 parse_params(<<$;, Bin/binary>>, List) ->
     Pred = fun ($;) -> true; % next parameter
                ($?) -> true; % headers
@@ -98,7 +114,8 @@ parse_params(<<$;, Bin/binary>>, List) ->
 parse_params(Bin, List) ->
     {lists:reverse(List), Bin}.
 
-
+%% @doc Parse SIP URI headers
+%%
 %% headers         =  "?" header *( "&" header )
 %% header          =  hname "=" hvalue
 %% hname           =  1*( hnv-unreserved / unreserved / escaped )
@@ -108,11 +125,48 @@ parse_params(Bin, List) ->
 %% mark            =  "-" / "_" / "." / "!" / "~" / "*" / "'"
 %%                    / "(" / ")"
 %% escaped         =  "%" HEXDIG HEXDIG
+%% @end
 parse_headers(<<>>) -> [];
 parse_headers(<<$?, Bin/binary>>) ->
     Headers = [binary:split(Header, <<$=>>) || Header <- binary:split(Bin, <<$&>>)],
     [{sip_binary:binary_to_existing_atom(Name), Value} ||
      [Name, Value] <- Headers].
+
+%% @doc Format URI to binary string
+%%
+%% @end
+-spec format(#sip_uri{}) -> binary().
+format(#sip_uri{scheme = sip} = URI) -> append_userinfo(URI, <<"sip:">>);
+format(#sip_uri{scheme = sips} = URI) -> append_userinfo(URI, <<"sips:">>).
+
+append_userinfo(#sip_uri{user = <<>>} = URI, Bin) -> append_hostport(URI, Bin);
+append_userinfo(#sip_uri{user = User} = URI, Bin) -> append_password(URI, <<Bin/binary, User/binary>>).
+
+append_password(#sip_uri{password = <<>>} = URI, Bin) ->     append_hostport(URI, <<Bin/binary, $@>>);
+append_password(#sip_uri{password = Password} = URI, Bin) -> append_hostport(URI, <<Bin/binary, $:, Password/binary, $@>>).
+
+append_hostport(URI, Bin) ->
+    Host = sip_binary:addr_to_binary(URI#sip_uri.host),
+    append_port(URI, <<Bin/binary, Host/binary>>).
+
+append_port(#sip_uri{port = undefined} = URI, Bin) -> append_params(URI, URI#sip_uri.params, Bin);
+append_port(#sip_uri{port = Port} = URI, Bin) ->      append_params(URI, URI#sip_uri.params, <<Bin/binary, $:, (sip_binary:integer_to_binary(Port))/binary>>).
+
+append_params(URI, [{Name, Value} | Tail], Bin) ->
+    NameBin = sip_binary:any_to_binary(Name),
+    Bin2 = <<Bin/binary, $;, NameBin/binary, $=, Value/binary>>,
+    append_params(URI, Tail, Bin2);
+append_params(URI, [Name | Tail], Bin) ->
+    NameBin = sip_binary:any_to_binary(Name),
+    Bin2 = <<Bin/binary, $;, NameBin/binary>>,
+    append_params(URI, Tail, Bin2);
+append_params(URI, [], Bin) -> append_headers(URI#sip_uri.headers, $?, Bin).
+
+append_headers([], _Sep, Bin) -> Bin;
+append_headers([{Name, Value} | Tail], Sep, Bin) ->
+    NameBin = sip_binary:any_to_binary(Name),
+    Bin2 = <<Bin/binary, Sep, NameBin/binary, $=, Value/binary>>,
+    append_headers(Tail, $&, Bin2).
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -152,6 +206,42 @@ parse_test_() ->
                    parse(<<"sip:j%40s0n@atlanta.com">>)),
      ?_assertEqual(#sip_uri{scheme = sip, user = <<"alice">>, host = {8193,3512,0,0,0,0,44577,44306}, port = 5060},
                    parse(<<"sip:alice@[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060">>))
+     ].
+
+
+-spec format_test_() -> list().
+format_test_() ->
+    [
+     % samples from RFC
+     ?_assertEqual(<<"sip:alice@atlanta.com">>,
+                   format(#sip_uri{scheme = sip, user = <<"alice">>, host = <<"atlanta.com">>})),
+     ?_assertEqual(<<"sip:alice:secretword@atlanta.com;transport=tcp">>,
+                   format(#sip_uri{scheme = sip, user = <<"alice">>, password = <<"secretword">>,
+                                   host = <<"atlanta.com">>, params = [{transport, <<"tcp">>}]})),
+     ?_assertEqual(<<"sips:alice@atlanta.com?subject=project%20x&priority=urgent">>,
+                   format(#sip_uri{scheme = sips, user = <<"alice">>, host = <<"atlanta.com">>,
+                                   headers = [{subject, <<"project%20x">>}, {priority, <<"urgent">>}]})),
+     ?_assertEqual(<<"sip:+1-212-555-1212:1234@gateway.com;user=phone">>,
+                   format(#sip_uri{scheme = sip, user = <<"+1-212-555-1212">>, password = <<"1234">>,
+                                   host = <<"gateway.com">>, params = [{user, <<"phone">>}]})),
+     ?_assertEqual(<<"sips:1212@gateway.com">>,
+                   format(#sip_uri{scheme = sips, user = <<"1212">>, host = <<"gateway.com">>})),
+     ?_assertEqual(<<"sip:alice@192.0.2.4">>,
+                   format(#sip_uri{scheme = sip, user = <<"alice">>, host = {192, 0, 2, 4}})),
+     ?_assertEqual(<<"sip:atlanta.com;method=REGISTER?to=alice%40atlanta.com">>,
+                   format(#sip_uri{scheme = sip, host = <<"atlanta.com">>, params = [{method, <<"REGISTER">>}],
+                                   headers = [{to, <<"alice%40atlanta.com">>}]})),
+     ?_assertEqual(<<"sip:alice;day=tuesday@atlanta.com">>,
+                   format(#sip_uri{scheme = sip, user = <<"alice;day=tuesday">>, host = <<"atlanta.com">>})),
+
+     % extra test cases
+     ?_assertEqual(<<"sips:alice@atlanta.com;maddr=239.255.255.1;ttl=15">>,
+                   format(#sip_uri{scheme = sips, user = <<"alice">>, host = <<"atlanta.com">>,
+                                   params = [{maddr, <<"239.255.255.1">>}, {ttl, <<"15">>}]})),
+     ?_assertEqual(<<"sip:j%40s0n@atlanta.com">>,
+                   format(#sip_uri{scheme = sip, user = <<"j%40s0n">>, host = <<"atlanta.com">>})),
+     ?_assertEqual(<<"sip:alice@[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060">>,
+                   format(#sip_uri{scheme = sip, user = <<"alice">>, host = {8193,3512,0,0,0,0,44577,44306}, port = 5060}))
      ].
 
 -endif.
