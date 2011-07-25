@@ -87,7 +87,8 @@ is_unreserved_char(C) ->
 is_user_unreserved_char(C) when
   C =:= $& ; C =:= $= ; C =:= $+ ;
   C =:= $$ ; C =:= $, ; C =:= $; ;
-  C =:= $? ; C =:= $/ -> true.
+  C =:= $? ; C =:= $/ -> true;
+is_user_unreserved_char(_C) -> false.
 
 %% @doc Check if character is `reserved' character
 %%
@@ -101,7 +102,8 @@ is_reserved_char(C) when
   C =:= $; ; C =:= $/ ; C =:= $? ;
   C =:= $: ; C =:= $@ ; C =:= $& ;
   C =:= $= ; C =:= $+ ; C =:= $$ ;
-  C =:= $, -> true.
+  C =:= $, -> true;
+is_reserved_char(_C) -> false.
 
 %% @doc Check if character is one of the space characters (space, tab, line feed, carriage return)
 %% @end
@@ -164,7 +166,7 @@ to_upper(Bin) ->
 
 %% @doc Parse number from the binary and return the rest
 %% @end
--spec parse_number(binary()) -> integer().
+-spec parse_number(binary()) -> {integer(), binary()}.
 parse_number(<<C, _/binary>> = Bin) when C >= $0, C =< $9 ->
     parse_number(Bin, 0).
 
@@ -272,7 +274,7 @@ quote_string_loop(<<C, Rest/binary>>, Acc) when C >= 16#20 ->
 %% port           =  1*DIGIT
 %% '''
 %% @end
--spec parse_host_port(binary()) -> {Host :: binary() | inet:ip_address(), Port :: integer(), Rest :: binary()}.
+-spec parse_host_port(binary()) -> {Host :: binary() | inet:ip_address(), Port :: integer() | 'undefined', Rest :: binary()}.
 parse_host_port(<<"[", Bin/binary>>) ->
     % IPv6 reference
     IsValidChar = fun ($:) -> true; (C) -> is_alphanum_char(C) end,

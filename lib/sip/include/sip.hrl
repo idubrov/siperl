@@ -19,7 +19,7 @@
 -record(sip_uri, {scheme = sip      :: 'sip' | 'sips',
                   user = <<>>       :: binary(),
                   password = <<>>   :: binary(),
-                  host = <<>>       :: binary() | inet:ip_address(),
+                  host = <<>>       :: inet:ip_address() | binary(),
                   port = undefined  :: integer() | 'undefined',
                   params = [],
                   headers = []}).
@@ -27,7 +27,7 @@
 
 %% SIP message types.
 %% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
--record(sip_request, {method :: binary() | atom(), uri :: binary()}).
+-record(sip_request, {method :: binary() | atom(), uri :: #sip_uri{} | #tel_uri{} | term()}).
 -record(sip_response, {status :: integer() | atom(), reason :: binary()}).
 -record(sip_message, {kind :: #sip_request{} | #sip_response{},
                       headers = [] :: [{Name :: atom() | binary(), Value :: binary() | term()}],
@@ -35,7 +35,7 @@
 
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
 					  transport :: atom(),
-                      host = <<>> :: binary(), % sent-by hostname
+                      host = <<>> :: inet:ip_address() | binary(), % sent-by hostname
                       port = 'undefined' :: integer() | 'undefined', % sent-by port
 					  params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
 

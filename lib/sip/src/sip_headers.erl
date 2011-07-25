@@ -388,7 +388,7 @@ need_quoting(<<C, Rest/binary>>)  ->
 %% @doc
 %% Construct Via header value.
 %% @end
--spec via(atom(), {binary(), integer() | 'undefined'} | binary(), [any()]) -> #sip_hdr_via{}.
+-spec via(atom(), {binary() | inet:ip_address(), integer() | 'undefined'} | binary(), [any()]) -> #sip_hdr_via{}.
 via(Transport, {Host, Port}, Params) when
   is_atom(Transport), is_list(Params) ->
     #sip_hdr_via{transport = Transport, host = Host, port = Port, params = Params};
