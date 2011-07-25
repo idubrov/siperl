@@ -126,7 +126,7 @@ send_response_received(Response) ->
                     transport_send(To, Response);
                 false ->
                     % Use procedures of Section 5 RFC 3263
-                    Destinations = sip_resolve:destinations(Via),
+                    Destinations = sip_resolve:server_resolve(Via),
                     send_response_fallback(Destinations, Response)
             end
     end.

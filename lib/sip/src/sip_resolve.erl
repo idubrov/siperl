@@ -14,7 +14,7 @@
 %% Exports
 
 %% API
--export([destinations/1, resolve/1]).
+-export([server_resolve/1, client_resolve/1, resolve/1]).
 
 %% Include files
 -include_lib("sip_common.hrl").
@@ -31,10 +31,77 @@
 %% See <a href="http://tools.ietf.org/html/rfc3263#section-4">RFC 3263, 4 Client Usage</a>
 %% @end
 -spec client_resolve(term()) -> [#sip_destination{}].
-client_resolve(_URI) ->
-    [#sip_destination{address = {127,0,0,1}, port = 15060, transport = udp},
-     #sip_destination{address = {127,0,0,1}, port = 25060, transport = udp}
-     ].
+client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI, sip_uri) ->
+    Target =
+       case lists:keyfind('maddr', 1, URI#sip_uri.params) of
+           {_, MAddr} ->
+               sip_binary:parse_ip_address(MAddr);
+           false ->
+               URI#sip_uri.host
+       end,
+    
+    case lists:keyfind('transport', 1, URI#sip_uri.params) of
+        {'transport', Transport} ->
+            TargetStr = binary_to_list(Target),
+            lookup_srvs(transport_to_prefix(Transport) ++ TargetStr, tcp);
+        false ->
+            
+            if is_tuple(Target) ->
+                   % explicit IP address specified
+                   Transport = transport(Scheme),
+                   [#sip_destination{address = Target, port = URI#sip_uri.port, transport = Transport}];
+               URI#sip_uri.port =/= undefined ->
+                   % explicit port is provided, make A or AAAA request
+                   Transport = transport(Scheme),
+                   lookup_destinations(binary_to_list(Target), Port, Transport);
+               true ->
+                   % no transport protocol, no port, no explicit numeric IP
+                   % send NAPTR request
+                   select_bynaptr(Target, Scheme)
+            end
+    end.
+
+%% @doc Select target service by making NAPTR query
+%%
+%% @end
+select_bynaptr(Target, Scheme) ->
+    List = inet_res:lookup(binary_to_list(Target), in, naptr),
+    % sort by order & preference
+    case lists:sort(List) of
+        [] ->
+            % no NAPTR records -- try making SRV queries
+            % FIXME: sips URIs!
+            TargetStr = binary_to_list(Target),
+            case lookup_srvs("_sip._tcp." ++ TargetStr, tcp) of
+                [] -> lookup_srvs("_sip._udp." ++ TargetStr, udp);
+                Dests -> Dests
+            end;
+        Sorted ->
+            % choose with lowest order, preference, which is supported by this implementation
+            List2 = [{Service, Name} || {_Order, _Pref, _Flags, Service, RegExp, Name} <- Sorted,
+                                        supported(Service, Scheme),
+                                        RegExp =:= []],
+            [{Service, Name} | _Rest] = List2,
+            Transport = transport(Service),
+            lookup_srvs(Name, Transport)
+    end.
+
+%% @doc Return default transport for given URI scheme or NAPTR service
+%% @end
+transport(sip) -> udp;
+transport(sips) -> tcp;
+transport("sip+d2u") -> udp;
+transport("sip+d2t") -> tcp;
+transport("sip+d2s") -> sctp;
+transport("sips+d2u") -> udp;
+transport("sips+d2t") -> tcp;
+transport("sips+d2s") -> stp.
+
+%% @doc Check if we support given service/URI scheme combination
+%% @end
+supported("sip+d2u", sip) -> true; % only for SIP URIs
+supported("sip+d2t", sip) -> true; % only for SIP URIs
+supported(_Service, _Scheme) -> false. % FIXME: no TLS for now!
 
 -spec resolve(binary()) -> inet:ip_address().
 resolve(Bin) when is_binary(Bin) ->
@@ -46,8 +113,8 @@ resolve(Addr) -> Addr. % must be an IPv4 or IPv6
 %%
 %% See <a href="http://tools.ietf.org/html/rfc3263#section-5">RFC 3263, 5 Server Usage</a>
 %% @end
--spec destinations(#sip_hdr_via{}) -> [#sip_destination{}].
-destinations(#sip_hdr_via{host = Host, port = Port, transport = Transport}) ->
+-spec server_resolve(#sip_hdr_via{}) -> [#sip_destination{}].
+server_resolve(#sip_hdr_via{host = Host, port = Port, transport = Transport}) ->
     case Host of
         {_, _, _, _} ->
             % IPv4
@@ -62,10 +129,13 @@ destinations(#sip_hdr_via{host = Host, port = Port, transport = Transport}) ->
         _HostName -> % domain name, no port
             % If, however, the sent-by field contained a domain name and no port,
             % the server queries for SRV records at that domain name
-            SRVs = inet_res:lookup(transport_to_prefix(Transport) ++ binary_to_list(Host), in, srv),
-            [Dest || {_Pri, _Weight, P, Target} <- sort_srvs(SRVs),
-                     Dest <- lookup_destinations(Target, P, Transport)]
+            lookup_srvs(transport_to_prefix(Transport) ++ binary_to_list(Host), Transport)
     end.
+
+lookup_srvs(Host, Transport) ->
+    SRVs = inet_res:lookup(Host, in, srv),
+    [Dest || {_Pri, _Weight, P, Target} <- sort_srvs(SRVs),
+             Dest <- lookup_destinations(Target, P, Transport)].
 
 % FIXME: sort according to RFC 2782
 sort_srvs(SRVs) ->
@@ -113,8 +183,7 @@ select_byweight([{_, Weight, _, _} = SRV|_], RunWeight) when RunWeight =< Weight
 select_byweight([{_, Weight, _, _}|Rest], RunWeight) -> select_byweight(Rest, RunWeight - Weight).
 
 
-%% @doc
-%% Lookup A or AAAA records for given name and return list of `#sip_destination{}'
+%% @doc Lookup A or AAAA records for given name and return list of `#sip_destination{}'
 %% @end
 lookup_destinations(Target, Port, Transport) ->
     Addrs = inet_res:lookup(Target, in, a),
