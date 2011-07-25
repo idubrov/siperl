@@ -89,8 +89,14 @@ send_request(Request) ->
                     false -> Route
                 end
         end,
-    % FIXME: if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
-    Destinations = sip_resolve:client_resolve(URI),
+    
+    % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
+    URI2 =
+        case RequestURI of
+            #sip_uri{scheme = sips} -> URI#sip_uri{scheme = sips};
+            _ -> URI
+        end,    
+    Destinations = sip_resolve:client_resolve(URI2),
 
     % FIXME: stateful element, call self to send the request...
     % Generate id that UAC could use to identify the request being sent
