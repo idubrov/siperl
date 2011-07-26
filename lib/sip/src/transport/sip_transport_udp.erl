@@ -22,17 +22,8 @@
 send(To, Message) when
   is_record(To, sip_destination),
   is_record(Message, sip_message) ->
-
-    % FIXME: Transport layer should receive already resolved IP address!!!
-    case To#sip_destination.address of
-        {_,_,_,_} ->
-            Addr = To#sip_destination.address;
-        _ ->
-            {ok, #hostent{h_addr_list = [Addr|_]}} = inet:gethostbyname(To#sip_destination.address)
-    end,
-    To2 = To#sip_destination{address = Addr},
-    Pid = lookup_socket(To2),
-    sip_transport_udp_socket:send(Pid, To2, Message).
+    Pid = lookup_socket(To),
+    sip_transport_udp_socket:send(Pid, To, Message).
 
 
 %%-----------------------------------------------------------------

@@ -274,7 +274,7 @@ quote_string_loop(<<C, Rest/binary>>, Acc) when C >= 16#20 ->
 %% port           =  1*DIGIT
 %% '''
 %% @end
--spec parse_host_port(binary()) -> {Host :: binary() | inet:ip_address(), Port :: integer() | 'undefined', Rest :: binary()}.
+-spec parse_host_port(binary()) -> {Host :: string() | inet:ip_address(), Port :: integer() | 'undefined', Rest :: binary()}.
 parse_host_port(<<"[", Bin/binary>>) ->
     % IPv6 reference
     IsValidChar = fun ($:) -> true; (C) -> is_alphanum_char(C) end,
@@ -287,7 +287,7 @@ parse_host_port(Bin) ->
     {HostBin, Rest} = parse_while(Bin, IsValidChar),
     case maybe_ipv4(HostBin) of
         true -> {ok, Host} = parse_ip_address(HostBin);
-        false -> Host = HostBin
+        false -> Host = binary_to_list(HostBin)
     end,
     host_port(Host, Rest).
 
@@ -317,7 +317,6 @@ maybe_ipv4(_) -> false.
 -spec parse_ip_address(binary()) -> {ok, inet:ip_address()} | {error, Reason :: term()}.
 parse_ip_address(Bin) ->
     inet_parse:address(binary_to_list(Bin)).
-
 
 %% @doc Convert UTF-8 binary to integer
 %% @end
@@ -354,8 +353,8 @@ any_to_binary(MaybeAddr) -> addr_to_binary(MaybeAddr).
 
 %% @doc Convert address (IPv4, IPv6 or hostname) to binary string
 %% @end
--spec addr_to_binary(inet:ip_address() | binary()) -> binary().
-addr_to_binary(Bin) when is_binary(Bin) -> Bin;
+-spec addr_to_binary(inet:ip_address() | string()) -> binary().
+addr_to_binary(Str) when is_list(Str) -> list_to_binary(Str);
 addr_to_binary({A, B, C, D}) when
   is_integer(A), is_integer(B), is_integer(C), is_integer(D) ->
     <<(integer_to_binary(A))/binary, $.,
@@ -437,7 +436,7 @@ binary_test_() ->
      ?_assertEqual({<<"some! rest  ">>, <<>>}, parse_until(<<"some! rest  ">>, $$)),
 
      % host[:port]
-     ?_assertEqual({<<"atlanta.com">>, undefined, <<";param">>}, parse_host_port(<<"atlanta.com;param">>)),
+     ?_assertEqual({"atlanta.com", undefined, <<";param">>}, parse_host_port(<<"atlanta.com;param">>)),
      ?_assertEqual({{127, 0, 0, 1}, 5060, <<";param">>}, parse_host_port(<<"127.0.0.1:5060;param">>)),
      ?_assertEqual({{8193,3512,0,0,0,0,44577,44306}, 5060, <<";param">>},
                    parse_host_port(<<"[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060;param">>))

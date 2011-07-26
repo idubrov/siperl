@@ -89,13 +89,13 @@ send_request(Request) ->
                     false -> Route
                 end
         end,
-    
+
     % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
     URI2 =
         case RequestURI of
             #sip_uri{scheme = sips} -> URI#sip_uri{scheme = sips};
             _ -> URI
-        end,    
+        end,
     Destinations = sip_resolve:client_resolve(URI2),
 
     % FIXME: stateful element, call self to send the request...

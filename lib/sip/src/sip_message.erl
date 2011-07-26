@@ -558,9 +558,9 @@ create_ack_test_() ->
 header_test_() ->
 
     CSeq = sip_headers:cseq(110, 'INVITE'),
-    Via1 = sip_headers:via(udp, {<<"127.0.0.1">>, 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
-    Via2 = sip_headers:via(tcp, {<<"127.0.0.2">>, 15060}, [{ttl, 4}]),
-    Via1Up = sip_headers:via(udp, {<<"localhost">>, 5060}, []),
+    Via1 = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
+    Via2 = sip_headers:via(tcp, {"127.0.0.2", 15060}, [{ttl, 4}]),
+    Via1Up = sip_headers:via(udp, {"localhost", 5060}, []),
     UpdateFun = fun (Value) when Value =:= Via1 -> Via1Up end,
     InsertFun = fun (undefined) -> Via1Up end,
 
@@ -583,7 +583,7 @@ header_test_() ->
                                 {cseq, sip_headers:cseq(1, 'OPTIONS')},
                                 {'call-id', <<"123">>},
                                 {'max-forwards', 70},
-                                {via, sip_headers:via(udp, <<"localhost">>, [])}]},
+                                {via, sip_headers:via(udp, "localhost", [])}]},
 
     % No contact in INVITE
     InvalidRequest =

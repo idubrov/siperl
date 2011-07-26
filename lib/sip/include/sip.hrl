@@ -19,7 +19,7 @@
 -record(sip_uri, {scheme = sip      :: 'sip' | 'sips',
                   user = <<>>       :: binary(),
                   password = <<>>   :: binary(),
-                  host = <<>>       :: inet:ip_address() | binary(),
+                  host = <<>>       :: inet:ip_address() | string(),
                   port = undefined  :: integer() | 'undefined',
                   params = [],
                   headers = []}).
@@ -34,8 +34,9 @@
                       body = <<"">> :: binary()}).
 
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
-					  transport :: atom(),
-                      host = <<>> :: inet:ip_address() | binary(), % sent-by hostname
+                      % note that tcp+tls becomes 'tls' transport
+					  transport :: 'udp' | 'tcp' | 'tls' | atom(),
+                      host :: inet:ip_address() | string(), % sent-by hostname
                       port = 'undefined' :: integer() | 'undefined', % sent-by port
 					  params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
 
@@ -54,7 +55,9 @@
 %% Destination to send message to
 -record(sip_destination, {address :: inet:ip_address(),
                           port = 5060 :: integer() | 'undefined',
-                          transport :: atom()}).
+                          % note that there is no 'tls' transport, it should be in params
+                          transport :: 'udp' | 'tcp' | atom(),
+                          params = [] :: ['tls' | {'ttl', integer()}]}).
 
 %% Transport layer connection
 -record(sip_connection, {transport :: atom(), connection :: pid() | term()}).

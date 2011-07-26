@@ -92,7 +92,7 @@ send_request_udp({_Transport, UDP, _TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    SentBy = {Hostname, 15060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
@@ -109,7 +109,7 @@ send_request_udp_fallback({_Transport, _UDP, TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    SentBy = {Hostname, 15060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
@@ -129,7 +129,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    SentBy = {Hostname, 15060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}, {maddr, <<"239.0.0.100">>}, {ttl, 4}]),
     ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
@@ -151,7 +151,7 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
 
     % send with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {sip_binary:any_to_binary(Hostname), 15060},
+    SentBy = {Hostname, 15060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Response2 = sip_message:replace_top_header('via', Via, Response),
     ResponseBin = sip_message:to_binary(Response2),
@@ -168,7 +168,7 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
 
 receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
     Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>),
-    Via = sip_headers:via(udp, {<<"incorrect-sent-by">>, 35060}, [{branch, sip_test:branch_from_pid()}]),
+    Via = sip_headers:via(udp, {"incorrect-sent-by", 35060}, [{branch, sip_test:branch_from_pid()}]),
     WrongResponse = sip_message:replace_top_header('via', Via, Response),
 
     % RFC 3261, 18.1.2: Receiving Responses (wrong sent-by, should be discarded)
@@ -195,7 +195,7 @@ receive_request_udp({_Transport, UDP, _TCP}) ->
     end.
 
 receive_request_udp2({_Transport, UDP, _TCP}) ->
-    SentBy = {<<"localhost">>, 25060},
+    SentBy = {"localhost", 25060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_test:branch_from_pid()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
@@ -204,7 +204,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
 
     receive
         {request, _Conn, Msg} ->
-            ExpectedVia = sip_headers:via(udp, {<<"localhost">>, 25060}, [{branch, sip_test:branch_from_pid()},
+            ExpectedVia = sip_headers:via(udp, {"localhost", 25060}, [{branch, sip_test:branch_from_pid()},
                                                                           {received, {127, 0, 0, 1}}]),
             ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia, Request),
             ?assertEqual(ExpectedRequest, sip_message:parse_all_headers(Msg));
@@ -303,7 +303,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
-    Via3 = #sip_hdr_via{host = <<"localhost">>, port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
+    Via3 = #sip_hdr_via{host = "localhost", port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
     Response3 = #sip_message{kind = #sip_response{status = 200, reason = <<"Ok">>},
                              headers = [{'via', [Via3]}]},
     ResponseBin3 = sip_message:to_binary(Response3),

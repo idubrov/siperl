@@ -127,6 +127,7 @@ send_response_received(Response) ->
                 false ->
                     % Use procedures of Section 5 RFC 3263
                     Destinations = sip_resolve:server_resolve(Via),
+                    % FIXME: TLS?
                     send_response_fallback(Destinations, Response)
             end
     end.
@@ -212,17 +213,14 @@ dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_response{}}
 %% Internal functions
 %%-----------------------------------------------------------------
 -spec add_via_sentby(#sip_message{}, #sip_destination{}, integer()) -> #sip_message{}.
-add_via_sentby(Message, #sip_destination{address = Addr, transport = Transport}, TTL) ->
+add_via_sentby(Message, #sip_destination{address = To, transport = Transport}, TTL) ->
     {Host, Port} = sent_by(Transport),
-    % XXX: Only ipv4 for now.
-    {ok, To} = inet:getaddr(Addr, inet),
-
     Fun = fun (Via) ->
                    Params = Via#sip_hdr_via.params,
                    NewParams = case To of
                                    % multicast
                                    {A, _B, _C, _D} when A >= 224, A =< 239 -> % FIXME: utility...
-                                       AddrBin = sip_binary:any_to_binary(To),
+                                       AddrBin = sip_binary:addr_to_binary(To),
                                        Params2 = lists:keystore('maddr', 1, Params,  {'maddr', AddrBin}),
                                        Params3 = lists:keystore('ttl', 1, Params2,  {'ttl', TTL}),
                                        Params3;
@@ -257,7 +255,7 @@ check_sent_by(Transport, Msg) ->
 % it contains an IP address that differs from the packet source address, the
 % server MUST add a "received" parameter to that Via header field value.
 % RFC 3261, 18.2.1
-add_via_received(#sip_destination{address = Src}, Msg) ->
+add_via_received(#sip_destination{address = Src}, Msg) when is_tuple(Src) ->
     Fun = fun (TopVia) ->
                    % compare byte-to-byte with packet source address
                    case TopVia#sip_hdr_via.host of
