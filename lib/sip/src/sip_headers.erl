@@ -66,7 +66,7 @@ parse_header('via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
     % Parse parameters (which should start with semicolon)
     {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
-    {Params, Bin4} = parse_params(Bin3),
+    {Params, Bin4} = parse_params(Bin3, fun parse_via_param/2),
 
     Top = #sip_hdr_via{transport = Transport,
                        version = Version,
@@ -177,11 +177,12 @@ parse_sent_protocol(Bin) ->
 %% *( SEMI param )
 %% param  =  token [ EQUAL value ]
 %% value  =  token / host / quoted-string
-parse_params(Bin) ->
-    parse_params_loop(sip_binary:trim_leading(Bin), []).
+parse_params(Bin, ParseFun) ->
+    parse_params_loop(sip_binary:trim_leading(Bin), ParseFun, []).
 
-parse_params_loop(<<?SEMI, Bin/binary>>, List) ->
-    {Name, MaybeValue} = sip_binary:parse_token(Bin),
+parse_params_loop(<<?SEMI, Bin/binary>>, ParseFun, List) ->
+    {NameBin, MaybeValue} = sip_binary:parse_token(Bin),
+    Name = sip_binary:binary_to_existing_atom(NameBin),
     {Value, Rest} =
         case MaybeValue of
             % Parameter with value
@@ -191,9 +192,10 @@ parse_params_loop(<<?SEMI, Bin/binary>>, List) ->
             Next ->
                 {true, Next}
         end,
-    Property = proplists:property(sip_binary:binary_to_existing_atom(Name), Value),
-    parse_params_loop(Rest, [Property | List]);
-parse_params_loop(Bin, List) ->
+    ParsedValue = ParseFun(Name, Value),
+    Property = proplists:property(Name, ParsedValue),
+    parse_params_loop(Rest, ParseFun, [Property | List]);
+parse_params_loop(Bin, _ParseFun, List) ->
     {lists:reverse(List), sip_binary:trim_leading(Bin)}.
 
 parse_token_or_quoted(Bin) ->
@@ -242,7 +244,7 @@ parse_address_uri(Bin) ->
 %% @end
 parse_address(Bin) ->
     {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
-    {Params, Bin3} = parse_params(Bin2),
+    {Params, Bin3} = parse_params(Bin2, fun (_Name, Value) -> Value end),
     Value = #sip_hdr_address{display_name = sip_binary:trim(Display),
                              uri = URI,
                              params = Params},
@@ -467,6 +469,18 @@ header_name_to_binary('contact') -> <<"Contact">>;
 header_name_to_binary(Name) when is_binary(Name) -> Name;
 header_name_to_binary(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 
+%% Parse standard Via: parameters
+parse_via_param('ttl', TTL) -> sip_binary:binary_to_integer(TTL);
+parse_via_param('maddr', MAddr) ->
+    case sip_binary:parse_ip_address(MAddr) of
+        {ok, Addr} -> Addr;
+        {error, einval} -> binary_to_list(MAddr)
+    end;
+parse_via_param('received', Received) ->
+    {ok, Addr} = sip_binary:parse_ip_address(Received),
+    Addr;
+parse_via_param(_Name, Value) -> Value.
+
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -583,6 +597,10 @@ parse_test_() ->
                    format_header('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>)),
      ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;extra=\"Hello world\"">>,
                    format_header('via', [via(udp, {"pc33.atlanta.com", undefined}, [{extra, <<"Hello world">>}])])),
+     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, {224, 0, 0, 1}}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
+                   parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=224.0.0.1;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
+     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
+                   parse_header('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
 
      % Formatting
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,

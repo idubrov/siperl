@@ -114,8 +114,9 @@ is_supported("sips+d2t", _TLS) -> true;
 is_supported(_Service, _TLS) -> false.
 
 -spec resolve(binary()) -> inet:ip_address().
-resolve(Bin) when is_binary(Bin) ->
-    {ok, Addr} = inet:getaddr(binary_to_list(Bin), inet),
+resolve(Host) when is_binary(Host) -> resolve(binary_to_list(Host));
+resolve(Host) when is_list(Host) ->
+    {ok, Addr} = inet:getaddr(Host, inet),
     Addr;
 resolve(Addr) -> Addr. % must be an IPv4 or IPv6
 

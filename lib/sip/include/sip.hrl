@@ -35,10 +35,14 @@
 
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
-					  transport :: 'udp' | 'tcp' | 'tls' | atom(),
+                      transport :: 'udp' | 'tcp' | 'tls' | atom(),
                       host :: inet:ip_address() | string(), % sent-by hostname
                       port = 'undefined' :: integer() | 'undefined', % sent-by port
-					  params = [] :: [{binary() | atom(), term()} | binary() | atom()]}).
+                      params = [] :: [{'ttl', integer()} |
+                                      {'maddr', string() | inet:ip_address()} |
+                                      {'received', inet:ip_address()} |
+                                      {'branch', binary()} |
+                                      {binary() | atom(), term()}]}).
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 
