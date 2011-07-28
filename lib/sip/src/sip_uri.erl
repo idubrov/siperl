@@ -1,6 +1,6 @@
 %%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <wfragg@gmail.com>
-%%% @doc SIP URI parse utilities
+%%% @doc URI parse utilities
 %%%
 %%% Implementation of parsing for supported URI schemes (`sip', `sips', `tel').
 %%% @end

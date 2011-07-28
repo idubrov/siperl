@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/2]).
+-export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/2, handle_request/3, handle_response/3]).
 
 -record(state, {}).
 
@@ -42,17 +42,25 @@ init({}) ->
     {ok, #state{}}.
 
 %% @private
+handle_response(Response, UserData, State) ->
+    gen_server:reply(UserData, Response),
+    {noreply, State}.
+
+%% @private
+handle_request(_Request, _UserData, State) ->
+    {noreply, State}.
+
+%% @private
 handle_info(Req, State) ->
     ?debugFmt("Got info: ~p~n", [Req]),
     {noreply, State}.
 
 %% @private
-handle_call({ping, To}, _From, State) ->
-    Request = sip_ua:create_request('OPTIONS',
-                                    To,
-                                    sip_headers:address(<<"Mr. Pinger">>, <<"sip:pinger@127.0.0.1">>, [])),
-    {ok, Id} = sip_ua:send_request(Request),
-    {reply, Id, State};
+handle_call({ping, To}, Client, State) ->
+    From = sip_headers:address(<<"Mr. Pinger">>, <<"sip:pinger@127.0.0.1">>, []),
+    Request = sip_ua:create_request('OPTIONS', To, From),
+    ok = sip_ua:send_request(Request, Client),
+    {noreply, State};
 handle_call(Req, _From, State) ->
     ?debugFmt("Got call: ~p~n", [Req]),
     {reply, ok, State}.

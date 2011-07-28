@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/3]).
--export([create_request/3, send_request/1]).
+-export([create_request/3, send_request/2]).
 
 %% Custom behaviour
 -export([behaviour_info/1]).
@@ -25,11 +25,12 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
--record(state, {sending = [], mod, mod_state}).
+-record(state, {transactions = dict:new(), mod, mod_state}).
+-record(tx_data, {request, fallback, user_data}).
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_failure, 2}] ++ gen_server:behaviour_info(callbacks);
+    [{handle_failure, 2}, {handle_response, 3}] ++ gen_server:behaviour_info(callbacks);
 behaviour_info(_) -> undefined.
 
 %% @doc Creates UA process as part of the supervision tree
@@ -76,8 +77,8 @@ create_request(Method, ToValue, ContactValue) when
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
--spec send_request(#sip_message{}) -> {ok, binary()}.
-send_request(Request) ->
+-spec send_request(term(), #sip_message{}) -> {ok, binary()}.
+send_request(Request, Data) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
         case sip_message:top_header('route', Request) of
@@ -98,11 +99,9 @@ send_request(Request) ->
         end,
     Destinations = sip_resolve:client_resolve(URI2),
 
-    % FIXME: stateful element, call self to send the request...
-    % Generate id that UAC could use to identify the request being sent
-    Id = sip_idgen:generate_id(8),
-    gen_server:cast(self(), {send, Id, Destinations, Request}),
-    {ok, Id}.
+    % Dispatch asynchronously
+    gen_server:cast(self(), {send, Data, Destinations, Request}),
+    ok.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -118,30 +117,47 @@ init({Mod, Args}) ->
 -spec handle_call(term(), term(), #state{}) -> any().
 handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_call(Req, From, ModState),
-    handle_response(Response, State).
+    wrap_response(Response, State).
 
 %% @private
 -spec handle_cast(_, #state{}) -> any().
-handle_cast({send, Id, Destinations, Request}, State) ->
-    State2 = send_internal(Id, Destinations, Request, State),
+handle_cast({send, UserData, Destinations, Request}, State) ->
+    TxData = #tx_data{request = Request, user_data = UserData, fallback = Destinations},
+    State2 = send_internal(TxData, State),
     {noreply, State2};
 handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_cast(Req, ModState),
-    handle_response(Response, State).
+    wrap_response(Response, State).
 
 %% @private
 -spec handle_info(term(), #state{}) -> any().
+handle_info({tx, TxKey, {response, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
+    % handle response from transaction layer
+    TxData = dict:fetch(TxKey, State#state.transactions),
+    Response = Mod:handle_response(Msg, TxData#tx_data.user_data, ModState),
+    wrap_response(Response, State);
+handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
+    % handle request from transaction layer
+    TxData = dict:fetch(TxKey, State#state.transactions),
+    Response = Mod:handle_request(Msg, TxData#tx_data.user_data, ModState),
+    wrap_response(Response, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
-    Sending = lists:keydelete(TxKey, 2, State#state.sending),
-    {noreply, State#state{sending = Sending}};
+    % remove transaction from the list
+    Dict = dict:erase(TxKey, State#state.transactions),
+    {noreply, State#state{transactions = Dict}};
 handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
+    TxData = dict:fetch(TxKey, State#state.transactions),
+
+    % remove transaction from the list
+    Dict = dict:erase(TxKey, State#state.transactions),
+    State2 = State#state{transactions = Dict},
+
     % transaction failure, let's retry with new transaction, see 8.1.2
-    {Id, TxKey, Fallback, Request} = lists:keyfind(TxKey, 2, State#state.sending),
-    State2 = send_internal(Id, Fallback, Request, State),
-    {noreply, State2};
+    State3 = send_internal(TxData, State2),
+    {noreply, State3};
 handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_info(Req, ModState),
-    handle_response(Response, State).
+    wrap_response(Response, State).
 
 
 %% @private
@@ -163,17 +179,19 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_internal(Id, [], Request, #state{mod = Mod} = State) ->
+send_internal(#tx_data{user_data = Data, request = Request, fallback = []}, #state{mod = Mod} = State) ->
     % no more destinations -- report to callback
-    Response = Mod:handle_failure({timeout, Id, Request}, State#state.mod_state),
-    handle_response(Response, State);
-send_internal(Id, [Top|Fallback], Request, State) ->
-    % send request to the top destination, remember the transaction id,
-    % remember the rest as fallback destinations
+    Response = Mod:handle_failure({timeout, Data, Request}, State#state.mod_state),
+    wrap_response(Response, State);
+send_internal(#tx_data{request = Request, fallback = [Top | Fallback]} = TxData, State) ->
+    % send request to the top destination
     Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
-    Sending = lists:keystore(Id, 1, State#state.sending, {Id, TxKey, Fallback, Request}),
-    State#state{sending = Sending}.
+
+    % store tx id to {user data, fallback destinations, request} mapping
+    TxData2 = TxData#tx_data{fallback = Fallback},
+    Dict = dict:store(TxKey, TxData2, State#state.transactions),
+    State#state{transactions = Dict}.
 
 generate_branch(Via) ->
     Branch = sip_idgen:generate_branch(),
@@ -183,9 +201,9 @@ generate_branch(Via) ->
 
 %% @doc Wrap client state back into the `#state{}'
 %% @end
-handle_response({reply, Reply, ModState}, State) -> {reply, Reply, State#state{mod_state = ModState}};
-handle_response({reply, Reply, ModState, Timeout}, State) -> {reply, Reply, State#state{mod_state = ModState}, Timeout};
-handle_response({noreply, ModState}, State) -> {noreply, State#state{mod_state = ModState}};
-handle_response({noreply, ModState, Timeout}, State) -> {noreply, State#state{mod_state = ModState}, Timeout};
-handle_response({stop, Reason, Reply, ModState}, State) -> {stop, Reason, Reply, State#state{mod_state = ModState}};
-handle_response({stop, Reason, ModState}, State) -> {stop, Reason, State#state{mod_state = ModState}}.
+wrap_response({reply, Reply, ModState}, State) -> {reply, Reply, State#state{mod_state = ModState}};
+wrap_response({reply, Reply, ModState, Timeout}, State) -> {reply, Reply, State#state{mod_state = ModState}, Timeout};
+wrap_response({noreply, ModState}, State) -> {noreply, State#state{mod_state = ModState}};
+wrap_response({noreply, ModState, Timeout}, State) -> {noreply, State#state{mod_state = ModState}, Timeout};
+wrap_response({stop, Reason, Reply, ModState}, State) -> {stop, Reason, Reply, State#state{mod_state = ModState}};
+wrap_response({stop, Reason, ModState}, State) -> {stop, Reason, State#state{mod_state = ModState}}.
