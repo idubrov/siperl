@@ -135,7 +135,8 @@ parse_headers(<<$?, Bin/binary>>) ->
 %% @doc Format URI to binary string
 %%
 %% @end
--spec format(#sip_uri{}) -> binary().
+-spec format(#sip_uri{} | binary()) -> binary().
+format(URI) when is_binary(URI) -> URI;
 format(#sip_uri{scheme = sip} = URI) -> append_userinfo(URI, <<"sip:">>);
 format(#sip_uri{scheme = sips} = URI) -> append_userinfo(URI, <<"sips:">>).
 

@@ -74,13 +74,13 @@ method(#sip_message{kind = #sip_response{}} = Msg) ->
 to_binary(Message) ->
     Top = case Message#sip_message.kind of
               #sip_request{method = Method, uri = URI} ->
-                  <<(sip_binary:any_to_binary(Method))/binary, " ", URI/binary, " ", ?SIPVERSION>>;
+                  URIBin = sip_uri:format(URI),
+                  <<(sip_binary:any_to_binary(Method))/binary, " ", URIBin/binary, " ", ?SIPVERSION>>;
               #sip_response{status = Status, reason = Reason} ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
-    Headers = << <<(sip_headers:to_binary(Name, Value))/binary, "\r\n">> ||
-                 {Name, Value} <- Message#sip_message.headers>>,
+    Headers = sip_headers:format_headers(Message#sip_message.headers),
     iolist_to_binary([Top, <<"\r\n">>, Headers, <<"\r\n">>, Message#sip_message.body]).
 
 
@@ -106,7 +106,7 @@ update_top_header(HeaderName, Fun, Request) ->
 update_header(HeaderName, Fun, [{HeaderName, Value} | Rest]) ->
     % Parse header if it is not parsed yet
     UpdatedValue =
-        case sip_headers:parse_header(HeaderName, Value) of
+        case sip_headers:parse(HeaderName, Value) of
             % multi-value header
             [Top | Rest2] -> [Fun(Top) | Rest2];
             % single value header
@@ -166,7 +166,7 @@ top_header(Name, Headers) when is_list(Headers) ->
     case lists:keyfind(Name, 1, Headers) of
         false -> {error, not_found};
         {Name, Value} ->
-            case sip_headers:parse_header(Name, Value) of
+            case sip_headers:parse(Name, Value) of
                 [Top | _] -> {ok, Top}; % support for multiple header values
                 Top -> {ok, Top}
             end
@@ -176,19 +176,18 @@ top_header(Name, Headers) when is_list(Headers) ->
 %% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
 %% retained in binary form for performance reasons. Use {@link parse_whole/1}
-%% to parse the whole message or {@link sip_headers:parse_header/2} to parse
+%% to parse the whole message or {@link sip_headers:parse/2} to parse
 %% single header.
 %% @end
 -spec parse_datagram(Datagram :: binary()) ->
           {ok, #sip_message{}}
         | {error, content_too_small, #sip_message{}}.
 parse_datagram(Datagram) ->
-    [Top, Body] = binary:split(Datagram, <<"\r\n\r\n">>),
-    [Start | Tail] = binary:split(Top, <<"\r\n">>),
-    Headers = case Tail of
-                  [] -> [];
-                  [Bin] -> sip_headers:split_binary(Bin)
-              end,
+    {Pos, _Length} = binary:match(Datagram, <<"\r\n\r\n">>),
+    Pos2 = Pos + 2,
+    <<Top:Pos2/binary, "\r\n", Body/binary>> = Datagram,
+    [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
+    Headers = sip_headers:parse_headers(HeadersBin),
     Kind = parse_start_line(Start),
 
     % RFC 3261 18.3
@@ -209,7 +208,7 @@ parse_datagram(Datagram) ->
 %% Return new parser state and possibly a message extracted from the
 %% stream. The headers of the returned messages are retained in binary
 %% form for performance reasons. Use {@link parse_whole/1} to parse the
-%% whole message or {@link sip_headers:parse_header/2} to parse single header.
+%% whole message or {@link sip_headers:parse/2} to parse single header.
 %%
 %% <em>Note: caller is required to call this method with empty packet (<<>>)
 %% until no new messages are returned</em>
@@ -228,7 +227,7 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 %% @end
 -spec parse_all_headers(#sip_message{}) -> #sip_message{}.
 parse_all_headers(Msg) when is_record(Msg, sip_message) ->
-    Headers = [{Name, sip_headers:parse_header(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
+    Headers = [{Name, sip_headers:parse(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
     Msg#sip_message{headers = Headers}.
 
 %% @doc
@@ -260,13 +259,11 @@ parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 
         false -> {ok, {'HEADERS', Frame}};
         Pos ->
             % Split packet into headers and the rest
-            <<Top:Pos/binary, _:4/binary, Rest/binary>> = Frame,
+            Pos2 = Pos + 2,
+            <<Top:Pos2/binary, "\r\n", Rest/binary>> = Frame,
             % Get start line and headers
-            [Start|Tail] = binary:split(Top, <<"\r\n">>),
-            Headers = case Tail of
-                          [] -> [];
-                          [Bin] -> sip_headers:split_binary(Bin)
-                      end,
+            [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
+            Headers = sip_headers:parse_headers(HeadersBin),
             Kind = parse_start_line(Start),
 
             % Check content length present
@@ -337,7 +334,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
     FoldFun = fun ({'call-id', _} = H, List) -> [H|List];
                   ({'from', _} = H, List) -> [H|List];
                   ({'cseq', Value}, List) ->
-                       CSeq = sip_headers:parse_header('cseq', Value),
+                       CSeq = sip_headers:parse('cseq', Value),
                        CSeq2 = CSeq#sip_hdr_cseq{method = 'ACK'},
                        [{'cseq', CSeq2} | List];
                   ({'route', _} = H, List) when Method =:= 'INVITE' -> [H|List];
