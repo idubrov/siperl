@@ -30,7 +30,7 @@
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_failure, 2}, {handle_response, 3}] ++ gen_server:behaviour_info(callbacks);
+    [{handle_request, 3}, {handle_response, 3}] ++ gen_server:behaviour_info(callbacks);
 behaviour_info(_) -> undefined.
 
 %% @doc Creates UA process as part of the supervision tree
@@ -123,8 +123,7 @@ handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
 -spec handle_cast(_, #state{}) -> any().
 handle_cast({send, UserData, Destinations, Request}, State) ->
     TxData = #tx_data{request = Request, user_data = UserData, fallback = Destinations},
-    State2 = send_internal(TxData, State),
-    {noreply, State2};
+    send_internal(TxData, State);
 handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_cast(Req, ModState),
     wrap_response(Response, State).
@@ -145,7 +144,7 @@ handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#state.transactions),
     {noreply, State#state{transactions = Dict}};
-handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
+handle_info({tx, TxKey, {terminated, Reason}}, State) ->
     TxData = dict:fetch(TxKey, State#state.transactions),
 
     % remove transaction from the list
@@ -153,8 +152,12 @@ handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
     State2 = State#state{transactions = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    State3 = send_internal(TxData, State2),
-    {noreply, State3};
+    case TxData#tx_data.fallback of
+        [] -> % if no more destinations, report as failed response
+            handle_failure(Reason, TxData, State2);
+        _Other ->
+            send_internal(TxData, State2)
+    end;
 handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_info(Req, ModState),
     wrap_response(Response, State).
@@ -163,6 +166,7 @@ handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(Reason, #state{mod = Mod, mod_state = ModState}) ->
+    ?debugHere,
     Mod:terminate(Reason, ModState).
 
 %% @private
@@ -179,10 +183,6 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_internal(#tx_data{user_data = Data, request = Request, fallback = []}, #state{mod = Mod} = State) ->
-    % no more destinations -- report to callback
-    Response = Mod:handle_failure({timeout, Data, Request}, State#state.mod_state),
-    wrap_response(Response, State);
 send_internal(#tx_data{request = Request, fallback = [Top | Fallback]} = TxData, State) ->
     % send request to the top destination
     Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
@@ -191,13 +191,22 @@ send_internal(#tx_data{request = Request, fallback = [Top | Fallback]} = TxData,
     % store tx id to {user data, fallback destinations, request} mapping
     TxData2 = TxData#tx_data{fallback = Fallback},
     Dict = dict:store(TxKey, TxData2, State#state.transactions),
-    State#state{transactions = Dict}.
+    {noreply, State#state{transactions = Dict}}.
 
 generate_branch(Via) ->
     Branch = sip_idgen:generate_branch(),
     Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
     Via#sip_hdr_via{params = Params}.
 
+handle_failure(Reason, TxData, #state{mod = Mod, mod_state = ModState} = State) ->
+    {Status, Phrase} = reason_phrase(Reason),
+    Response = sip_message:create_response(TxData#tx_data.request, Status, Phrase),
+    Result = Mod:handle_response(Response, TxData#tx_data.user_data, ModState),
+    wrap_response(Result, State).
+
+reason_phrase({timeout, _Timer}) -> {408, <<"Request Timeout">>};
+reason_phrase({econnrefused, _}) -> {503, <<"Service Unavailable (connection refused)">>};
+reason_phrase(_Reason) -> {503, <<"Service Unavailable">>}.
 
 %% @doc Wrap client state back into the `#state{}'
 %% @end

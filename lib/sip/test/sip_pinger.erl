@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/2, handle_request/3, handle_response/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/3, handle_request/3, handle_response/3]).
 
 -record(state, {}).
 
@@ -31,7 +31,7 @@ start_link() ->
     sip_ua:start_link(?MODULE, {}, []).
 
 ping(Pid, To) ->
-    gen_server:call(Pid, {ping, To}).
+    gen_server:call(Pid, {ping, To}, 100000).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -68,11 +68,6 @@ handle_call(Req, _From, State) ->
 %% @private
 handle_cast(Req, State) ->
     ?debugFmt("Got cast: ~p~n", [Req]),
-    {noreply, State}.
-
-%% @private
-handle_failure(Req, State) ->
-    ?debugFmt("Got failure: ~p~n", [Req]),
     {noreply, State}.
 
 %% @private
