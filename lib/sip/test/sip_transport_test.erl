@@ -69,6 +69,8 @@ setup() ->
         end,
     meck:expect(sip_core, handle_request, Handle),
     meck:expect(sip_core, handle_response, Handle),
+    % do not start transaction
+    meck:expect(sip_core, lookup_tu, fun(_Connection, _Msg) -> undefined end),
 
     meck:new(sip_transaction, [passthrough]),
     meck:expect(sip_transaction, handle_request, fun (_Msg) -> not_handled end),

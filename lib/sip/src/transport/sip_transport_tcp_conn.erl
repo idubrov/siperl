@@ -136,6 +136,7 @@ process_stream(Packet, State, Props) ->
             % each property is a marker that this process handles
             % given server transaction, so we could find proper
             % connection when sending responses
+            % FIXME: What about terminated transactions?
             NewProps =
                 case sip_message:is_request(Msg) of
                     true ->

@@ -162,10 +162,20 @@ send_response_fallback([To|Rest], Response) ->
           ok | {reply, #sip_message{}}.
 dispatch(From, Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
     Msg2 = add_via_received(From, Msg),
-    % 18.1.2: route to client transaction or to core
+    % 18.2.1: route to server transaction or to core
     case sip_transaction:handle_request(Msg2) of
-        not_handled -> sip_core:handle_request(Connection, Msg2);
-        {ok, _TxRef} -> ok
+        not_handled ->
+            case sip_core:lookup_tu(Connection, Msg) of
+                {ok, TU} ->
+                    % FIXME: should we create {{connection, tx_key}, pid} property here and transfer to Tx process?
+                    sip_transaction:start_server_tx(TU, Msg),
+                    ok;
+                undefined ->
+                    % No TU for request, pass to core
+                    sip_core:handle_request(Connection, Msg2)
+            end;
+        {ok, _TxRef} ->
+            ok
     end,
     ok;
 dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
@@ -176,7 +186,7 @@ dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
     % MUST be silently discarded.
     case check_sent_by(From#sip_destination.transport, Msg) of
         true ->
-            % 18.2.1: route to server transaction or to core
+            % 18.1.2: route to client transaction or to core
             case sip_transaction:handle_response(Msg) of
                 not_handled -> sip_core:handle_response(Connection, Msg);
                 {ok, _TxRef} -> ok

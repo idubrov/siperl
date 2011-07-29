@@ -15,7 +15,7 @@
 
 %% API
 -export([start_link/0]).
--export([handle_request/2, handle_response/2]).
+-export([handle_request/2, handle_response/2, lookup_tu/2]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -36,12 +36,15 @@ start_link() ->
 
 -spec handle_request(#sip_connection{}, #sip_message{}) -> ok.
 handle_request(_Connection, Msg) when is_record(Msg, sip_message) ->
-    sip_transaction:start_server_tx(whereis(sip_core), Msg),
     ok.
 
 -spec handle_response(#sip_connection{}, #sip_message{}) -> ok.
 handle_response(_Connection, Msg) when is_record(Msg, sip_message) ->
     ok.
+
+-spec lookup_tu(#sip_connection{}, #sip_message{}) -> {ok, pid()} | undefined.
+lookup_tu(_Connection, Msg) when is_record(Msg, sip_message) ->
+    whereis(sip_core).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
