@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2, handle_failure/3, handle_request/3, handle_response/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2, handle_request/3, handle_response/3]).
 
 -record(state, {}).
 
