@@ -52,7 +52,7 @@ create_request(Method, ToValue, ContactValue) when
   is_record(ToValue, sip_hdr_address), is_record(ContactValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
-    RequestURI = ToValue#sip_hdr_address.uri,
+    RequestURI = sip_uri:parse(ToValue#sip_hdr_address.uri),
 
     % will be updated later (by transport layer)
     % branch will be added before sending
@@ -131,10 +131,20 @@ handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> any().
 handle_info({tx, TxKey, {response, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
-    % handle response from transaction layer
-    TxData = dict:fetch(TxKey, State#state.transactions),
-    Response = Mod:handle_response(Msg, TxData#tx_data.user_data, ModState),
-    wrap_response(Response, State);
+    % RFC3261 8.1.3.3 Vias
+    case count_via(Msg) of
+        1 ->
+            % handle response from transaction layer
+            TxData = dict:fetch(TxKey, State#state.transactions),
+            Response = Mod:handle_response(Msg, TxData#tx_data.user_data, ModState),
+            wrap_response(Response, State);
+        _Other ->
+            % discard response
+            error_logger:warning_report(['message_discarded',
+                                         {reason, wrong_vias},
+                                         {msg, Msg}]),
+            {noreply, State}
+    end;
 handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
     TxData = dict:fetch(TxKey, State#state.transactions),
@@ -198,6 +208,15 @@ generate_branch(Via) ->
     Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
     Via#sip_hdr_via{params = Params}.
 
+count_via(Msg) ->
+    Fun = fun ({'via', List}, Acc) when is_list(List) -> Acc + length(List);
+              ({'via', _Value}, Acc) -> Acc + 1;
+              (_Header, Acc) -> Acc
+          end,
+    lists:foldl(Fun, 0, Msg#sip_message.headers).
+
+%% @doc Handle failed requests (8.1.3.1, RFC 3261)
+%% @end
 handle_failure(Reason, TxData, #state{mod = Mod, mod_state = ModState} = State) ->
     {Status, Phrase} = reason_phrase(Reason),
     Response = sip_message:create_response(TxData#tx_data.request, Status, Phrase),
