@@ -25,8 +25,14 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
--record(state, {transactions = dict:new(), mod, mod_state}).
--record(req_info, {request, destinations, user_data}).
+-record(state, {transactions = dict:new(),
+                mod :: module(),
+                mod_state,
+                follow_redirects = true}).      % If UA should automatically follow redirects
+-record(req_info, {request,
+                   destinations = [],           % list of IP addresses to try next
+                   target_set = orddict:new(),  % URI to visit in case of failure (redirects)
+                   user_data}).
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
@@ -80,27 +86,9 @@ create_request(Method, ToValue, ContactValue) when
 -spec send_request(term(), #sip_message{}) -> {ok, binary()}.
 send_request(Request, UserData) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
-    URI =
-        case sip_message:top_header('route', Request) of
-            {error, not_found} ->
-                RequestURI;
-            {ok, #sip_hdr_address{uri = Route}} ->
-                case sip_headers:is_strict_router(Route) of
-                    true -> RequestURI;
-                    false -> Route
-                end
-        end,
-
-    % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
-    URI2 =
-        case RequestURI of
-            #sip_uri{scheme = sips} -> URI#sip_uri{scheme = sips};
-            _ -> URI
-        end,
-    Destinations = sip_resolve:client_resolve(URI2),
 
     % Dispatch asynchronously
-    ReqInfo = #req_info{request = Request, user_data = UserData, destinations = Destinations},
+    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = [{RequestURI, false}]},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
@@ -123,21 +111,17 @@ handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
 %% @private
 -spec handle_cast(_, #state{}) -> any().
 handle_cast({send, ReqInfo}, State) ->
-    next_destination(ReqInfo, State);
+    next_destination(none, ReqInfo, State);
 handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_cast(Req, ModState),
     wrap_response(Response, State).
 
 %% @private
 -spec handle_info(term(), #state{}) -> any().
-handle_info({tx, TxKey, {response, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_info({tx, TxKey, {response, Msg}}, State) ->
     % RFC3261 8.1.3.3 Vias
     case count_via(Msg) of
-        1 ->
-            % handle response from transaction layer
-            ReqInfo = dict:fetch(TxKey, State#state.transactions),
-            Response = Mod:handle_response(Msg, ReqInfo#req_info.user_data, ModState),
-            wrap_response(Response, State);
+        1 -> handle_response(TxKey, Msg, State);
         _Other ->
             % discard response
             error_logger:warning_report(['message_discarded',
@@ -162,12 +146,7 @@ handle_info({tx, TxKey, {terminated, Reason}}, State) ->
     State2 = State#state{transactions = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    case ReqInfo#req_info.destinations of
-        [] -> % if no more destinations, report as failed response
-            handle_failure(Reason, ReqInfo, State2);
-        _Other ->
-            next_destination(ReqInfo, State2)
-    end;
+    next_destination(Reason, ReqInfo, State2);
 handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_info(Req, ModState),
     wrap_response(Response, State).
@@ -193,7 +172,22 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
+next_destination(Reason, #req_info{destinations = [], request = Request} = ReqInfo, State) when
+  State#state.follow_redirects ->
+    % no destination IPs -- resolve next URI
+    case select_target(ReqInfo#req_info.target_set) of
+        none ->
+            handle_failure(Reason, ReqInfo, State);
+        {URI, TargetSet2} ->
+            % Update Request-URI
+            % FIXME: Update headers as well!
+            Kind = Request#sip_message.kind,
+            Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
+            Destinations = lookup_destinations(Request2),
+            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
+            next_destination(Reason, ReqInfo2, State)
+    end;
+next_destination(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
     % send request to the top destination
     Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
@@ -225,6 +219,7 @@ handle_failure(Reason, ReqInfo, #state{mod = Mod, mod_state = ModState} = State)
 
 reason_phrase({timeout, _Timer}) -> {408, <<"Request Timeout">>};
 reason_phrase({econnrefused, _}) -> {503, <<"Service Unavailable (connection refused)">>};
+reason_phrase(no_more_destinations) -> {503, <<"Service Unavailable (no more destinations to visit)">>};
 reason_phrase(_Reason) -> {503, <<"Service Unavailable">>}.
 
 %% @doc Wrap client state back into the `#state{}'
@@ -235,3 +230,61 @@ wrap_response({noreply, ModState}, State) -> {noreply, State#state{mod_state = M
 wrap_response({noreply, ModState, Timeout}, State) -> {noreply, State#state{mod_state = ModState}, Timeout};
 wrap_response({stop, Reason, Reply, ModState}, State) -> {stop, Reason, Reply, State#state{mod_state = ModState}};
 wrap_response({stop, Reason, ModState}, State) -> {stop, Reason, State#state{mod_state = ModState}}.
+
+select_target([]) -> none;
+select_target([{URI, false} | Rest]) ->
+    % mark destination as visited
+    {URI, [{URI, true} | Rest]};
+select_target([Top | Rest]) ->
+    % try to lookup in the rest URIs
+    case select_target(Rest) of
+        none -> none;
+        {URI, Rest2} -> {URI, [Top | Rest2]}
+    end.
+
+lookup_destinations(Request) ->
+    RequestURI = Request#sip_message.kind#sip_request.uri,
+    URI =
+        case sip_message:top_header('route', Request) of
+            {error, not_found} ->
+                RequestURI;
+            {ok, #sip_hdr_address{uri = Route}} ->
+                case sip_headers:is_strict_router(Route) of
+                    true -> RequestURI;
+                    false -> Route
+                end
+        end,
+
+    % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
+    URI2 =
+        case RequestURI of
+            #sip_uri{scheme = sips} -> URI#sip_uri{scheme = sips};
+            _ -> URI
+        end,
+    sip_resolve:client_resolve(URI2).
+
+
+handle_response(TxKey, #sip_message{kind = #sip_response{status = Status}} = Msg, State)
+  when State#state.follow_redirects, Status >= 300, Status =< 399 ->
+    % automatic handling of redirects
+
+    % collect new URIs
+    ReqInfo = dict:fetch(TxKey, State#state.transactions),
+    % FIXME: handle expires & q
+    % add {URI, false} (only if not present already)
+    CollectFun =
+        fun (Contact, Targets) ->
+                 orddict:update(Contact#sip_hdr_address.uri, fun (V) -> V end, false, Targets)
+        end,
+    % go through Contact: headers and add URIs to our current redirect set
+    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
+    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet},
+    Transactions2 = dict:store(TxKey, ReqInfo2, State#state.transactions),
+
+    % try next destination, was redirected
+    next_destination(no_more_destinations, ReqInfo2, State#state{transactions = Transactions2});
+handle_response(TxKey, Msg, #state{mod = Mod, mod_state = ModState} = State) ->
+    % handle response from transaction layer
+    ReqInfo = dict:fetch(TxKey, State#state.transactions),
+    Response = Mod:handle_response(Msg, ReqInfo#req_info.user_data, ModState),
+    wrap_response(Response, State).

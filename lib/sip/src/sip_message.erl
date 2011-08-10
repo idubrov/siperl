@@ -162,10 +162,10 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
 %%
 %% <em>Note: this function parses the header value if header is in binary form.</em>
 %% @end
--spec foldl_headers(atom() | binary(), 
-                    fun ((Value::term(), AccIn::term()) -> AccOut :: term()), 
+-spec foldl_headers(atom() | binary(),
+                    fun ((Value::term(), AccIn::term()) -> AccOut :: term()),
                     term(),
-                    #sip_message{}) -> Acc :: term(). 
+                    #sip_message{}) -> Acc :: term().
 foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip_message) ->
     Headers = lists:filter(fun ({N, _Value}) -> N =:= Name end, Msg#sip_message.headers),
     Parsed = lists:map(fun ({_Name, Value}) -> sip_headers:parse(Name, Value) end, Headers),
