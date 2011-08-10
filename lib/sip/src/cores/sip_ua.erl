@@ -26,7 +26,7 @@
 -include_lib("sip.hrl").
 
 -record(state, {transactions = dict:new(), mod, mod_state}).
--record(tx_data, {request, fallback, user_data}).
+-record(req_info, {request, destinations, user_data}).
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
@@ -78,7 +78,7 @@ create_request(Method, ToValue, ContactValue) when
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
 -spec send_request(term(), #sip_message{}) -> {ok, binary()}.
-send_request(Request, Data) ->
+send_request(Request, UserData) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
         case sip_message:top_header('route', Request) of
@@ -100,7 +100,8 @@ send_request(Request, Data) ->
     Destinations = sip_resolve:client_resolve(URI2),
 
     % Dispatch asynchronously
-    gen_server:cast(self(), {send, Data, Destinations, Request}),
+    ReqInfo = #req_info{request = Request, user_data = UserData, destinations = Destinations},
+    gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
 %%-----------------------------------------------------------------
@@ -121,9 +122,8 @@ handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
 
 %% @private
 -spec handle_cast(_, #state{}) -> any().
-handle_cast({send, UserData, Destinations, Request}, State) ->
-    TxData = #tx_data{request = Request, user_data = UserData, fallback = Destinations},
-    send_internal(TxData, State);
+handle_cast({send, ReqInfo}, State) ->
+    next_destination(ReqInfo, State);
 handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_cast(Req, ModState),
     wrap_response(Response, State).
@@ -135,8 +135,8 @@ handle_info({tx, TxKey, {response, Msg}}, #state{mod = Mod, mod_state = ModState
     case count_via(Msg) of
         1 ->
             % handle response from transaction layer
-            TxData = dict:fetch(TxKey, State#state.transactions),
-            Response = Mod:handle_response(Msg, TxData#tx_data.user_data, ModState),
+            ReqInfo = dict:fetch(TxKey, State#state.transactions),
+            Response = Mod:handle_response(Msg, ReqInfo#req_info.user_data, ModState),
             wrap_response(Response, State);
         _Other ->
             % discard response
@@ -147,26 +147,26 @@ handle_info({tx, TxKey, {response, Msg}}, #state{mod = Mod, mod_state = ModState
     end;
 handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
-    TxData = dict:fetch(TxKey, State#state.transactions),
-    Response = Mod:handle_request(Msg, TxData#tx_data.user_data, ModState),
+    ReqInfo = dict:fetch(TxKey, State#state.transactions),
+    Response = Mod:handle_request(Msg, ReqInfo#req_info.user_data, ModState),
     wrap_response(Response, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#state.transactions),
     {noreply, State#state{transactions = Dict}};
 handle_info({tx, TxKey, {terminated, Reason}}, State) ->
-    TxData = dict:fetch(TxKey, State#state.transactions),
+    ReqInfo = dict:fetch(TxKey, State#state.transactions),
 
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#state.transactions),
     State2 = State#state{transactions = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    case TxData#tx_data.fallback of
+    case ReqInfo#req_info.destinations of
         [] -> % if no more destinations, report as failed response
-            handle_failure(Reason, TxData, State2);
+            handle_failure(Reason, ReqInfo, State2);
         _Other ->
-            send_internal(TxData, State2)
+            next_destination(ReqInfo, State2)
     end;
 handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
     Response = Mod:handle_info(Req, ModState),
@@ -193,14 +193,14 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_internal(#tx_data{request = Request, fallback = [Top | Fallback]} = TxData, State) ->
+next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
     % send request to the top destination
     Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
 
     % store tx id to {user data, fallback destinations, request} mapping
-    TxData2 = TxData#tx_data{fallback = Fallback},
-    Dict = dict:store(TxKey, TxData2, State#state.transactions),
+    ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
+    Dict = dict:store(TxKey, ReqInfo2, State#state.transactions),
     {noreply, State#state{transactions = Dict}}.
 
 generate_branch(Via) ->
@@ -217,10 +217,10 @@ count_via(Msg) ->
 
 %% @doc Handle failed requests (8.1.3.1, RFC 3261)
 %% @end
-handle_failure(Reason, TxData, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_failure(Reason, ReqInfo, #state{mod = Mod, mod_state = ModState} = State) ->
     {Status, Phrase} = reason_phrase(Reason),
-    Response = sip_message:create_response(TxData#tx_data.request, Status, Phrase),
-    Result = Mod:handle_response(Response, TxData#tx_data.user_data, ModState),
+    Response = sip_message:create_response(ReqInfo#req_info.request, Status, Phrase),
+    Result = Mod:handle_response(Response, ReqInfo#req_info.user_data, ModState),
     wrap_response(Result, State).
 
 reason_phrase({timeout, _Timer}) -> {408, <<"Request Timeout">>};
