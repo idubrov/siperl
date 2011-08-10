@@ -11,12 +11,12 @@
 %% Exports
 %%-----------------------------------------------------------------
 -export([is_request/1, is_response/1, to_binary/1]).
--export([is_provisional_response/1, method/1]).
+-export([is_provisional_response/1, is_redirect_response/1, method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
 -export([create_ack/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
--export([top_header/2, top_via_branch/1]).
+-export([top_header/2, top_via_branch/1, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -58,6 +58,12 @@ is_response(Message) ->
 -spec is_provisional_response(#sip_message{}) -> boolean().
 is_provisional_response(#sip_message{kind = #sip_response{status = Status}}) ->
     Status >= 100 andalso Status =< 199.
+
+%% @doc Check if message is SIP redirect response (3xx).
+%% @end
+-spec is_redirect_response(#sip_message{}) -> boolean().
+is_redirect_response(#sip_message{kind = #sip_response{status = Status}}) ->
+    Status >= 300 andalso Status =< 399.
 
 %% @doc Retrieve method of SIP message
 %%
@@ -151,6 +157,20 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
         {branch, Branch} -> {ok, Branch};
         false -> {error, not_found}
     end.
+
+%% @doc Calls `Fun(Value, AccIn)' on all successive header values named `Name'
+%%
+%% <em>Note: this function parses the header value if header is in binary form.</em>
+%% @end
+-spec foldl_headers(atom() | binary(), 
+                    fun ((Value::term(), AccIn::term()) -> AccOut :: term()), 
+                    term(),
+                    #sip_message{}) -> Acc :: term(). 
+foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip_message) ->
+    Headers = lists:filter(fun ({N, _Value}) -> N =:= Name end, Msg#sip_message.headers),
+    Parsed = lists:map(fun ({_Name, Value}) -> sip_headers:parse(Name, Value) end, Headers),
+    Flat = lists:flatten(Parsed),
+    lists:foldl(Fun, Acc0, Flat).
 
 %% @doc
 %% Retrieve top value of given header. Accepts either full SIP message
@@ -306,17 +326,18 @@ has_header_delimiter(Data, Offset) ->
 %% RFC3261 7.1: The SIP-Version string is case-insensitive, but implementations MUST send upper-case.
 -spec parse_start_line(binary()) -> #sip_request{} | #sip_response{}.
 parse_start_line(StartLine) when is_binary(StartLine) ->
-    case binary:split(StartLine, <<" ">>, [global]) of
-        [Method, RequestURI, <<?SIPVERSION>>]
-          ->
+    % split on three parts
+    [First, Rest] = binary:split(StartLine, <<" ">>),
+    [Second, Third] = binary:split(Rest, <<" ">>),
+    case {First, Second, Third} of
+        {Method, RequestURI, <<?SIPVERSION>>} ->
             #sip_request{method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(Method)),
                          uri = RequestURI};
 
-        [<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase] when
-            $1 =< A andalso A =< $6 andalso % 1xx - 6xx
-            $0 =< B andalso B =< $9 andalso
-            $0 =< C andalso C =< $9
-          ->
+        {<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase} when
+          $1 =< A andalso A =< $6 andalso % 1xx - 6xx
+          $0 =< B andalso B =< $9 andalso
+          $0 =< C andalso C =< $9 ->
             #sip_response{status = list_to_integer([A, B, C]),
                           reason = ReasonPhrase}
     end.
@@ -487,12 +508,18 @@ parse_datagram_test_() ->
     SampleMessage = #sip_message{kind = SampleRequest,
                                  headers = [{'content-length', <<"5">>}],
                                  body = <<"Hello">>},
+    SampleResponse = #sip_response{reason = <<"Moved Permanently">>, status = 301},
+    SampleResponseMessage = #sip_message{kind = SampleResponse,
+                                         headers = [{'content-length', <<"5">>}],
+                                         body = <<"Hello">>},
     [
      % Parse the whole body
      ?_assertEqual({ok, SampleMessage},
                    parse_datagram(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\n\r\nHello">>)),
      ?_assertEqual({ok, SampleMessage#sip_message{headers = [{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}]}},
                    parse_datagram(<<"INVITE sip:urn:service:test SIP/2.0\r\nX-Custom: Nothing\r\nContent-Length: 5\r\n\r\nHello!!!">>)),
+     ?_assertEqual({ok, SampleResponseMessage},
+                   parse_datagram(<<"SIP/2.0 301 Moved Permanently\r\nContent-Length: 5\r\n\r\nHello">>)),
 
      % Message too small
      ?_assertEqual({error, content_too_small,
@@ -517,6 +544,7 @@ parse_datagram_test_() ->
 is_test_() ->
     {ok, Request, _} = parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nX-Custom: Nothing\r\n\r\nHello">>, none),
     {ok, Response, _} = parse_stream(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, none),
+    {ok, RedResponse, _} = parse_stream(<<"SIP/2.0 301 Moved Permanently\r\nContent-Length: 5\r\n\r\nHello">>, none),
     {ok, ProvResponse} = parse_datagram(<<"SIP/2.0 100 Trying\r\n\r\n">>),
     [?_assertEqual(true, is_request(Request)),
      ?_assertEqual(false, is_request(Response)),
@@ -524,6 +552,8 @@ is_test_() ->
      ?_assertEqual(true, is_response(Response)),
      ?_assertEqual(true, is_provisional_response(ProvResponse)),
      ?_assertEqual(false, is_provisional_response(Response)),
+     ?_assertEqual(true, is_redirect_response(RedResponse)),
+     ?_assertEqual(false, is_redirect_response(Response)),
      ?_assertEqual(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nx-custom: Nothing\r\n\r\nHello">>, to_binary(Request)),
      ?_assertEqual(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, to_binary(Response))
     ].
