@@ -278,7 +278,7 @@ handle_response(TxKey, #sip_message{kind = #sip_response{status = Status}} = Msg
         end,
     % go through Contact: headers and add URIs to our current redirect set
     NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
-    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet},
+    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet, destinations = []},
     Transactions2 = dict:store(TxKey, ReqInfo2, State#state.transactions),
 
     % try next destination, was redirected
