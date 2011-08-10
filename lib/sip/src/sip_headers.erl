@@ -252,7 +252,7 @@ parse_address(Bin) ->
     {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
     {Params, Bin3} = parse_params(Bin2, fun (_Name, Value) -> Value end),
     Value = #sip_hdr_address{display_name = sip_binary:trim(Display),
-                             uri = URI,
+                             uri = sip_uri:parse(URI),
                              params = Params},
     {Value, Bin3}.
 
