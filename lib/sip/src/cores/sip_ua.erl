@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/3]).
--export([create_request/3, send_request/2, send_response/1]).
+-export([create_request/3, send_request/2, send_response/2]).
 
 %% Custom behaviour
 -export([behaviour_info/1]).
@@ -94,9 +94,8 @@ send_request(Request, UserData) ->
 
 %% @doc Send the response according to the XXXXXXXXXXX
 %% @end
--spec send_response(#sip_message{}) -> {ok, binary()}.
-send_response(Response) ->
-    TxKey = sip_transaction:tx_key(server, Response),
+-spec send_response(#sip_tx_server{}, #sip_message{}) -> {ok, binary()}.
+send_response(TxKey, Response) ->
     sip_transaction:send_response(TxKey, Response).
 
 %%-----------------------------------------------------------------
@@ -138,7 +137,7 @@ handle_info({tx, TxKey, {response, Msg}}, State) ->
     end;
 handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
-    Response = Mod:handle_request(Msg, undefined, ModState),
+    Response = Mod:handle_request(Msg, TxKey, ModState),
     wrap_response(Response, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list

@@ -43,10 +43,10 @@ handle_response(_Response, _UserData, State) ->
     {noreply, State}.
 
 %% @private
-handle_request(Request, _UserData, State) ->
+handle_request(Request, TxKey, State) ->
     ?debugHere,
     Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
-    sip_ua:send_response(Response),
+    sip_ua:send_response(TxKey, Response),
     ?debugHere,
     {noreply, State}.
 
