@@ -35,7 +35,6 @@ start_link() ->
 %% Transport callbacks
 -spec handle_request(#sip_connection{}, #sip_message{}) -> ok.
 handle_request(_Connection, Msg) when is_record(Msg, sip_message) ->
-    % FIXME: reply with 405 Method Not Allowed?
     ok.
 
 -spec handle_response(#sip_connection{}, #sip_message{}) -> ok.

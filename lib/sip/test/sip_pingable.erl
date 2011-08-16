@@ -43,11 +43,14 @@ handle_response(_Response, _UserData, State) ->
     {noreply, State}.
 
 %% @private
-handle_request(Request, TxKey, State) ->
-    ?debugHere,
+handle_request(Request, TxKey, State)
+  when Request#sip_message.kind#sip_request.method =:= 'OPTIONS' ->
     Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
     sip_ua:send_response(TxKey, Response),
-    ?debugHere,
+    {noreply, State};
+handle_request(Request, TxKey, State) ->
+    % Not allowed
+    sip_ua:send_response(TxKey, sip_message:create_response(Request, 405)),
     {noreply, State}.
 
 %% @private
