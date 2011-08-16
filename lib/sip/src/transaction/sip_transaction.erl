@@ -100,8 +100,7 @@ handle_response(Msg) ->
     true = sip_message:is_response(Msg),
     handle_internal(client, Msg).
 
-%% @doc
-%% Pass given response from the TU to the given transaction.
+%% @doc Pass given response from the TU to the given transaction.
 %% @end
 -spec send_response(#sip_tx_client{} | #sip_tx_server{}, #sip_message{}) ->
           not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.

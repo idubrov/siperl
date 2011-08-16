@@ -1,11 +1,11 @@
 %%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <wfragg@gmail.com>
-%%% @doc Pinger UAC implementations. Sends OPTIONS request to the
-%%% given destination.
+%%% @doc Pingable UAS implementations. Replies to the OPTIONS
+%%% requests.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
--module(sip_pinger).
+-module(sip_pingable).
 
 -behaviour(sip_ua).
 
@@ -16,7 +16,7 @@
 -include_lib("sip_test.hrl").
 
 %% API
--export([start_link/0, ping/2]).
+-export([start_link/0]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -30,23 +30,24 @@
 start_link() ->
     sip_ua:start_link(?MODULE, {}, []).
 
-ping(Pid, To) ->
-    gen_server:call(Pid, {ping, To}, 100000).
-
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------
 %% @private
 init({}) ->
+    gproc:add_local_property(uas, fun is_applicable/1),
     {ok, #state{}}.
 
 %% @private
-handle_response(Response, UserData, State) ->
-    gen_server:reply(UserData, Response),
+handle_response(_Response, _UserData, State) ->
     {noreply, State}.
 
 %% @private
-handle_request(_Request, _UserData, State) ->
+handle_request(Request, _UserData, State) ->
+    ?debugHere,
+    Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
+    sip_ua:send_response(Response),
+    ?debugHere,
     {noreply, State}.
 
 %% @private
@@ -54,11 +55,6 @@ handle_info(Req, State) ->
     {noreply, State}.
 
 %% @private
-handle_call({ping, To}, Client, State) ->
-    From = sip_headers:address(<<"Mr. Pinger">>, <<"sip:pinger@127.0.0.1">>, []),
-    Request = sip_ua:create_request('OPTIONS', To, From),
-    ok = sip_ua:send_request(Request, Client),
-    {noreply, State};
 handle_call(Req, _From, State) ->
     {reply, ok, State}.
 
@@ -74,3 +70,5 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+is_applicable(#sip_message{kind = #sip_request{method = 'OPTIONS'}}) -> true;
+is_applicable(_Msg) -> false.

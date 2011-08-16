@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/3]).
--export([create_request/3, send_request/2]).
+-export([create_request/3, send_request/2, send_response/1]).
 
 %% Custom behaviour
 -export([behaviour_info/1]).
@@ -83,7 +83,7 @@ create_request(Method, ToValue, ContactValue) when
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
--spec send_request(term(), #sip_message{}) -> {ok, binary()}.
+-spec send_request(#sip_message{}, term()) -> {ok, binary()}.
 send_request(Request, UserData) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
 
@@ -91,6 +91,13 @@ send_request(Request, UserData) ->
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = [{RequestURI, false}]},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
+
+%% @doc Send the response according to the XXXXXXXXXXX
+%% @end
+-spec send_response(#sip_message{}) -> {ok, binary()}.
+send_response(Response) ->
+    TxKey = sip_transaction:tx_key(server, Response),
+    sip_transaction:send_response(TxKey, Response).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -131,8 +138,7 @@ handle_info({tx, TxKey, {response, Msg}}, State) ->
     end;
 handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
-    ReqInfo = dict:fetch(TxKey, State#state.transactions),
-    Response = Mod:handle_request(Msg, ReqInfo#req_info.user_data, ModState),
+    Response = Mod:handle_request(Msg, undefined, ModState),
     wrap_response(Response, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
