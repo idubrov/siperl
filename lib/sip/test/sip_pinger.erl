@@ -50,7 +50,7 @@ handle_request(_Request, _UserData, State) ->
     {noreply, State}.
 
 %% @private
-handle_info(Req, State) ->
+handle_info(_Req, State) ->
     {noreply, State}.
 
 %% @private
@@ -59,11 +59,11 @@ handle_call({ping, To}, Client, State) ->
     Request = sip_ua:create_request('OPTIONS', To, From),
     ok = sip_ua:send_request(Request, Client),
     {noreply, State};
-handle_call(Req, _From, State) ->
+handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast(Req, State) ->
+handle_cast(_Req, State) ->
     {noreply, State}.
 
 %% @private
