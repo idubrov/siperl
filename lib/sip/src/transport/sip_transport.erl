@@ -165,10 +165,10 @@ dispatch(From, Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
     % 18.2.1: route to server transaction or to core
     case sip_transaction:handle_request(Msg2) of
         not_handled ->
-            case sip_core:lookup_tu(Connection, Msg) of
+            case sip_core:lookup_tu(Connection, Msg2) of
                 {ok, TU} ->
                     % FIXME: should we create {{connection, tx_key}, pid} property here and transfer to Tx process?
-                    sip_transaction:start_server_tx(TU, Msg),
+                    sip_transaction:start_server_tx(TU, Msg2),
                     ok;
                 undefined ->
                     % No TU for request, pass to core
