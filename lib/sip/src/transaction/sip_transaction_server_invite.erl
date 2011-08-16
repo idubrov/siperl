@@ -49,7 +49,7 @@ handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, 'PROCEEDING', TxState) 
 %% @end
 handle_info(provisional, _State, TxState) ->
     % send provisional response
-    Trying = sip_message:create_response(TxState#tx_state.request, 100, <<"Trying">>),
+    Trying = sip_message:create_response(TxState#tx_state.request, 100),
     TxState2 = TxState#tx_state{provisional = Trying},
 
     TxState3 = ?PROVISIONAL(TxState2),

@@ -58,7 +58,7 @@ create_request(Method, ToValue, ContactValue) when
   is_record(ToValue, sip_hdr_address), is_record(ContactValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
-    RequestURI = sip_uri:parse(ToValue#sip_hdr_address.uri),
+    RequestURI = ToValue#sip_hdr_address.uri,
 
     % will be updated later (by transport layer)
     % branch will be added before sending
@@ -217,15 +217,15 @@ count_via(Msg) ->
 %% @doc Handle failed requests (8.1.3.1, RFC 3261)
 %% @end
 handle_failure(Reason, ReqInfo, #state{mod = Mod, mod_state = ModState} = State) ->
-    {Status, Phrase} = reason_phrase(Reason),
-    Response = sip_message:create_response(ReqInfo#req_info.request, Status, Phrase),
+    Status = error_to_status(Reason),
+    Response = sip_message:create_response(ReqInfo#req_info.request, Status),
     Result = Mod:handle_response(Response, ReqInfo#req_info.user_data, ModState),
     wrap_response(Result, State).
 
-reason_phrase({timeout, _Timer}) -> {408, <<"Request Timeout">>};
-reason_phrase({econnrefused, _}) -> {503, <<"Service Unavailable (connection refused)">>};
-reason_phrase(no_more_destinations) -> {503, <<"Service Unavailable (no more destinations to visit)">>};
-reason_phrase(_Reason) -> {503, <<"Service Unavailable">>}.
+error_to_status({timeout, _Timer}) -> 408;
+error_to_status({econnrefused, _}) -> 503;
+error_to_status(no_more_destinations) -> 503;
+error_to_status(_Reason) -> 500.
 
 %% @doc Wrap client state back into the `#state{}'
 %% @end

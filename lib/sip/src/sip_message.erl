@@ -13,7 +13,7 @@
 -export([is_request/1, is_response/1, to_binary/1]).
 -export([is_provisional_response/1, is_redirect_response/1, method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
--export([create_ack/2, create_response/3]).
+-export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
 -export([top_header/2, top_via_branch/1, foldl_headers/4]).
@@ -385,6 +385,12 @@ create_response(Request, Status, Reason) ->
     Kind = #sip_response{status = Status, reason = Reason},
     #sip_message{kind = Kind, headers = Headers}.
 
+%% @doc Create response for given request (with default Reason)
+%% @end
+-spec create_response(#sip_message{}, integer()) -> #sip_message{}.
+create_response(Request, Status) ->
+    create_response(Request, Status, default_reason(Status)).
+
 %% @doc Validate that request contains all required headers
 %% A valid SIP request formulated by a UAC MUST, at a minimum, contain
 %% the following header fields: To, From, CSeq, Call-ID, Max-Forwards,
@@ -426,6 +432,60 @@ validate_request(Request) when is_record(Request, sip_message) ->
                (Method =/= 'INVITE' orelse element(7, C) =:= 1)
           -> ok;
         _ -> {error, invalid_headers}
+    end.
+
+default_reason(Status) ->
+    case Status of
+        100 -> <<"Trying">>;
+        180 -> <<"Ringing">>;
+        181 -> <<"Call Is Being Forwarded">>;
+        182 -> <<"Queued">>;
+        183 -> <<"Session Progress">>;
+        200 -> <<"Ok">>;
+        300 -> <<"Multiple Choices">>;
+        301 -> <<"Moved Permanently">>;
+        302 -> <<"Moved Temporarily">>;
+        305 -> <<"Use Proxy">>;
+        380 -> <<"Alternative Service">>;
+        400 -> <<"Bad Request">>;
+        401 -> <<"Unauthorized">>;
+        402 -> <<"Payment Required">>;
+        403 -> <<"Forbidden">>;
+        404 -> <<"Not Found">>;
+        405 -> <<"Method Not Allowed">>;
+        406 -> <<"Not Acceptable">>;
+        407 -> <<"Proxy Authentication Required">>;
+        408 -> <<"Request Timeout">>;
+        410 -> <<"Gone">>;
+        413 -> <<"Request Entity Too Large">>;
+        414 -> <<"Request-URI Too Long">>;
+        415 -> <<"Unsupported Media Type">>;
+        416 -> <<"Unsupported URI Scheme">>;
+        420 -> <<"Bad Extension">>;
+        421 -> <<"Extension Required">>;
+        423 -> <<"Interval Too Brief">>;
+        480 -> <<"Temporarily Unavailable">>;
+        481 -> <<"Call/Transaction Does Not Exist">>;
+        482 -> <<"Loop Detected">>;
+        483 -> <<"Too Many Hops">>;
+        484 -> <<"Address Incomplete">>;
+        485 -> <<"Ambiguous">>;
+        486 -> <<"Busy Here">>;
+        487 -> <<"Request Terminated">>;
+        488 -> <<"Not Acceptable Here">>;
+        491 -> <<"Request Pending">>;
+        493 -> <<"Undecipherable">>;
+        500 -> <<"Server Internal Error">>;
+        501 -> <<"Not Implemented">>;
+        502 -> <<"Bad Gateway">>;
+        503 -> <<"Service Unavailable">>;
+        504 -> <<"Server Time-out">>;
+        505 -> <<"Version Not Supported">>;
+        513 -> <<"Message Too Large">>;
+        600 -> <<"Busy Everywhere">>;
+        603 -> <<"Decline">>;
+        604 -> <<"Does Not Exist Anywhere">>;
+        606 -> <<"Not Acceptable">>
     end.
 
 %%-----------------------------------------------------------------
