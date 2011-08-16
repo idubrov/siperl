@@ -412,14 +412,16 @@ cseq(Sequence, Method) when
     #sip_hdr_cseq{method = Method, sequence = Sequence}.
 
 
-%% @doc
-%% Construct address (value of From/To headers).
+%% @doc Construct address (value of From/To headers).
+%%
+%% <em>Note: parses URI if it is given in binary form</em>
 %% @end
 -spec address(binary(), #sip_uri{} | #tel_uri{} | binary(), list()) -> #sip_hdr_address{}.
-address(DisplayName, URI, Params) when
-  is_binary(DisplayName),
-  is_list(Params) ->
+address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), is_binary(URI) ->
+    #sip_hdr_address{display_name = DisplayName, uri = sip_uri:parse(URI), params = Params};
+address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
+
 
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
