@@ -28,7 +28,7 @@
 -record(state, {transactions = dict:new(),
                 mod :: module(),
                 mod_state,
-                is_handled,
+                is_handled,                     % Function that checks if given method is handled by UA implementation
                 follow_redirects = true}).      % If UA should automatically follow redirects
 -record(req_info, {request,
                    destinations = [],           % list of IP addresses to try next
@@ -141,14 +141,14 @@ handle_info({tx, TxKey, {response, Msg}}, State) ->
 handle_info({tx, _TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
     Method = Msg#sip_message.kind#sip_request.method,
-    % FIXME: Method not handled...
     IsHandled = State#state.is_handled,
     case IsHandled(Method) of
         true ->
             Response = Mod:Method(Msg, ModState),
             wrap_response(Response, State);
         false ->
-            % Send 'Method Not Allowed'
+            % Send 'Method Not Allowed' by default
+            % FIXME: should allow implementing generic callback function.
             Resp = sip_message:create_response(Msg, 405),
             send_response(Resp),
             {noreply, State}
