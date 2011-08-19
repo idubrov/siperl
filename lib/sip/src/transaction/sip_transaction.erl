@@ -27,24 +27,26 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
-%% @doc
-%% Start new client transaction.
+%% @doc Start new client transaction.
 %% @end
 -spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, To, Request)
   when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
+    % Every new client transaction has its own branch value
+    Request2 = sip_message:with_branch(Request, sip_idgen:generate_branch()),
+
     % Transport reliability is from To: header
     % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
     Reliable = sip_transport:is_reliable(To#sip_destination.transport),
 
-    Key = tx_key(client, Request),
-    Module = tx_module(client, Request),
+    Key = tx_key(client, Request2),
+    Module = tx_module(client, Request2),
     TxState = #tx_state{to = To,
                         tx_key = Key,
                         tx_user = TU,
-                        request = Request,
+                        request = Request2,
                         reliable = Reliable},
     case sip_transaction_tx_sup:start_tx(Module, TxState) of
         {ok, _Pid} -> {ok, Key};

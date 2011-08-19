@@ -59,13 +59,13 @@ setup() ->
     meck:new(sip_transport, [passthrough]),
     meck:expect(sip_transport, send_request,
                 fun (_To, Msg, _Opts) ->
-                         TestPid = sip_test:pid_from_branch(Msg),
+                         TestPid = sip_test:pid_from_message(Msg),
                          TestPid ! {tp, request, Msg},
                          ok
                 end),
     meck:expect(sip_transport, send_response,
                 fun (Msg) ->
-                         TestPid = sip_test:pid_from_branch(Msg),
+                         TestPid = sip_test:pid_from_message(Msg),
                          TestPid ! {tp, response, Msg},
                          ok
                 end),
@@ -95,20 +95,18 @@ for_transports(Tests, Transports) ->
 client_invite_ok(Transport) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     % Should retransmit if unreliable, should not otherwise
     timer:sleep(500),
     case sip_transport:is_reliable(Transport) of
         false ->
             ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                           {tp, request, Request});
+                           {tp, request, ExpectedRequest});
 
         true ->
             ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
@@ -116,6 +114,7 @@ client_invite_ok(Transport) ->
     end,
 
     % Emulate provisional response received by transport layer
+    Provisional = sip_message:create_response(ExpectedRequest, 100, <<"Trying">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Provisional)),
 
@@ -128,6 +127,7 @@ client_invite_ok(Transport) ->
                    {tx, TxKey, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
+    Response = sip_message:create_response(ExpectedRequest, 200, <<"Ok">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Response)),
 
@@ -153,22 +153,23 @@ client_invite_ok(Transport) ->
 client_invite_err(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Response = sip_message:create_response(Request, 500, <<"Internal error">>),
-    ACK = sip_message:create_ack(Request, Response),
     IsReliable = sip_transport:is_reliable(Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
 
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect first request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     % Emulate response received by transport layer
+    Response = sip_message:create_response(ExpectedRequest, 500, <<"Internal error">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Response)),
 
     ?assertReceive("Expect response to be passed to TU",
                    {tx, TxKey, {response, Response}}),
 
+    ACK = sip_message:create_ack(ExpectedRequest, Response),
     ?assertReceive("Expect ACK to be sent by tx layer",
                    {tp, request, ACK}),
 
@@ -220,8 +221,9 @@ client_invite_timeout_calling(Transport)->
     Request = sip_test:invite(Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect first request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     timer:sleep(32000),
 
@@ -248,13 +250,13 @@ client_invite_timeout_calling(Transport)->
 client_invite_timeout_proceeding(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
-
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect first request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     % Emulate provisional response received by transport layer
+    Provisional = sip_message:create_response(ExpectedRequest, 100, <<"Trying">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Provisional)),
 
@@ -281,20 +283,19 @@ client_invite_timeout_proceeding(Transport)->
 client_ok(Transport) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
 
     ?assertReceive("Expect request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     % Should retransmit if unreliable, should not otherwise
     timer:sleep(500),
     case sip_transport:is_reliable(Transport) of
         false ->
             ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                           {tp, request, Request});
+                           {tp, request, ExpectedRequest});
 
         true ->
             ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
@@ -302,6 +303,7 @@ client_ok(Transport) ->
     end,
 
     % Emulate provisional response received by transport layer
+    Provisional = sip_message:create_response(ExpectedRequest, 100, <<"Trying">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Provisional)),
 
@@ -313,7 +315,7 @@ client_ok(Transport) ->
     case sip_transport:is_reliable(Transport) of
         false ->
             ?assertReceive("Expect retransmission (in 500 ms) to be sent by tx layer",
-                           {tp, request, Request});
+                           {tp, request, ExpectedRequest});
 
         true ->
             ?assertReceiveNot("Expect retransmission not to be sent by tx layer",
@@ -328,6 +330,7 @@ client_ok(Transport) ->
                    {tx, TxKey, {response, Provisional}}),
 
     % Emulate final 2xx response received by transport layer
+    Response = sip_message:create_response(ExpectedRequest, 200, <<"Ok">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Response)),
 
@@ -367,8 +370,9 @@ client_timeout_trying(Transport)->
     Request = sip_test:request('OPTIONS', Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect first request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     timer:sleep(32000),
 
@@ -395,13 +399,14 @@ client_timeout_trying(Transport)->
 client_timeout_proceeding(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
-    Provisional = sip_message:create_response(Request, 100, <<"Trying">>),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
+    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
     ?assertReceive("Expect first request to be sent by tx layer",
-                   {tp, request, Request}),
+                   {tp, request, ExpectedRequest}),
 
     % Emulate provisional response received by transport layer
+    Provisional = sip_message:create_response(ExpectedRequest, 100, <<"Trying">>),
     ?assertEqual({ok, TxKey},
                  sip_transaction:handle_response(Provisional)),
 

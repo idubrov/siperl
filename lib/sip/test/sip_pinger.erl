@@ -41,11 +41,6 @@ init({}) ->
     {ok, #state{}}.
 
 %% @private
-handle_response(Response, UserData, State) ->
-    gen_server:reply(UserData, Response),
-    {noreply, State}.
-
-%% @private
 handle_info(_Req, State) ->
     {noreply, State}.
 

@@ -20,19 +20,17 @@
 invite(Transport) ->
     request('INVITE', Transport).
 
-%% @doc
-%% Generate test request with given `Method'. Sets `Transport' and `Branch' on
-%% top via.
+%% @doc Generate test request with given `Method'. Sets `Transport' on top via.
 %% @end
 request(Method, Transport) ->
     % FIXME: Update sip_headers.
     Headers = [{'cseq', sip_headers:cseq(232908, Method)},
-               {'via', sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, branch_from_pid()}])},
+               {'via', sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, sip_idgen:generate_branch()}])},
                {'via', sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])},
                {'from', sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [{'tag', <<"1928301774">>}])},
                {'contact', sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [])},
                {'to', sip_headers:address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{'tag', <<"839408234">>}])},
-               {'call-id', <<"a84b4c76e66710">>},
+               {'call-id', list_to_binary(pid_to_list(self()))}, % encode PID in header for testing purposes
                {'max-forwards', 70},
                {'content-length', 6}],
     Msg = #sip_message{kind = #sip_request{method = Method, uri = <<"sip:127.0.0.1/test">>},
@@ -41,20 +39,9 @@ request(Method, Transport) ->
     Msg.
 
 %% Extract test process pid from the top branch
-pid_from_branch(Msg) when is_record(Msg, sip_message)->
-    {ok, Branch} = sip_message:top_via_branch(Msg),
-    pid_from_branch(Branch);
-pid_from_branch(<<?MAGIC_COOKIE, $_, EncodedPid/binary>>) ->
-    Pid = [case C of $A -> $<; $B -> $>; $C -> $.; _ -> C end || <<C>> <= EncodedPid],
-    list_to_pid(Pid).
-
-%% @doc
-%% Return value of the branch, derived from the process current id. Process id
-%% could be restored from the branch value by calling {@link sip_test:pid_from_branch/1}.
-%% @end
-branch_from_pid() ->
-    EncodedPid = << <<case C of $< -> $A; $> -> $B; $. -> $C; _ -> C end>> || C <- pid_to_list(self())>>,
-    <<?MAGIC_COOKIE, $_, EncodedPid/binary>>.
+pid_from_message(Msg) when is_record(Msg, sip_message)->
+    {ok, PidBinary} = sip_message:top_header('call-id', Msg),
+    list_to_pid(binary_to_list(PidBinary)).
 
 %% @doc
 %% Generate binary by repeating given binary.

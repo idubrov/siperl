@@ -16,7 +16,7 @@
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
--export([top_header/2, top_via_branch/1, foldl_headers/4]).
+-export([top_header/2, top_via_branch/1, with_branch/2, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -487,6 +487,17 @@ default_reason(Status) ->
         604 -> <<"Does Not Exist Anywhere">>;
         606 -> <<"Not Acceptable">>
     end.
+
+%% @doc Update top `Via:' header of given request with provided branch value
+%% @end
+-spec with_branch(#sip_message{}, binary()) -> #sip_message{}.
+with_branch(#sip_message{kind = #sip_request{}} = Msg, Branch) when is_binary(Branch) ->
+    UpdateBranch =
+        fun (Via) ->
+                 Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
+                 Via#sip_hdr_via{params = Params}
+        end,
+    update_top_header('via', UpdateBranch, Msg).
 
 %%-----------------------------------------------------------------
 %% Tests

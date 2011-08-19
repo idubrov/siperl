@@ -127,16 +127,28 @@ handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> any().
-handle_info({tx, TxKey, {response, Msg}}, State) ->
+handle_info({tx, TxKey, {response, Msg}}, #state{mod_state = ModState} = State) ->
+
     % RFC3261 8.1.3.3 Vias
-    case count_via(Msg) of
-        1 -> handle_response(TxKey, Msg, State);
-        _Other ->
-            % discard response
+    Status = Msg#sip_message.kind#sip_response.status,
+    Redirect = State#state.follow_redirects andalso Status >= 300 andalso Status =< 399,
+    ViasCount = count_via(Msg),
+    if
+        ViasCount =/= 1 ->
+            % discard response, too much/few Via's
             error_logger:warning_report(['message_discarded',
                                          {reason, wrong_vias},
                                          {msg, Msg}]),
-            {noreply, State}
+            {noreply, State};
+        Redirect ->
+            % handle automatic redirect
+            handle_redirect(TxKey, Msg, State);
+        true ->
+            % handle response from transaction layer
+            ReqInfo = dict:fetch(TxKey, State#state.transactions),
+            Callback = ReqInfo#req_info.callback,
+            Response = Callback(Msg, ModState),
+            wrap_response(Response, State)
     end;
 handle_info({tx, _TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
@@ -195,7 +207,12 @@ next_destination(Reason, #req_info{destinations = [], request = Request} = ReqIn
     % no destination IPs -- resolve next URI
     case select_target(ReqInfo#req_info.target_set) of
         none ->
-            handle_failure(Reason, ReqInfo, State);
+            % Handle failed requests (8.1.3.1, RFC 3261)
+            Status = error_to_status(Reason),
+            Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
+            Callback = ReqInfo#req_info.callback,
+            Response = Callback(Msg, State#state.mod_state),
+            wrap_response(Response, State);
         {URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -207,18 +224,12 @@ next_destination(Reason, #req_info{destinations = [], request = Request} = ReqIn
     end;
 next_destination(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
     % send request to the top destination
-    Request2 = sip_message:update_top_header('via', fun generate_branch/1, Request),
-    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
+    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request),
 
     % store tx id to {user data, fallback destinations, request} mapping
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
     Dict = dict:store(TxKey, ReqInfo2, State#state.transactions),
     {noreply, State#state{transactions = Dict}}.
-
-generate_branch(Via) ->
-    Branch = sip_idgen:generate_branch(),
-    Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
-    Via#sip_hdr_via{params = Params}.
 
 count_via(Msg) ->
     Fun = fun ({'via', List}, Acc) when is_list(List) -> Acc + length(List);
@@ -226,15 +237,6 @@ count_via(Msg) ->
               (_Header, Acc) -> Acc
           end,
     lists:foldl(Fun, 0, Msg#sip_message.headers).
-
-%% @doc Handle failed requests (8.1.3.1, RFC 3261)
-%% @end
-handle_failure(Reason, ReqInfo, #state{mod_state = ModState} = State) ->
-    Status = error_to_status(Reason),
-    Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
-    Callback = ReqInfo#req_info.callback,
-    Response = Callback(Msg, ModState),
-    wrap_response(Response, State).
 
 error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;
@@ -282,9 +284,9 @@ lookup_destinations(Request) ->
         end,
     sip_resolve:client_resolve(URI2).
 
-
-handle_response(TxKey, #sip_message{kind = #sip_response{status = Status}} = Msg, State)
-  when State#state.follow_redirects, Status >= 300, Status =< 399 ->
+%% @doc Automatic handling of 3xx responses (redirects)
+%% @end
+handle_redirect(TxKey, Msg, State) ->
     % automatic handling of redirects
 
     % collect new URIs
@@ -301,10 +303,4 @@ handle_response(TxKey, #sip_message{kind = #sip_response{status = Status}} = Msg
     Transactions2 = dict:store(TxKey, ReqInfo2, State#state.transactions),
 
     % try next destination, was redirected
-    next_destination(no_more_destinations, ReqInfo2, State#state{transactions = Transactions2});
-handle_response(TxKey, Msg, #state{mod_state = ModState} = State) ->
-    % handle response from transaction layer
-    ReqInfo = dict:fetch(TxKey, State#state.transactions),
-    Callback = ReqInfo#req_info.callback,
-    Response = Callback(Msg, ModState),
-    wrap_response(Response, State).
+    next_destination(no_more_destinations, ReqInfo2, State#state{transactions = Transactions2}).
