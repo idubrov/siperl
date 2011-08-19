@@ -448,7 +448,7 @@ server_invite_ok(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Provisional response is sent by TU
-    sip_transaction:send_response(TxKey, Ringing),
+    sip_transaction:send_response(Ringing),
     ?assertReceive("Expect provisional response is sent", {tp, response, Ringing}),
 
     case IsReliable of
@@ -462,7 +462,7 @@ server_invite_ok(Transport) ->
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(TxKey, Response),
+    sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     ?assertReceive("Expect tx to terminate immediately after receiving final response",
@@ -498,7 +498,7 @@ server_invite_err(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
-    sip_transaction:send_response(TxKey, Response),
+    sip_transaction:send_response(Response),
     ?assertReceive("Expect response is sent", {tp, response, Response}),
 
     % Check retransmissions handling
@@ -557,7 +557,7 @@ server_invite_timeout(Transport) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
-    sip_transaction:send_response(TxKey, Response),
+    sip_transaction:send_response(Response),
     ?assertReceive("Expect response is sent", {tp, response, Response}),
 
     timer:sleep(32000),
@@ -635,11 +635,11 @@ server_ok(Transport) ->
     ?assertReceiveNot("Expect request is not passed to TU", {tx, TxKey, {request, Request}}),
 
     % Provisional response is sent by TU
-    sip_transaction:send_response(TxKey, Trying),
+    sip_transaction:send_response(Trying),
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Additional provisioning responses
-    sip_transaction:send_response(TxKey, Trying2),
+    sip_transaction:send_response(Trying2),
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying2}),
 
     case IsReliable of
@@ -653,7 +653,7 @@ server_ok(Transport) ->
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(TxKey, Response),
+    sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     case IsReliable of
@@ -662,7 +662,7 @@ server_ok(Transport) ->
             ok;
         false ->
             % additional responses are discarded
-            sip_transaction:send_response(TxKey, Response2),
+            sip_transaction:send_response(Response2),
 
             {ok, TxKey} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect final response is re-sent", {tp, response, Response}),
@@ -697,7 +697,7 @@ server_err(Transport) ->
     ?assertReceive("Expect request is passed to TU", {tx, TxKey, {request, Request}}),
 
     % 500 response is sent by TU
-    sip_transaction:send_response(TxKey, Response),
+    sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     % wait for timer J to fire

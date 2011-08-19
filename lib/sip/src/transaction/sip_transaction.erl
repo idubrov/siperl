@@ -14,7 +14,7 @@
 -include_lib("sip_transaction.hrl").
 
 % Client API
--export([start_client_tx/3, start_server_tx/2, send_response/2, tx_key/2]).
+-export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2]).
 -export([list_tx/0]).
 
 % Internal API for transport layer
@@ -100,13 +100,14 @@ handle_response(Msg) ->
     true = sip_message:is_response(Msg),
     handle_internal(client, Msg).
 
-%% @doc Pass given response from the TU to the given transaction.
+%% @doc Pass given response from the TU to the server transaction.
 %% @end
--spec send_response(#sip_tx_client{} | #sip_tx_server{}, #sip_message{}) ->
-          not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
-send_response(Key, Msg) ->
+-spec send_response(#sip_message{}) ->
+          not_handled | {ok, #sip_tx_server{}}.
+send_response(Msg) ->
     true = sip_message:is_response(Msg),
-    tx_send(Key, Msg).
+    TxKey = tx_key(server, Msg),
+    tx_send(TxKey, Msg).
 
 %%-----------------------------------------------------------------
 %% Internal functions

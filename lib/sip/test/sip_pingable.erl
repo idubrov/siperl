@@ -20,7 +20,8 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2, handle_request/3, handle_response/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
+-export(['OPTIONS'/2]).
 
 -record(state, {}).
 
@@ -39,18 +40,9 @@ init({}) ->
     {ok, #state{}}.
 
 %% @private
-handle_response(_Response, _UserData, State) ->
-    {noreply, State}.
-
-%% @private
-handle_request(Request, TxKey, State)
-  when Request#sip_message.kind#sip_request.method =:= 'OPTIONS' ->
+'OPTIONS'(Request, State) ->
     Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
-    sip_ua:send_response(TxKey, Response),
-    {noreply, State};
-handle_request(Request, TxKey, State) ->
-    % Not allowed
-    sip_ua:send_response(TxKey, sip_message:create_response(Request, 405)),
+    sip_ua:send_response(Response),
     {noreply, State}.
 
 %% @private
@@ -74,4 +66,4 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 is_applicable(#sip_message{kind = #sip_request{method = 'OPTIONS'}}) -> true;
-is_applicable(_Msg) -> false.
+is_applicable(_Msg) -> true.

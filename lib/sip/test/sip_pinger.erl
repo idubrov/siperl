@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2, handle_request/3, handle_response/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
 
 -record(state, {}).
 
@@ -46,10 +46,6 @@ handle_response(Response, UserData, State) ->
     {noreply, State}.
 
 %% @private
-handle_request(_Request, _UserData, State) ->
-    {noreply, State}.
-
-%% @private
 handle_info(_Req, State) ->
     {noreply, State}.
 
@@ -57,7 +53,8 @@ handle_info(_Req, State) ->
 handle_call({ping, To}, Client, State) ->
     From = sip_headers:address(<<"Mr. Pinger">>, <<"sip:pinger@127.0.0.1">>, []),
     Request = sip_ua:create_request('OPTIONS', To, From),
-    ok = sip_ua:send_request(Request, Client),
+    Callback = fun (Response, S) -> gen_server:reply(Client, Response), {noreply, S} end,
+    ok = sip_ua:send_request(Request, Callback),
     {noreply, State};
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.

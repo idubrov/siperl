@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/3]).
--export([create_request/3, send_request/2, send_response/2]).
+-export([create_request/3, send_request/2, send_response/1]).
 
 %% Custom behaviour
 -export([behaviour_info/1]).
@@ -28,15 +28,16 @@
 -record(state, {transactions = dict:new(),
                 mod :: module(),
                 mod_state,
+                is_handled,
                 follow_redirects = true}).      % If UA should automatically follow redirects
 -record(req_info, {request,
                    destinations = [],           % list of IP addresses to try next
                    target_set = orddict:new(),  % URI to visit in case of failure (redirects)
-                   user_data}).
+                   callback}).
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_request, 3}, {handle_response, 3}] ++ gen_server:behaviour_info(callbacks);
+    gen_server:behaviour_info(callbacks);
 behaviour_info(_) -> undefined.
 
 %% @doc Creates UA process as part of the supervision tree
@@ -83,20 +84,20 @@ create_request(Method, ToValue, ContactValue) when
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
--spec send_request(#sip_message{}, term()) -> {ok, binary()}.
-send_request(Request, UserData) ->
+-spec send_request(#sip_message{}, fun((Response :: #sip_message{}, State :: term()) -> ResultState :: term())) -> {ok, binary()}.
+send_request(Request, Callback) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
 
     % Dispatch asynchronously
-    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = [{RequestURI, false}]},
+    ReqInfo = #req_info{request = Request, callback = Callback, target_set = [{RequestURI, false}]},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
 %% @doc Send the response according to the XXXXXXXXXXX
 %% @end
--spec send_response(#sip_tx_server{}, #sip_message{}) -> {ok, binary()}.
-send_response(TxKey, Response) ->
-    sip_transaction:send_response(TxKey, Response).
+-spec send_response(#sip_message{}) -> {ok, binary()}.
+send_response(Response) ->
+    sip_transaction:send_response(Response).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -105,7 +106,9 @@ send_response(TxKey, Response) ->
 -spec init({module(), term()}) -> {ok, #state{}}.
 init({Mod, Args}) ->
     {ok, ModState} = Mod:init(Args),
-    State = #state{mod = Mod, mod_state = ModState},
+    Exports = sets:from_list([Name || {Name, 2} <- Mod:module_info(exports)]),
+    IsHandled = fun (Method) -> sets:is_element(Method, Exports) end,
+    State = #state{mod = Mod, mod_state = ModState, is_handled = IsHandled},
     {ok, State}.
 
 %% @private
@@ -135,10 +138,21 @@ handle_info({tx, TxKey, {response, Msg}}, State) ->
                                          {msg, Msg}]),
             {noreply, State}
     end;
-handle_info({tx, TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_info({tx, _TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
     % handle request from transaction layer
-    Response = Mod:handle_request(Msg, TxKey, ModState),
-    wrap_response(Response, State);
+    Method = Msg#sip_message.kind#sip_request.method,
+    % FIXME: Method not handled...
+    IsHandled = State#state.is_handled,
+    case IsHandled(Method) of
+        true ->
+            Response = Mod:Method(Msg, ModState),
+            wrap_response(Response, State);
+        false ->
+            % Send 'Method Not Allowed'
+            Resp = sip_message:create_response(Msg, 405),
+            send_response(Resp),
+            {noreply, State}
+    end;
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#state.transactions),
@@ -160,7 +174,6 @@ handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
 %% @private
 -spec terminate(term(), #state{}) -> ok.
 terminate(Reason, #state{mod = Mod, mod_state = ModState}) ->
-    ?debugHere,
     Mod:terminate(Reason, ModState).
 
 %% @private
@@ -216,11 +229,12 @@ count_via(Msg) ->
 
 %% @doc Handle failed requests (8.1.3.1, RFC 3261)
 %% @end
-handle_failure(Reason, ReqInfo, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_failure(Reason, ReqInfo, #state{mod_state = ModState} = State) ->
     Status = error_to_status(Reason),
-    Response = sip_message:create_response(ReqInfo#req_info.request, Status),
-    Result = Mod:handle_response(Response, ReqInfo#req_info.user_data, ModState),
-    wrap_response(Result, State).
+    Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
+    Callback = ReqInfo#req_info.callback,
+    Response = Callback(Msg, ModState),
+    wrap_response(Response, State).
 
 error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;
@@ -288,8 +302,9 @@ handle_response(TxKey, #sip_message{kind = #sip_response{status = Status}} = Msg
 
     % try next destination, was redirected
     next_destination(no_more_destinations, ReqInfo2, State#state{transactions = Transactions2});
-handle_response(TxKey, Msg, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_response(TxKey, Msg, #state{mod_state = ModState} = State) ->
     % handle response from transaction layer
     ReqInfo = dict:fetch(TxKey, State#state.transactions),
-    Response = Mod:handle_response(Msg, ReqInfo#req_info.user_data, ModState),
+    Callback = ReqInfo#req_info.callback,
+    Response = Callback(Msg, ModState),
     wrap_response(Response, State).
