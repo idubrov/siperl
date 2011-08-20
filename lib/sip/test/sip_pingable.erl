@@ -7,7 +7,7 @@
 %%%----------------------------------------------------------------
 -module(sip_pingable).
 
--behaviour(sip_ua).
+-extends(sip_ua).
 
 %% Exports
 
@@ -19,17 +19,14 @@
 -export([start_link/0]).
 
 %% Server callbacks
--export([init/1, terminate/2, code_change/3]).
--export([handle_info/2, handle_call/3, handle_cast/2]).
--export(['OPTIONS'/2]).
-
--record(state, {}).
+-export([init/1]).
+-export([handle_request/3]).
 
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
 start_link() ->
-    sip_ua:start_link(?MODULE, {}, []).
+    gen_server:start_link(?MODULE, {}, []).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -37,33 +34,16 @@ start_link() ->
 %% @private
 init({}) ->
     gproc:add_local_property(uas, fun is_applicable/1),
-    {ok, #state{}}.
+    {ok, State} = sip_ua:init({}),
+    {ok, State#sip_ua_state{mod = ?MODULE}}.
 
 %% @private
-'OPTIONS'(Request, State) ->
+handle_request('OPTIONS', Request, State) ->
     Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
     sip_ua:send_response(Response),
-    {noreply, State}.
-
-%% @private
-handle_info(_Req, State) ->
-    {noreply, State}.
-
-%% @private
-handle_call(_Req, _From, State) ->
-    {reply, ok, State}.
-
-%% @private
-handle_cast(_Req, State) ->
-    {noreply, State}.
-
-%% @private
-terminate(_Reason, _State) ->
-    ok.
-
-%% @private
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+    {noreply, State};
+handle_request(Method, Request, State) ->
+    sip_ua:handle_request(Method, Request, State).
 
 is_applicable(#sip_message{kind = #sip_request{method = 'OPTIONS'}}) -> true;
-is_applicable(_Msg) -> true.
+is_applicable(_Msg) -> false.

@@ -11,7 +11,6 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3]).
 -export([create_request/3, send_request/2, send_response/1]).
 
 %% Custom behaviour
@@ -20,33 +19,21 @@
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
+-export([handle_request/3, handle_response/3, handle_redirect/3]).
 
 %% Include files
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
--record(state, {transactions = dict:new(),
-                mod :: module(),
-                mod_state,
-                is_handled,                     % Function that checks if given method is handled by UA implementation
-                follow_redirects = true}).      % If UA should automatically follow redirects
--record(req_info, {request,
-                   destinations = [],           % list of IP addresses to try next
-                   target_set = orddict:new(),  % URI to visit in case of failure (redirects)
-                   callback}).
+-record(req_info, {request :: #sip_message{},                % SIP request message
+                   destinations = [] :: [inet:ip_address()], % list of IP addresses to try next
+                   target_set = orddict:new(),               % URI to visit next (redirects)
+                   user_data}).                              % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    gen_server:behaviour_info(callbacks);
+    [{handle_request, 3}, {handle_response, 3}, {handle_redirect, 3} | gen_server:behaviour_info(callbacks)];
 behaviour_info(_) -> undefined.
-
-%% @doc Creates UA process as part of the supervision tree
-%%
-%% @see gen_server:start_link/3
-%% @end
--spec start_link(module(), term(), [Option :: term()]) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Module, Args, Options) ->
-    gen_server:start_link(sip_ua, {Module, Args}, Options).
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
@@ -77,19 +64,17 @@ create_request(Method, ToValue, ContactValue) when
     % configure pre-existing route set
     Routes = [{'route', sip_headers:route(Route, [])} || Route <- sip_config:routes()],
 
-    Msg = #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
-                       headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes},
-
-    Msg.
+    #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes}.
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% @end
--spec send_request(#sip_message{}, fun((Response :: #sip_message{}, State :: term()) -> ResultState :: term())) -> {ok, binary()}.
-send_request(Request, Callback) ->
+-spec send_request(#sip_message{}, term()) -> ok.
+send_request(Request, UserData) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
 
     % Dispatch asynchronously
-    ReqInfo = #req_info{request = Request, callback = Callback, target_set = [{RequestURI, false}]},
+    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = [{RequestURI, false}]},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
@@ -103,35 +88,31 @@ send_response(Response) ->
 %% Server callbacks
 %%-----------------------------------------------------------------
 %% @private
--spec init({module(), term()}) -> {ok, #state{}}.
-init({Mod, Args}) ->
-    {ok, ModState} = Mod:init(Args),
-    Exports = sets:from_list([Name || {Name, 2} <- Mod:module_info(exports)]),
-    IsHandled = fun (Method) -> sets:is_element(Method, Exports) end,
-    State = #state{mod = Mod, mod_state = ModState, is_handled = IsHandled},
-    {ok, State}.
+-spec init(term()) -> {ok, #sip_ua_state{}}.
+init(_Args) ->
+    {ok, #sip_ua_state{}}.
 
 %% @private
--spec handle_call(term(), term(), #state{}) -> any().
-handle_call(Req, From, #state{mod = Mod, mod_state = ModState} = State) ->
-    Response = Mod:handle_call(Req, From, ModState),
-    wrap_response(Response, State).
+-spec handle_call(term(), term(), #sip_ua_state{}) -> any().
+handle_call(_Req, _From, State) ->
+    {stop, unexpected, State}.
 
 %% @private
--spec handle_cast(_, #state{}) -> any().
+-spec handle_cast(_, #sip_ua_state{}) -> any().
 handle_cast({send, ReqInfo}, State) ->
     next_destination(none, ReqInfo, State);
-handle_cast(Req, #state{mod = Mod, mod_state = ModState} = State) ->
-    Response = Mod:handle_cast(Req, ModState),
-    wrap_response(Response, State).
+handle_cast(_Req, State) ->
+   {stop, unexpected, State}.
 
 %% @private
--spec handle_info(term(), #state{}) -> any().
-handle_info({tx, TxKey, {response, Msg}}, #state{mod_state = ModState} = State) ->
+-spec handle_info(term(), #sip_ua_state{}) -> any().
+handle_info({tx, TxKey, {response, Msg}}, #sip_ua_state{mod = Mod} = State) ->
+    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
+    UserData = ReqInfo#req_info.user_data,
 
     % RFC3261 8.1.3.3 Vias
     Status = Msg#sip_message.kind#sip_response.status,
-    Redirect = State#state.follow_redirects andalso Status >= 300 andalso Status =< 399,
+    Redirect = Status >= 300 andalso Status =< 399,
     ViasCount = count_via(Msg),
     if
         ViasCount =/= 1 ->
@@ -142,57 +123,75 @@ handle_info({tx, TxKey, {response, Msg}}, #state{mod_state = ModState} = State) 
             {noreply, State};
         Redirect ->
             % handle automatic redirect
-            handle_redirect(TxKey, Msg, State);
+            Mod:handle_redirect(UserData, Msg, State);
         true ->
             % handle response from transaction layer
-            ReqInfo = dict:fetch(TxKey, State#state.transactions),
-            Callback = ReqInfo#req_info.callback,
-            Response = Callback(Msg, ModState),
-            wrap_response(Response, State)
+            Mod:handle_response(UserData, Msg, State)
     end;
-handle_info({tx, _TxKey, {request, Msg}}, #state{mod = Mod, mod_state = ModState} = State) ->
+handle_info({tx, TxKey, {request, Msg}}, #sip_ua_state{mod = Mod} = State) ->
     % handle request from transaction layer
-    Method = Msg#sip_message.kind#sip_request.method,
-    IsHandled = State#state.is_handled,
-    case IsHandled(Method) of
-        true ->
-            Response = Mod:Method(Msg, ModState),
-            wrap_response(Response, State);
-        false ->
-            % Send 'Method Not Allowed' by default
-            % FIXME: should allow implementing generic callback function.
-            Resp = sip_message:create_response(Msg, 405),
-            send_response(Resp),
-            {noreply, State}
-    end;
+    Mod:handle_request(Msg#sip_message.kind#sip_request.method, Msg, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
-    Dict = dict:erase(TxKey, State#state.transactions),
-    {noreply, State#state{transactions = Dict}};
+    Dict = dict:erase(TxKey, State#sip_ua_state.requests),
+    {noreply, State#sip_ua_state{requests = Dict}};
 handle_info({tx, TxKey, {terminated, Reason}}, State) ->
-    ReqInfo = dict:fetch(TxKey, State#state.transactions),
+    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
 
     % remove transaction from the list
-    Dict = dict:erase(TxKey, State#state.transactions),
-    State2 = State#state{transactions = Dict},
+    Dict = dict:erase(TxKey, State#sip_ua_state.requests),
+    State2 = State#sip_ua_state{requests = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
     next_destination(Reason, ReqInfo, State2);
-handle_info(Req, #state{mod = Mod, mod_state = ModState} = State) ->
-    Response = Mod:handle_info(Req, ModState),
-    wrap_response(Response, State).
+handle_info(_Req, State) ->
+    {stop, unexpected, State}.
 
 
 %% @private
--spec terminate(term(), #state{}) -> ok.
-terminate(Reason, #state{mod = Mod, mod_state = ModState}) ->
-    Mod:terminate(Reason, ModState).
+-spec terminate(term(), #sip_ua_state{}) -> ok.
+terminate(_Reason, _State) ->
+    ok.
 
 %% @private
--spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
-    {ok, ModState} = Mod:code_change(OldVsn, State#state.mod_state, Extra),
-    {ok, State#state{mod_state = ModState}}.
+-spec code_change(term(), #sip_ua_state{}, term()) -> {ok, #sip_ua_state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+-spec handle_request(binary() | atom(), #sip_message{}, #sip_ua_state{}) -> any().
+handle_request(_Method, Msg, State) ->
+    % Send 'Method Not Allowed' by default
+    Resp = sip_message:create_response(Msg, 405),
+    send_response(Resp),
+    {noreply, State}.
+
+
+-spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> any().
+handle_response(_UserData, _Msg, State) ->
+    {noreply, State}.
+
+%% @doc Automatic handling of 3xx responses (redirects)
+%% @end
+-spec handle_redirect(term(), #sip_message{}, #sip_ua_state{}) -> any().
+handle_redirect(_UserData, Msg, State) ->
+    % automatic handling of redirects
+    TxKey = sip_transaction:tx_key(client, Msg),
+
+    % collect new URIs
+    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
+    % FIXME: handle expires & q
+    % add {URI, false} (only if not present already)
+    CollectFun =
+        fun (Contact, Targets) ->
+                 orddict:update(Contact#sip_hdr_address.uri, fun (V) -> V end, false, Targets)
+        end,
+    % go through Contact: headers and add URIs to our current redirect set
+    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
+    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet, destinations = []},
+    Transactions2 = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
+
+    % try next destination, was redirected
+    next_destination(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -202,17 +201,15 @@ code_change(OldVsn, #state{mod = Mod} = State, Extra) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(Reason, #req_info{destinations = [], request = Request} = ReqInfo, State) when
-  State#state.follow_redirects ->
-    % no destination IPs -- resolve next URI
+next_destination(Reason, #req_info{destinations = [], request = Request} = ReqInfo, #sip_ua_state{mod = Mod} = State) ->
+    % no destination IPs -- resolve next URI from target_set
     case select_target(ReqInfo#req_info.target_set) of
         none ->
             % Handle failed requests (8.1.3.1, RFC 3261)
             Status = error_to_status(Reason),
             Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
-            Callback = ReqInfo#req_info.callback,
-            Response = Callback(Msg, State#state.mod_state),
-            wrap_response(Response, State);
+            UserData = ReqInfo#req_info.user_data,
+            Mod:handle_response(UserData, Msg, State);
         {URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -228,8 +225,8 @@ next_destination(_Reason, #req_info{request = Request, destinations = [Top | Fal
 
     % store tx id to {user data, fallback destinations, request} mapping
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-    Dict = dict:store(TxKey, ReqInfo2, State#state.transactions),
-    {noreply, State#state{transactions = Dict}}.
+    Dict = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
+    {noreply, State#sip_ua_state{requests = Dict}}.
 
 count_via(Msg) ->
     Fun = fun ({'via', List}, Acc) when is_list(List) -> Acc + length(List);
@@ -242,15 +239,6 @@ error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;
 error_to_status(no_more_destinations) -> 503;
 error_to_status(_Reason) -> 500.
-
-%% @doc Wrap client state back into the `#state{}'
-%% @end
-wrap_response({reply, Reply, ModState}, State) -> {reply, Reply, State#state{mod_state = ModState}};
-wrap_response({reply, Reply, ModState, Timeout}, State) -> {reply, Reply, State#state{mod_state = ModState}, Timeout};
-wrap_response({noreply, ModState}, State) -> {noreply, State#state{mod_state = ModState}};
-wrap_response({noreply, ModState, Timeout}, State) -> {noreply, State#state{mod_state = ModState}, Timeout};
-wrap_response({stop, Reason, Reply, ModState}, State) -> {stop, Reason, Reply, State#state{mod_state = ModState}};
-wrap_response({stop, Reason, ModState}, State) -> {stop, Reason, State#state{mod_state = ModState}}.
 
 select_target([]) -> none;
 select_target([{URI, false} | Rest]) ->
@@ -283,24 +271,3 @@ lookup_destinations(Request) ->
             _ -> URI
         end,
     sip_resolve:client_resolve(URI2).
-
-%% @doc Automatic handling of 3xx responses (redirects)
-%% @end
-handle_redirect(TxKey, Msg, State) ->
-    % automatic handling of redirects
-
-    % collect new URIs
-    ReqInfo = dict:fetch(TxKey, State#state.transactions),
-    % FIXME: handle expires & q
-    % add {URI, false} (only if not present already)
-    CollectFun =
-        fun (Contact, Targets) ->
-                 orddict:update(Contact#sip_hdr_address.uri, fun (V) -> V end, false, Targets)
-        end,
-    % go through Contact: headers and add URIs to our current redirect set
-    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
-    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet, destinations = []},
-    Transactions2 = dict:store(TxKey, ReqInfo2, State#state.transactions),
-
-    % try next destination, was redirected
-    next_destination(no_more_destinations, ReqInfo2, State#state{transactions = Transactions2}).

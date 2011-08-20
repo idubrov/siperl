@@ -88,3 +88,11 @@
 
 %% Dialog is identified by call-id, local and remote tags.
 -record(sip_dialog, {local_tag, remote_tag, call_id}).
+
+%%-----------------------------------------------------------------
+%% SIP UAC/UAS state
+%%-----------------------------------------------------------------
+
+-record(sip_ua_state, {requests = dict:new(),   % Requests being sent by UAC
+                       mod :: module(),         % Client module
+                       state}).                 % Client state
