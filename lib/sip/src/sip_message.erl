@@ -10,9 +10,9 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([is_request/1, is_response/1, to_binary/1]).
+-export([is_request/1, is_response/1]).
 -export([is_provisional_response/1, is_redirect_response/1, method/1]).
--export([parse_stream/2, parse_datagram/1, parse_all_headers/1, sort_headers/1]).
+-export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3]).
@@ -249,15 +249,6 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 parse_all_headers(Msg) when is_record(Msg, sip_message) ->
     Headers = [{Name, sip_headers:parse(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
     Msg#sip_message{headers = Headers}.
-
-%% @doc
-%% Parse and stable sort all headers of the message. This function is mostly used for testing
-%% purposes before comparing the messages.
-%% @end
--spec sort_headers(#sip_message{}) -> #sip_message{}.
-sort_headers(Msg) when is_record(Msg, sip_message) ->
-    Msg2 = parse_all_headers(Msg),
-    Msg2#sip_message{headers = lists:keysort(1, Msg2#sip_message.headers)}.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -649,7 +640,7 @@ create_ack_test_() ->
     ACKHeaders = lists:keyreplace('cseq', 1, RespHeaders, {'cseq', <<"986759 ACK">>}),
     ACK = #sip_message{kind = #sip_request{method = 'ACK', uri = <<"sip:bob@biloxi.com">>}, headers = ACKHeaders},
     [
-     ?_assertEqual(sort_headers(ACK), sort_headers(create_ack(OrigRequest, Response)))
+     ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(OrigRequest, Response)))
      ].
 
 -spec header_test_() -> list().
