@@ -19,7 +19,7 @@
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
--export([handle_request/3, handle_response/3, handle_redirect/3]).
+-export([handle_request/3, handle_response/3]).
 
 %% Include files
 -include_lib("../sip_common.hrl").
@@ -32,7 +32,7 @@
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_request, 3}, {handle_response, 3}, {handle_redirect, 3} | gen_server:behaviour_info(callbacks)];
+    [{handle_request, 3}, {handle_response, 3} | gen_server:behaviour_info(callbacks)];
 behaviour_info(_) -> undefined.
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
@@ -100,7 +100,7 @@ handle_call(_Req, _From, State) ->
 %% @private
 -spec handle_cast(_, #sip_ua_state{}) -> any().
 handle_cast({send, ReqInfo}, State) ->
-    next_destination(none, ReqInfo, State);
+    send_to_next(none, ReqInfo, State);
 handle_cast(_Req, State) ->
    {stop, unexpected, State}.
 
@@ -110,25 +110,19 @@ handle_info({tx, TxKey, {response, Msg}}, #sip_ua_state{mod = Mod} = State) ->
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
     UserData = ReqInfo#req_info.user_data,
 
-    % RFC3261 8.1.3.3 Vias
-    Status = Msg#sip_message.kind#sip_response.status,
-    Redirect = Status >= 300 andalso Status =< 399,
-    ViasCount = count_via(Msg),
-    if
-        ViasCount =/= 1 ->
+    % RFC 3261 8.1.3.3 Vias
+    case count_via(Msg) of
+        1 ->
+            % handle response from transaction layer
+            Mod:handle_response(UserData, Msg, State);
+        _Other ->
             % discard response, too much/few Via's
             error_logger:warning_report(['message_discarded',
                                          {reason, wrong_vias},
                                          {msg, Msg}]),
-            {noreply, State};
-        Redirect ->
-            % handle automatic redirect
-            Mod:handle_redirect(UserData, Msg, State);
-        true ->
-            % handle response from transaction layer
-            Mod:handle_response(UserData, Msg, State)
+            {noreply, State}
     end;
-handle_info({tx, TxKey, {request, Msg}}, #sip_ua_state{mod = Mod} = State) ->
+handle_info({tx, _TxKey, {request, Msg}}, #sip_ua_state{mod = Mod} = State) ->
     % handle request from transaction layer
     Mod:handle_request(Msg#sip_message.kind#sip_request.method, Msg, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
@@ -143,10 +137,9 @@ handle_info({tx, TxKey, {terminated, Reason}}, State) ->
     State2 = State#sip_ua_state{requests = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    next_destination(Reason, ReqInfo, State2);
+    send_to_next(Reason, ReqInfo, State2);
 handle_info(_Req, State) ->
     {stop, unexpected, State}.
-
 
 %% @private
 -spec terminate(term(), #sip_ua_state{}) -> ok.
@@ -167,14 +160,52 @@ handle_request(_Method, Msg, State) ->
 
 
 -spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> any().
+handle_response(_UserData, #sip_message{kind = #sip_response{status = Status}} = Request, State)
+  when Status >= 300, Status =< 399 ->
+    % handle automatic redirect.
+    process_redirect(Request, State);
 handle_response(_UserData, _Msg, State) ->
     {noreply, State}.
 
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+
+%% @doc Send request to destination on the top
+%%
+%% If no destinations are provided, report error to the callback module.
+%% @end
+send_to_next(Reason, #req_info{destinations = [], request = Request} = ReqInfo, #sip_ua_state{mod = Mod} = State) ->
+    % no destination IPs -- resolve next URI from target_set
+    case select_target(ReqInfo#req_info.target_set) of
+        none ->
+            % Handle failed requests (8.1.3.1, RFC 3261)
+            Status = error_to_status(Reason),
+            Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
+            UserData = ReqInfo#req_info.user_data,
+            Mod:handle_response(UserData, Msg, State);
+        {URI, TargetSet2} ->
+            % Update Request-URI
+            % FIXME: Update headers as well!
+            Kind = Request#sip_message.kind,
+            Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
+            Destinations = lookup_destinations(Request2),
+            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
+            send_to_next(Reason, ReqInfo2, State)
+    end;
+send_to_next(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
+    % send request to the top destination
+    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request),
+
+    % store tx id to {user data, fallback destinations, request} mapping
+    ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
+    Dict = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
+    {noreply, State#sip_ua_state{requests = Dict}}.
+
 %% @doc Automatic handling of 3xx responses (redirects)
 %% @end
--spec handle_redirect(term(), #sip_message{}, #sip_ua_state{}) -> any().
-handle_redirect(_UserData, Msg, State) ->
-    % automatic handling of redirects
+-spec process_redirect(#sip_message{}, #sip_ua_state{}) -> any().
+process_redirect(Msg, State) ->
     TxKey = sip_transaction:tx_key(client, Msg),
 
     % collect new URIs
@@ -191,42 +222,7 @@ handle_redirect(_UserData, Msg, State) ->
     Transactions2 = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
 
     % try next destination, was redirected
-    next_destination(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
-
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------
-
-%% @doc Send request to destination on the top
-%%
-%% If no destinations are provided, report error to the callback module.
-%% @end
-next_destination(Reason, #req_info{destinations = [], request = Request} = ReqInfo, #sip_ua_state{mod = Mod} = State) ->
-    % no destination IPs -- resolve next URI from target_set
-    case select_target(ReqInfo#req_info.target_set) of
-        none ->
-            % Handle failed requests (8.1.3.1, RFC 3261)
-            Status = error_to_status(Reason),
-            Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
-            UserData = ReqInfo#req_info.user_data,
-            Mod:handle_response(UserData, Msg, State);
-        {URI, TargetSet2} ->
-            % Update Request-URI
-            % FIXME: Update headers as well!
-            Kind = Request#sip_message.kind,
-            Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
-            Destinations = lookup_destinations(Request2),
-            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
-            next_destination(Reason, ReqInfo2, State)
-    end;
-next_destination(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
-    % send request to the top destination
-    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request),
-
-    % store tx id to {user data, fallback destinations, request} mapping
-    ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-    Dict = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
-    {noreply, State#sip_ua_state{requests = Dict}}.
+    send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
 
 count_via(Msg) ->
     Fun = fun ({'via', List}, Acc) when is_list(List) -> Acc + length(List);
