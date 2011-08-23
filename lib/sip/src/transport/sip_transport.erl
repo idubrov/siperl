@@ -26,7 +26,7 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Internal API
--export([dispatch/3]).
+-export([dispatch/2]).
 
 %% Macros
 -define(SERVER, ?MODULE).
@@ -158,10 +158,10 @@ send_response_fallback([To|Rest], Response) ->
 %% @end
 %% @private
 %% FIXME: Remove connection...
--spec dispatch(#sip_destination{}, #sip_connection{},
-               {ok, #sip_message{}} | {error, Reason :: term(), sip_message:message()}) ->
+-spec dispatch(#sip_destination{},
+               {message, #sip_message{}} | {error, Reason :: term(), #sip_message{}}) ->
           ok | {reply, #sip_message{}}.
-dispatch(From, _Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
+dispatch(From, {message, #sip_message{kind = #sip_request{}} = Msg}) ->
     Msg2 = add_via_received(From, Msg),
     % 18.2.1: route to server transaction or to core
     case sip_transaction:handle_request(Msg2) of
@@ -169,7 +169,7 @@ dispatch(From, _Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
         {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, _Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
+dispatch(From, {message, #sip_message{kind = #sip_response{}} = Msg}) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -190,7 +190,7 @@ dispatch(From, _Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
                                          {msg, Msg}])
     end,
     ok;
-dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
+dispatch(From, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
     % reply with 400 Bad Request
     error_logger:warning_report(['bad_request',
                                  {reason, Reason},
@@ -200,9 +200,8 @@ dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_request{}} 
 
     % we are not going to go through whole procedures for sending response, just try to send
     % via the same transport
-    ?debugHere,
     {reply, Response};
-dispatch(From, _Connection, {error, Reason, #sip_message{kind = #sip_response{}} = Msg}) ->
+dispatch(From, {error, Reason, #sip_message{kind = #sip_response{}} = Msg}) ->
     % discard malformed responses
     error_logger:warning_report(['message_discarded',
                                  {reason, Reason},

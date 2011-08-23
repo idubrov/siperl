@@ -129,7 +129,7 @@ process_stream(Packet, State, Props) ->
             {ok, State#state{parse_state = NewParseState}, Props};
         {ok, Msg, NewParseState} ->
             % dispatch to transport layer
-            Result = sip_transport:dispatch(State#state.remote, connection(), {ok, Msg}),
+            Result = sip_transport:dispatch(State#state.remote, {message, Msg}),
             immediate_reply(Result, State),
 
             % add property to register with gproc for requests
@@ -149,14 +149,14 @@ process_stream(Packet, State, Props) ->
             process_stream(<<>>, State#state{parse_state = NewParseState}, NewProps);
         {error, Reason, Msg, NewParseState} ->
             % dispatch to transport layer
-            Result = sip_transport:dispatch(State#state.remote, connection(), {error, Reason, Msg}),
+            Result = sip_transport:dispatch(State#state.remote, {error, Reason, Msg}),
             immediate_reply(Result, State),
 
             % there could be more messages to parse, recurse
             process_stream(<<>>, State#state{parse_state = NewParseState}, Props)
     end.
 
-%% @doc When transport returns `{reply, Msg}' on `dispatch/3' call, we need to reply immediately
+%% @doc When transport returns `{reply, Msg}' on `dispatch/2' call, we need to reply immediately
 %%
 %% This functionality is used for sending responses on bad requests,
 %% so the sip_transport:dispatch/3 does not block on regular `sip_transport_tcp:send/2' call
@@ -167,6 +167,3 @@ immediate_reply({reply, Message}, State) ->
     Socket = State#state.socket,
     Packet = sip_message:to_binary(Message),
     gen_tcp:send(Socket, Packet).
-
-connection() ->
-    #sip_connection{transport = tcp, connection = self()}.

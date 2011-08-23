@@ -104,9 +104,12 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
           {noreply, #state{}, infinity} | {stop, _Reason, #state{}}.
 handle_info({udp, Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
-    Result = sip_message:parse_datagram(Packet),
-    % result is either {ok, Msg} or {error, Reason, Msg}
-    case sip_transport:dispatch(Remote, #sip_connection{transport = udp}, Result) of
+    Result =
+        case sip_message:parse_datagram(Packet) of
+            {ok, Msg} -> {message, Msg};
+            {error, Reason, Msg} -> {error, Reason, Msg}
+        end,
+    case sip_transport:dispatch(Remote, Result) of
         ok -> ok;
         {reply, Response} ->
             % we need to reply immediately
