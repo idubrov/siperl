@@ -31,10 +31,7 @@
     % notify self to send provisional response
     % (not to block initialization)
     self() ! provisional,
-
-    % The request MUST be passed to the TU.
-    TxState2 = ?TU(TxState#tx_state.request, TxState),
-    {next_state, 'PROCEEDING', TxState2}.
+    {next_state, 'PROCEEDING', TxState}.
 
 -spec handle_info(term(), atom(), #tx_state{}) ->
           {stop, term(), #tx_state{}}.

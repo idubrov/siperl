@@ -90,7 +90,7 @@ pass_to_tu(Msg, TxState) ->
             #sip_request{} -> request;
             #sip_response{} -> response
         end,
-    notify_tu(TxState, {tx, TxState#tx_state.tx_key, {Kind, Msg}}),
+    notify_tu(TxState, {Kind, Msg}),
     TxState.
 
 %% @private

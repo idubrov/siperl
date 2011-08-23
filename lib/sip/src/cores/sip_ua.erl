@@ -19,7 +19,9 @@
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
--export([handle_request/3, handle_response/3]).
+
+%% UAC/UAS callbacks
+-export([handle_request/3, handle_response/3, is_applicable/1]).
 
 %% Include files
 -include_lib("../sip_common.hrl").
@@ -32,7 +34,7 @@
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_request, 3}, {handle_response, 3} | gen_server:behaviour_info(callbacks)];
+    [{handle_request, 3}, {handle_response, 3}, {is_applicable, 1} | gen_server:behaviour_info(callbacks)];
 behaviour_info(_) -> undefined.
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
@@ -87,10 +89,13 @@ send_response(Response) ->
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------
+
 %% @private
 -spec init(term()) -> {ok, #sip_ua_state{}}.
-init(_Args) ->
-    {ok, #sip_ua_state{}}.
+init(Module) ->
+    IsApplicable = fun (Msg) -> Module:is_applicable(Msg) end,
+    sip_cores:register_core(#sip_core_info{is_applicable = IsApplicable}),
+    {ok, #sip_ua_state{mod = Module}}.
 
 %% @private
 -spec handle_call(term(), term(), #sip_ua_state{}) -> any().
@@ -106,7 +111,15 @@ handle_cast(_Req, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({tx, TxKey, {response, Msg}}, #sip_ua_state{mod = Mod} = State) ->
+handle_info({request, Msg}, #sip_ua_state{mod = Mod} = State) ->
+    % FIXME: rules 8.2.1 and further
+    % start new server transaction
+    sip_transaction:start_server_tx(self(), Msg),
+
+    Mod:handle_request(Msg#sip_message.kind#sip_request.method, Msg, State);
+handle_info({response, Msg}, #sip_ua_state{mod = Mod} = State) ->
+    TxKey = sip_transaction:tx_key(client, Msg),
+
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
     UserData = ReqInfo#req_info.user_data,
 
@@ -122,9 +135,6 @@ handle_info({tx, TxKey, {response, Msg}}, #sip_ua_state{mod = Mod} = State) ->
                                          {msg, Msg}]),
             {noreply, State}
     end;
-handle_info({tx, _TxKey, {request, Msg}}, #sip_ua_state{mod = Mod} = State) ->
-    % handle request from transaction layer
-    Mod:handle_request(Msg#sip_message.kind#sip_request.method, Msg, State);
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#sip_ua_state.requests),
@@ -151,6 +161,8 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% Default UAC/UAS callbacks
+
 -spec handle_request(binary() | atom(), #sip_message{}, #sip_ua_state{}) -> any().
 handle_request(_Method, Msg, State) ->
     % Send 'Method Not Allowed' by default
@@ -166,6 +178,9 @@ handle_response(_UserData, #sip_message{kind = #sip_response{status = Status}} =
     process_redirect(Request, State);
 handle_response(_UserData, _Msg, State) ->
     {noreply, State}.
+
+-spec is_applicable(#sip_message{}) -> boolean().
+is_applicable(_Msg) -> false.
 
 %%-----------------------------------------------------------------
 %% Internal functions

@@ -90,9 +90,12 @@
 -record(sip_dialog, {local_tag, remote_tag, call_id}).
 
 %%-----------------------------------------------------------------
-%% SIP UAC/UAS state
+%% SIP UAC/UAS
 %%-----------------------------------------------------------------
 
 -record(sip_ua_state, {requests = dict:new(),   % Requests being sent by UAC
                        mod :: module(),         % Client module
                        state}).                 % Client state
+
+-define(CORE_PROPERTY, core_registration).
+-record(sip_core_info, {is_applicable :: fun((#sip_message{}) -> boolean())}). % check if message is applicable

@@ -28,9 +28,7 @@
 %% @end
 -spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
 'INIT'(init, TxState) ->
-    % The request MUST be passed to the TU.
-    TxState2 = ?TU(TxState#tx_state.request, TxState),
-    {next_state, 'TRYING', TxState2}.
+    {next_state, 'TRYING', TxState}.
 
 -spec handle_info(term(), atom(), #tx_state{}) ->
           {stop, term(), #tx_state{}}.

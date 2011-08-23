@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1]).
--export([handle_request/3]).
+-export([handle_request/3, is_applicable/1]).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -33,9 +33,7 @@ start_link() ->
 %%-----------------------------------------------------------------
 %% @private
 init({}) ->
-    gproc:add_local_property(uas, fun is_applicable/1),
-    {ok, State} = sip_ua:init({}),
-    {ok, State#sip_ua_state{mod = ?MODULE}}.
+    sip_ua:init(?MODULE).
 
 %% @private
 handle_request('OPTIONS', Request, State) ->

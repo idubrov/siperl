@@ -157,28 +157,19 @@ send_response_fallback([To|Rest], Response) ->
 %% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
+%% FIXME: Remove connection...
 -spec dispatch(#sip_destination{}, #sip_connection{},
                {ok, #sip_message{}} | {error, Reason :: term(), sip_message:message()}) ->
           ok | {reply, #sip_message{}}.
-dispatch(From, Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
+dispatch(From, _Connection, {ok, #sip_message{kind = #sip_request{}} = Msg}) ->
     Msg2 = add_via_received(From, Msg),
     % 18.2.1: route to server transaction or to core
     case sip_transaction:handle_request(Msg2) of
-        not_handled ->
-            case sip_core:lookup_tu(Connection, Msg2) of
-                {ok, TU} ->
-                    % FIXME: should we create {{connection, tx_key}, pid} property here and transfer to Tx process?
-                    sip_transaction:start_server_tx(TU, Msg2),
-                    ok;
-                undefined ->
-                    % No TU for request, pass to core
-                    sip_core:handle_request(Connection, Msg2)
-            end;
-        {ok, _TxRef} ->
-            ok
+        not_handled -> dispatch_core(request, Msg2);
+        {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
+dispatch(From, _Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -188,7 +179,7 @@ dispatch(From, Connection, {ok, #sip_message{kind = #sip_response{}} = Msg}) ->
         true ->
             % 18.1.2: route to client transaction or to core
             case sip_transaction:handle_response(Msg) of
-                not_handled -> sip_core:handle_response(Connection, Msg);
+                not_handled -> dispatch_core(response, Msg);
                 {ok, _TxRef} -> ok
             end;
         {ExpectedSentBy, SentBy} ->
@@ -303,6 +294,22 @@ transport_send(To, Message) when is_record(To, sip_connection) ->
 
 transport_module(udp) -> sip_transport_udp;
 transport_module(tcp) -> sip_transport_tcp.
+
+%% @doc Dispatch SIP message to the core that will handle it
+%% @end
+dispatch_core(Kind, Msg) ->
+    case sip_cores:lookup_core(Msg) of
+        {ok, Pid, _Reg} ->
+            Pid ! {Kind, Msg},
+            ok;
+        undefined ->
+            % No UAS to handle request, discard and ignore
+            % FIXME: Only on debug level?
+            error_logger:info_report(['message_discarded',
+                                      {reason, no_core},
+                                      {msg, Msg}]),
+            ok
+    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks

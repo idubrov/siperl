@@ -43,8 +43,7 @@ start_link() ->
 %% @private
 -spec init(list()) -> {ok, _}.
 init([]) ->
-    Children = [?WORKER(sip_core, []),
-                ?SPEC(sip_transport_sup, supervisor, []),
+    Children = [?SPEC(sip_transport_sup, supervisor, []),
                 ?SPEC(sip_transaction_sup, supervisor, [])
                 ],
 
