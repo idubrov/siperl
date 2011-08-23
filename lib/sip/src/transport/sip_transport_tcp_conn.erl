@@ -29,7 +29,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {socket, remote, parse_state = none}).
+-record(state, {socket, remote, parse_state = none, timeout}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -58,10 +58,11 @@ init(Remote)
     % New connection
     To = Remote#sip_destination.address,
     Port = Remote#sip_destination.port,
-    % FIXME: Should timeout!!
     case gen_tcp:connect(To, Port, [binary, {active, false}]) of
-        {ok, Socket} -> init(Socket);
-        {error, Reason} -> {stop, Reason}
+        {ok, Socket} ->
+            init(Socket);
+        {error, Reason} ->
+            {stop, Reason}
     end;
 init(Socket) ->
     % RFC3261 Section 18
@@ -70,12 +71,11 @@ init(Socket) ->
     {ok, {RemoteAddress, RemotePort}} = inet:peername(Socket),
     Remote = #sip_destination{transport = tcp, address = RemoteAddress, port = RemotePort},
 
-    % Register itself
-    %gproc:add_local_property({to, Remote}, Local),
+    Timeout = sip_config:connection_timeout(),
 
     % Enable one time delivery
     ok = inet:setopts(Socket, [{active, once}]),
-    {ok, #state{socket = Socket, remote = Remote}}.
+    {ok, #state{socket = Socket, remote = Remote, timeout = Timeout}, Timeout}.
 
 %% @private
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->
@@ -87,8 +87,10 @@ handle_info({tcp, _Socket, Packet}, State) ->
     gproc:mreg(p, l, Props),
 
     ok = inet:setopts(NewState#state.socket, [{active, once}]),
-    {noreply, NewState};
+    {noreply, NewState, State#state.timeout};
 handle_info({tcp_closed, _Socket}, State) ->
+    {stop, normal, State};
+handle_info(timeout, State) ->
     {stop, normal, State};
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
@@ -100,7 +102,7 @@ handle_call({send, Message}, _From, State) ->
     Socket = State#state.socket,
     Packet = sip_message:to_binary(Message),
     Result = gen_tcp:send(Socket, Packet),
-    {reply, Result, State};
+    {reply, Result, State, State#state.timeout};
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
 

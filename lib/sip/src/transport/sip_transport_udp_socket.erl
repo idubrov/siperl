@@ -55,9 +55,6 @@
 -include_lib("../sip_common.hrl").
 -include_lib("sip.hrl").
 
-% Keep socket for 32 seconds after last event
--define(TIMEOUT, 32000).
-
 -record(state, {socket, error, timeout = infinity :: integer() | infinity}).
 
 %%-----------------------------------------------------------------
@@ -96,8 +93,9 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
     ok = gen_udp:connect(Socket, ToAddr, ToPort),
     gproc:add_local_name({udp, ToAddr, ToPort}),
 
-    % "connected" should terminate after timeout to free resources
-    {ok, #state{socket = Socket, timeout = ?TIMEOUT}, ?TIMEOUT}.
+    % "connected" sockets should terminate after timeout to free resources
+    Timeout = sip_config:connection_timeout(),
+    {ok, #state{socket = Socket, timeout = Timeout}, Timeout}.
 
 %% @private
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->

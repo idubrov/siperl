@@ -8,7 +8,7 @@
 -module(sip_config).
 
 %% Exports
--export([t1/0, t2/0, t4/0, ports/1, self/0, routes/0]).
+-export([t1/0, t2/0, t4/0, ports/1, self/0, routes/0, connection_timeout/0]).
 
 %% Includes
 -include_lib("sip_common.hrl").
@@ -51,6 +51,10 @@ self() ->
 -spec routes() -> [binary()].
 routes() ->
     entry(routes, []).
+
+-spec connection_timeout() -> integer().
+connection_timeout() ->
+    sip_config:t1() * 64. % See RFC 3261, Section 18
 
 %%%----------------------------------------------------------------
 %% Internal functions
