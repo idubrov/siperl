@@ -374,7 +374,8 @@ create_response(Request, Status, Reason) ->
                                  Name =:= 'cseq' orelse Name =:= 'via' orelse
                                  Name =:= 'to')],
     Kind = #sip_response{status = Status, reason = Reason},
-    #sip_message{kind = Kind, headers = Headers}.
+    Headers2 = [{'content-length', 0} | Headers],
+    #sip_message{kind = Kind, headers = Headers2}.
 
 %% @doc Create response for given request (with default Reason)
 %% @end
