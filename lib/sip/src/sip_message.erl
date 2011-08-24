@@ -133,7 +133,7 @@ update_header(HeaderName, Fun, []) ->
 %% header value is multi-value (a list), the first element of the list
 %% is replaced.
 %%
-%% <em>Note that header is not added automatically, if there is no header with given name</em>
+%% <em>Note that header is NOT added automatically, if there is no header with given name</em>
 %% @end
 -spec replace_top_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
 replace_top_header(HeaderName, Value, Message) ->

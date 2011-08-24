@@ -29,7 +29,7 @@
 
 -record(req_info, {request :: #sip_message{},                % SIP request message
                    destinations = [] :: [inet:ip_address()], % list of IP addresses to try next
-                   target_set = orddict:new(),               % URI to visit next (redirects)
+                   target_set2 = sip_priority_set:new(),     % URI to visit next (redirects)
                    user_data}).                              % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
@@ -76,7 +76,8 @@ send_request(Request, UserData) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
 
     % Dispatch asynchronously
-    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = [{RequestURI, false}]},
+    TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
+    ReqInfo = #req_info{request = Request, user_data = UserData, target_set2 = TargetSet},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
@@ -93,9 +94,7 @@ send_response(Response) ->
 %% @private
 -spec init(term()) -> {ok, #sip_ua_state{}}.
 init(Module) ->
-    IsApplicable = fun (Msg) -> Module:is_applicable(Msg) end,
-    sip_cores:register_core(#sip_core_info{is_applicable = IsApplicable}),
-    {ok, #sip_ua_state{mod = Module}}.
+    {ok, #sip_ua_state{callback = Module}}.
 
 %% @private
 -spec handle_call(term(), term(), #sip_ua_state{}) -> any().
@@ -111,13 +110,14 @@ handle_cast(_Req, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({request, Msg}, #sip_ua_state{mod = Mod} = State) ->
+handle_info({request, Msg}, #sip_ua_state{callback = Mod} = State) ->
+    Method = Msg#sip_message.kind#sip_request.method,
     % FIXME: rules 8.2.1 and further
     % start new server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
-    Mod:handle_request(Msg#sip_message.kind#sip_request.method, Msg, State);
-handle_info({response, Msg}, #sip_ua_state{mod = Mod} = State) ->
+    Mod:handle_request(Method, Msg, State);
+handle_info({response, Msg}, #sip_ua_state{callback = Mod} = State) ->
     TxKey = sip_transaction:tx_key(client, Msg),
 
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
@@ -190,22 +190,25 @@ is_applicable(_Msg) -> false.
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_to_next(Reason, #req_info{destinations = [], request = Request} = ReqInfo, #sip_ua_state{mod = Mod} = State) ->
+send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
     % no destination IPs -- resolve next URI from target_set
-    case select_target(ReqInfo#req_info.target_set) of
-        none ->
+    case sip_priority_set:take(ReqInfo#req_info.target_set2) of
+        false ->
             % Handle failed requests (8.1.3.1, RFC 3261)
             Status = error_to_status(Reason),
             Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
             UserData = ReqInfo#req_info.user_data,
+
+            Mod = State#sip_ua_state.callback,
             Mod:handle_response(UserData, Msg, State);
-        {URI, TargetSet2} ->
+        {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
+            Request = ReqInfo#req_info.request,
             Kind = Request#sip_message.kind,
             Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
             Destinations = lookup_destinations(Request2),
-            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
+            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set2 = TargetSet2},
             send_to_next(Reason, ReqInfo2, State)
     end;
 send_to_next(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
@@ -225,26 +228,22 @@ process_redirect(Msg, State) ->
 
     % collect new URIs
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
-    % FIXME: handle expires & q
-    % add {URI, false} (only if not present already)
+    % FIXME: handle expires
     CollectFun =
-        fun (Contact, Targets) ->
-                 orddict:update(Contact#sip_hdr_address.uri, fun (V) -> V end, false, Targets)
+        fun (Contact, TargetSet) ->
+                 QValue = sip_headers:qvalue(Contact),
+                 sip_priority_set:put(Contact#sip_hdr_address.uri, QValue, TargetSet)
         end,
     % go through Contact: headers and add URIs to our current redirect set
-    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
-    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet, destinations = []},
+    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set2, Msg),
+    ReqInfo2 = ReqInfo#req_info{target_set2 = NewTargetSet, destinations = []},
     Transactions2 = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
 
     % try next destination, was redirected
     send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
 
 count_via(Msg) ->
-    Fun = fun ({'via', List}, Acc) when is_list(List) -> Acc + length(List);
-              ({'via', _Value}, Acc) -> Acc + 1;
-              (_Header, Acc) -> Acc
-          end,
-    lists:foldl(Fun, 0, Msg#sip_message.headers).
+    sip_message:foldl_headers('via', fun (_Value, Acc) -> Acc + 1 end, Msg).
 
 error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;

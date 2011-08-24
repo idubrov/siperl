@@ -422,6 +422,17 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), 
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
 
+%%% @doc Return value of the `q' parameter of the address as floating point number.
+%%% @end
+qvalue(Address) when is_record(Address, sip_hdr_address) ->
+    case lists:keyfind('q', 1, Address#sip_hdr_address.params) of
+        false ->
+            1.0; % default q-value
+        {'q', Value} when is_float(Value) ->
+            Value;
+        {'q', Bin} when is_binary(Bin) ->
+            sip_binary:binary_to_float(Bin)
+    end.
 
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
@@ -575,6 +586,11 @@ parse_test_() ->
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                              address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
      ?_assertEqual(<<"*">>, format('contact', '*')),
+
+     % q-value
+     ?_assertEqual(1.0, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, []))),
+     ?_assertEqual(0.2, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}]))),
+     ?_assertEqual(0.5, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.5}]))),
 
      % Route, Record-Route
      ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),

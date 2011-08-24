@@ -13,8 +13,8 @@
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
 -export([parse_token/1, parse_quoted_string/1, quote_string/1]).
--export([integer_to_binary/1, any_to_binary/1, addr_to_binary/1]).
--export([binary_to_integer/1, binary_to_existing_atom/1]).
+-export([integer_to_binary/1, float_to_binary/1, any_to_binary/1, addr_to_binary/1]).
+-export([binary_to_integer/1, binary_to_float/1, binary_to_existing_atom/1]).
 -export([is_digit_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
 -export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
@@ -321,14 +321,29 @@ parse_ip_address(Bin) ->
 %% @doc Convert UTF-8 binary to integer
 %% @end
 -spec binary_to_integer(binary()) -> integer().
-binary_to_integer(Bin) ->
+binary_to_integer(Bin) when is_binary(Bin) ->
     list_to_integer(binary_to_list(Bin)).
 
 %% @doc Convert integer to ASCII binary.
 %% @end
 -spec integer_to_binary(integer()) -> binary().
-integer_to_binary(Int) ->
+integer_to_binary(Int) when is_integer(Int) ->
     list_to_binary(integer_to_list(Int)).
+
+%% @doc Convert UTF-8 binary to floating point number
+%% @end
+-spec binary_to_float(binary()) -> float().
+binary_to_float(Bin) when is_binary(Bin) ->
+    list_to_float(binary_to_list(Bin)).
+
+%% @doc Convert floating point number to ASCII binary.
+%%
+%% <em>Note that only three digits after floating point are returned</em>
+%% @end
+-spec float_to_binary(float()) -> binary().
+float_to_binary(Float) when is_float(Float) ->
+    [Res] = io_lib:format("~.3f", [Float]),
+    list_to_binary(Res).
 
 %% @doc Convert binary to existing atom
 %%
@@ -418,6 +433,8 @@ binary_test_() ->
      % conversions to and from binary
      ?_assertEqual(123, binary_to_integer(<<"123">>)),
      ?_assertEqual(<<"123">>, integer_to_binary(123)),
+     ?_assertEqual(-123.25, binary_to_float(<<"-123.25">>)),
+     ?_assertEqual(<<"-123.250">>, float_to_binary(-123.25)),
      ?_assertEqual(<<"some">>, any_to_binary(some)),
      ?_assertEqual(<<"some">>, any_to_binary(<<"some">>)),
      ?_assertEqual(<<"123">>, any_to_binary(123)),

@@ -20,7 +20,7 @@
 
 %% Server callbacks
 -export([init/1]).
--export([handle_request/3, is_applicable/1]).
+-export([handle_request/3]).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -33,7 +33,8 @@ start_link() ->
 %%-----------------------------------------------------------------
 %% @private
 init({}) ->
-    sip_ua:init(?MODULE).
+    sip_cores:register_core(#sip_core_info{is_applicable = fun is_applicable/1}),
+    #sip_ua_state{callback = ?MODULE}.
 
 %% @private
 handle_request('OPTIONS', Request, State) ->

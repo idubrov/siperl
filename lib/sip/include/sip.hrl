@@ -94,8 +94,9 @@
 %%-----------------------------------------------------------------
 
 -record(sip_ua_state, {requests = dict:new(),   % Requests being sent by UAC
-                       mod :: module(),         % Client module
-                       state}).                 % Client state
+                       callback :: module(),    % Callback module
+                       state}).                 % Callback module state
 
 -define(CORE_PROPERTY, core_registration).
 -record(sip_core_info, {is_applicable :: fun((#sip_message{}) -> boolean())}). % check if message is applicable
+
