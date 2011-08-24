@@ -250,17 +250,6 @@ error_to_status({econnrefused, _}) -> 503;
 error_to_status(no_more_destinations) -> 503;
 error_to_status(_Reason) -> 500.
 
-select_target([]) -> none;
-select_target([{URI, false} | Rest]) ->
-    % mark destination as visited
-    {URI, [{URI, true} | Rest]};
-select_target([Top | Rest]) ->
-    % try to lookup in the rest URIs
-    case select_target(Rest) of
-        none -> none;
-        {URI, Rest2} -> {URI, [Top | Rest2]}
-    end.
-
 lookup_destinations(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
