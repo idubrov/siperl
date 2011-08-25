@@ -145,12 +145,12 @@ tx_key(server, Msg) ->
             {ok, Via} = sip_message:top_header('via', Msg),
             Host = Via#sip_hdr_via.host,
             Port = Via#sip_hdr_via.port,
-            #sip_tx_server{host = Host, port = Port, branch = Branch, method = Method};
+            #sip_tx_server{host = Host, port = Port, branch = Branch, method = Method}
 
         % No branch or does not start with magic cookie
-        _ ->
-            % FIXME: use procedure from 17.2.3
-            undefined
+        %_ ->
+        %    % FIXME: use procedure from 17.2.3
+        %    undefined
     end.
 
 %% @doc
@@ -168,7 +168,6 @@ tx_module(server, Request) ->
         _Method -> sip_transaction_server
      end.
 
-tx_send(undefined, _Msg) -> not_handled;
 tx_send(Key, Msg) when is_record(Msg, sip_message) ->
     {Kind, Param} =
         case Msg#sip_message.kind of

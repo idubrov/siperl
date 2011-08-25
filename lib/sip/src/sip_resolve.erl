@@ -113,7 +113,7 @@ is_supported("sip+d2t", false) -> true;
 is_supported("sips+d2t", _TLS) -> true;
 is_supported(_Service, _TLS) -> false.
 
--spec resolve(binary()) -> inet:ip_address().
+-spec resolve(string() | binary()) -> inet:ip_address().
 resolve(Host) when is_binary(Host) -> resolve(binary_to_list(Host));
 resolve(Host) when is_list(Host) ->
     {ok, Addr} = inet:getaddr(Host, inet),

@@ -36,7 +36,7 @@ put(Element, Priority, {Added, NotVisited})
             {Added2, NotVisited2}
     end.
 
--spec take(priority_set(T)) -> false | {value, T, {priority_set(T)}}.
+-spec take(priority_set(T)) -> false | {value, T, priority_set(T)}.
 take({_Added, []}) -> false;
 take({Added, [{_InvPri, Element} | NotVisited]}) -> {value, Element, {Added, NotVisited}}.
 

@@ -96,6 +96,6 @@ gen_test_() ->
      ?_assertEqual(15, size(generate_branch())),
      ?_assertEqual(8, size(generate_call_id())),
      ?_assertEqual(23, size(generate_id(23))),
-     ?_assert(begin Value = generate_cseq(), 1 =< Value andalso Value =< 2147483648 end)
+     ?_assertEqual(true, begin Value = generate_cseq(), 1 =< Value andalso Value =< 2147483648 end)
     ].
 -endif.

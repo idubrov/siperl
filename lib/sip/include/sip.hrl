@@ -42,7 +42,8 @@
                                       {'maddr', string() | inet:ip_address()} |
                                       {'received', inet:ip_address()} |
                                       {'branch', binary()} |
-                                      {binary() | atom(), term()}]}).
+                                      {binary() | atom(), term()} |
+                                      binary() | atom()]}).
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 

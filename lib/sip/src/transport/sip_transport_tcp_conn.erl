@@ -52,7 +52,7 @@ send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init(inet:socket() | #sip_destination{}) -> {ok, #state{}}.
+-spec init(inet:socket() | #sip_destination{}) -> {ok, #state{}, integer()} | {stop, term()}.
 init(Remote)
   when is_record(Remote, sip_destination) ->
     % New connection
@@ -79,7 +79,7 @@ init(Socket) ->
 
 %% @private
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->
-          {noreply, #state{}} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
+          {noreply, #state{}, integer()} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({tcp, _Socket, Packet}, State) ->
     {ok, NewState, Props} = process_stream(Packet, State, []),
 
@@ -97,7 +97,7 @@ handle_info(Req, State) ->
 
 %% @private
 -spec handle_call({send, #sip_message{}}, _, #state{}) ->
-          {reply, ok | {error, Reason :: term()}, #state{}} | {stop, {unexpected, _}, #state{}}.
+          {reply, ok | {error, Reason :: term()}, #state{}, integer()} | {stop, {unexpected, _}, #state{}}.
 handle_call({send, Message}, _From, State) ->
     Socket = State#state.socket,
     Packet = sip_message:to_binary(Message),
