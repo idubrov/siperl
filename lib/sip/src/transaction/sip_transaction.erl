@@ -104,8 +104,7 @@ handle_response(Msg) ->
 
 %% @doc Pass given response from the TU to the server transaction.
 %% @end
--spec send_response(#sip_message{}) ->
-          not_handled | {ok, #sip_tx_server{}}.
+-spec send_response(#sip_message{}) -> {ok, #sip_tx_server{}}.
 send_response(Msg) ->
     true = sip_message:is_response(Msg),
     TxKey = tx_key(server, Msg),
