@@ -21,20 +21,20 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% UAC/UAS callbacks
--export([handle_request/3, handle_response/3, is_applicable/1]).
+-export([handle_request/3, handle_response/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(req_info, {request :: #sip_message{},                % SIP request message
-                   destinations = [] :: [inet:ip_address()], % list of IP addresses to try next
-                   target_set2 = sip_priority_set:new(),     % URI to visit next (redirects)
-                   user_data}).                              % Custom user data associated with request
+-record(req_info, {request :: #sip_message{},                 % SIP request message
+                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
+                   target_set2 = sip_priority_set:new(),      % URI to visit next (redirects)
+                   user_data}).                               % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
-    [{handle_request, 3}, {handle_response, 3}, {is_applicable, 1} | gen_server:behaviour_info(callbacks)];
+    [{handle_request, 3}, {handle_response, 3} | gen_server:behaviour_info(callbacks)];
 behaviour_info(_) -> undefined.
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
@@ -64,7 +64,7 @@ create_request(Method, ToValue, ContactValue) when
     Contact = {'contact', ContactValue},
 
     % configure pre-existing route set
-    Routes = [{'route', sip_headers:route(Route, [])} || Route <- sip_config:routes()],
+    Routes = [{'route', sip_headers:address(<<>>, sip_uri:parse(RouteBin), [])} || RouteBin <- sip_config:routes()],
 
     #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
                  headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes}.
@@ -83,7 +83,7 @@ send_request(Request, UserData) ->
 
 %% @doc Send the response according to the XXXXXXXXXXX
 %% @end
--spec send_response(#sip_message{}) -> {ok, binary()}.
+-spec send_response(#sip_message{}) -> {ok, #sip_tx_server{}}.
 send_response(Response) ->
     sip_transaction:send_response(Response).
 
@@ -179,9 +179,6 @@ handle_response(_UserData, #sip_message{kind = #sip_response{status = Status}} =
 handle_response(_UserData, _Msg, State) ->
     {noreply, State}.
 
--spec is_applicable(#sip_message{}) -> boolean().
-is_applicable(_Msg) -> false.
-
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
@@ -243,7 +240,7 @@ process_redirect(Msg, State) ->
     send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
 
 count_via(Msg) ->
-    sip_message:foldl_headers('via', fun (_Value, Acc) -> Acc + 1 end, Msg).
+    sip_message:foldl_headers('via', fun (_Value, Acc) -> Acc + 1 end, 0, Msg).
 
 error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;
@@ -257,7 +254,10 @@ lookup_destinations(Request) ->
             {error, not_found} ->
                 RequestURI;
             {ok, #sip_hdr_address{uri = Route}} ->
-                case sip_headers:is_strict_router(Route) of
+                % See RFC3261, 8.1.2
+                % If first element in the route set is strict router,
+                % use Request-URI
+                case is_strict_router(Route) of
                     true -> RequestURI;
                     false -> Route
                 end
@@ -270,3 +270,18 @@ lookup_destinations(Request) ->
             _ -> URI
         end,
     sip_resolve:client_resolve(URI2).
+
+is_strict_router(#sip_uri{params = Params}) ->
+    not proplists:get_bool('lr', Params).
+
+%%-----------------------------------------------------------------
+%% Tests
+%%-----------------------------------------------------------------
+-ifndef(NO_TEST).
+
+-spec ua_test_() -> term().
+ua_test_() ->
+    [?_assertEqual(true, is_strict_router(sip_uri:parse(<<"sip:p3.middle.com">>))),
+     ?_assertEqual(false, is_strict_router(sip_uri:parse(<<"sip:p2.example.com;lr">>)))
+    ].
+-endif.
