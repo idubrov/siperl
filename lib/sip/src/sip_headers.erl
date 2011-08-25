@@ -13,7 +13,8 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([via/3, cseq/2, address/3, add_tag/3]).
+-export([via/3, cseq/2, address/3]).
+-export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
 %% Macros
