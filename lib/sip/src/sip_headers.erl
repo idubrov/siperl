@@ -425,6 +425,7 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) -
 
 %%% @doc Return value of the `q' parameter of the address as floating point number.
 %%% @end
+-spec qvalue(#sip_hdr_address{}) -> float().
 qvalue(Address) when is_record(Address, sip_hdr_address) ->
     case lists:keyfind('q', 1, Address#sip_hdr_address.params) of
         false ->
