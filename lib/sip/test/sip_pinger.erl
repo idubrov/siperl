@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author Ivan Dubrov <wfragg@gmail.com>
+%%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Pinger UAC implementations. Sends OPTIONS request to the
 %%% given destination.
 %%% @end

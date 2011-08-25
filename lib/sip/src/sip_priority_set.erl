@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author  Ivan Dubrov <wfragg@gmail.com>
+%%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc SIP priority set implementation
 %%%
 %%% Priority set is basically a priority queue that returns added

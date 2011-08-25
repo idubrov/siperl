@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author  Ivan Dubrov <wfragg@gmail.com>
+%%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc
 %%% Transaction layer API. Implements transport layer handler
 %%% behaviour.

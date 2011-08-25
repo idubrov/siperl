@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author  Ivan Dubrov <wfragg@gmail.com>
+%%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc SIP headers parsing/generation and utility functions
 %%%
 %%% FIXME: need to verify that all binary generation properly unescapes/escapes characters!

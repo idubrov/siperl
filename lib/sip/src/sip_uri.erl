@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author  Ivan Dubrov <wfragg@gmail.com>
+%%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc URI parse utilities
 %%%
 %%% Implementation of parsing for supported URI schemes (`sip', `sips', `tel').

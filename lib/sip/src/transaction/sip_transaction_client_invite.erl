@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author  Ivan Dubrov <wfragg@gmail.com>
+%%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc
 %%% RFC 3261 17.1.1 INVITE Client Transaction
 %%% @end

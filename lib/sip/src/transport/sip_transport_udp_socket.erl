@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author Ivan Dubrov <wfragg@gmail.com>
+%%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UDP SIP socket implementation.
 %%%
 %%% This module could operate in two modes: listening UDP process and

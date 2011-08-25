@@ -1,5 +1,5 @@
 %%%----------------------------------------------------------------
-%%% @author Ivan Dubrov <wfragg@gmail.com>
+%%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc
 %%% SIP application. Starts SIP listeners on configured endpoints.
 %%% @end
