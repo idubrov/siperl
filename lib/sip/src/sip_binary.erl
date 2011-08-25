@@ -20,8 +20,8 @@
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
 
 %% Include files
--include_lib("sip_common.hrl").
--include_lib("sip_parse.hrl").
+-include("sip_common.hrl").
+-include("sip_parse.hrl").
 
 %%-----------------------------------------------------------------
 %% is_* functions

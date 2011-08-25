@@ -9,9 +9,9 @@
 -module(sip_transaction).
 
 %% Include files
--include_lib("../sip_common.hrl").
--include_lib("sip.hrl").
--include_lib("sip_transaction.hrl").
+-include("../sip_common.hrl").
+-include("sip.hrl").
+-include("sip_transaction.hrl").
 
 % Client API
 -export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2]).

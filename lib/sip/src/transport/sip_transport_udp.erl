@@ -11,8 +11,8 @@
 -export([send/2]).
 
 %% Include files
--include_lib("../sip_common.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip.hrl").
 -include_lib("kernel/include/inet.hrl").
 
 %%-----------------------------------------------------------------

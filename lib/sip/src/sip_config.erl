@@ -11,7 +11,7 @@
 -export([t1/0, t2/0, t4/0, ports/1, self/0, routes/0, connection_timeout/0]).
 
 %% Includes
--include_lib("sip_common.hrl").
+-include("sip_common.hrl").
 
 %% API functions
 

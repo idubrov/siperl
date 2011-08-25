@@ -52,8 +52,8 @@
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
--include_lib("../sip_common.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip.hrl").
 
 -record(state, {socket, error, timeout = infinity :: integer() | infinity}).
 

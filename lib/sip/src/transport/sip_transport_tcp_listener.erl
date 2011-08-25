@@ -15,7 +15,7 @@
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Include files
--include_lib("sip.hrl").
+-include("sip.hrl").
 
 %% Types
 -record(state, {socket :: inet:socket()}).

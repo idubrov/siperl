@@ -22,9 +22,9 @@
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
--include_lib("../sip_common.hrl").
--include_lib("sip_transaction.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip_transaction.hrl").
+-include("sip.hrl").
 
 %%-----------------------------------------------------------------
 %% Macros

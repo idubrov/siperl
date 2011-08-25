@@ -24,8 +24,8 @@
 -export([handle_request/3, handle_response/3, is_applicable/1]).
 
 %% Include files
--include_lib("../sip_common.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip.hrl").
 
 -record(req_info, {request :: #sip_message{},                % SIP request message
                    destinations = [] :: [inet:ip_address()], % list of IP addresses to try next

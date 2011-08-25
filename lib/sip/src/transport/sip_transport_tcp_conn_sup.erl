@@ -22,8 +22,8 @@
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
--include_lib("../sip_common.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip.hrl").
 
 -define(SERVER, ?MODULE).
 

@@ -13,9 +13,9 @@
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
--include_lib("../sip_common.hrl").
--include_lib("sip_transaction.hrl").
--include_lib("sip.hrl").
+-include("../sip_common.hrl").
+-include("sip_transaction.hrl").
+-include("sip.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
 -export(['INIT'/2, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).

@@ -11,8 +11,8 @@
 -compile(export_all).
 
 %% Include files
--include_lib("sip.hrl").
--include_lib("sip_test.hrl").
+-include("sip.hrl").
+-include("sip_test.hrl").
 
 %%-----------------------------------------------------------------
 %% Functions
