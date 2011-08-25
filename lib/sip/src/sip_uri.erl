@@ -35,6 +35,7 @@ parse(Bin) when is_binary(Bin) ->
     Bin.
 
 %% @doc Parse SIP URI
+%% BNF notation:
 %% ```
 %% SIP-URI          =  "sip:" [ userinfo ] hostport
 %%                     uri-parameters [ headers ]
@@ -74,7 +75,8 @@ parse_sip(Scheme, Bin) ->
 
 
 %% @doc Parse SIP URI parameters lists
-%%
+%% BNF notation:
+%% ```
 %% uri-parameters    =  *( ";" uri-parameter)
 %% uri-parameter     =  transport-param / user-param / method-param
 %%                      / ttl-param / maddr-param / lr-param / other-param
@@ -93,6 +95,7 @@ parse_sip(Scheme, Bin) ->
 %% pvalue            =  1*paramchar
 %% paramchar         =  param-unreserved / unreserved / escaped
 %% param-unreserved  =  "[" / "]" / "/" / ":" / "&" / "+" / "$"
+%% '''
 %% @end
 parse_params(<<$;, Bin/binary>>, List) ->
     Pred = fun ($;) -> true; % next parameter
@@ -115,7 +118,8 @@ parse_params(Bin, List) ->
     {lists:reverse(List), Bin}.
 
 %% @doc Parse SIP URI headers
-%%
+%% BNF notation:
+%% ```
 %% headers         =  "?" header *( "&" header )
 %% header          =  hname "=" hvalue
 %% hname           =  1*( hnv-unreserved / unreserved / escaped )
@@ -125,6 +129,7 @@ parse_params(Bin, List) ->
 %% mark            =  "-" / "_" / "." / "!" / "~" / "*" / "'"
 %%                    / "(" / ")"
 %% escaped         =  "%" HEXDIG HEXDIG
+%% '''
 %% @end
 parse_headers(<<>>) -> [];
 parse_headers(<<$?, Bin/binary>>) ->
