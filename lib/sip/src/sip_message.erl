@@ -15,7 +15,7 @@
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
--export([update_top_header/3, replace_top_header/3]).
+-export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([top_header/2, top_via_branch/1, with_branch/2, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
@@ -128,7 +128,8 @@ update_header(HeaderName, Fun, []) ->
         Value -> [{HeaderName, Value}]
     end.
 
-%% @doc
+%% @doc Replace value of the top header with given name
+%%
 %% Replace value of top header with given name with provided value. If
 %% header value is multi-value (a list), the first element of the list
 %% is replaced.
@@ -143,6 +144,14 @@ replace_top_header(HeaderName, Value, Message) ->
                    (_) -> Value
                 end,
     update_top_header(HeaderName, UpdateFun, Message).
+
+%% @doc Append header with given name and value
+%%
+%% Appends header with given name and value to the end of the headers list.
+%% @end
+-spec append_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
+append_header(HeaderName, Value, Message) when is_record(Message, sip_message) ->
+    Message#sip_message{headers = Message#sip_message.headers ++ [{HeaderName, Value}]}.
 
 %% @doc
 %% Retrieve `branch' parameter of top via header or `undefined' if no such

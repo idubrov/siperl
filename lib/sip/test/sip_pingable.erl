@@ -34,7 +34,7 @@ start_link() ->
 %% @private
 init({}) ->
     sip_cores:register_core(#sip_core_info{is_applicable = fun is_applicable/1}),
-    #sip_ua_state{callback = ?MODULE}.
+    {ok, #sip_ua_state{callback = ?MODULE, allow = ['OPTIONS']}}.
 
 %% @private
 handle_request('OPTIONS', Request, State) ->
@@ -44,5 +44,4 @@ handle_request('OPTIONS', Request, State) ->
 handle_request(Method, Request, State) ->
     sip_ua:handle_request(Method, Request, State).
 
-is_applicable(#sip_message{kind = #sip_request{method = 'OPTIONS'}}) -> true;
-is_applicable(_Msg) -> false.
+is_applicable(_Msg) -> true.

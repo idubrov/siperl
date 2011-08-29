@@ -110,13 +110,29 @@ handle_cast(_Req, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({request, Msg}, #sip_ua_state{callback = Mod} = State) ->
+handle_info({request, Msg}, #sip_ua_state{callback = Mod, allow = Allow} = State) ->
     Method = Msg#sip_message.kind#sip_request.method,
-    % FIXME: rules 8.2.1 and further
+
+    % FIXME: stateless behaviour..
     % start new server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
-    Mod:handle_request(Method, Msg, State);
+    case lists:any(fun (V) -> V =:= Method end, Allow) of
+        true ->
+            % FIXME: rules 8.2.1 and further
+            Mod:handle_request(Method, Msg, State);
+        false ->
+            % Send 'Method Not Allowed'
+            Resp = sip_message:create_response(Msg, 405),
+
+            % Add `Allow:' header
+            Resp2 = sip_message:append_header('allow', Allow, Resp),
+
+            % Send response
+            send_response(Resp2),
+            {noreply, State}
+    end;
+
 handle_info({response, Msg}, #sip_ua_state{callback = Mod} = State) ->
     TxKey = sip_transaction:tx_key(client, Msg),
 
@@ -165,8 +181,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec handle_request(binary() | atom(), #sip_message{}, #sip_ua_state{}) -> any().
 handle_request(_Method, Msg, State) ->
-    % Send 'Method Not Allowed' by default
-    Resp = sip_message:create_response(Msg, 405),
+    % Send 'Server Internal Error' by default
+    Resp = sip_message:create_response(Msg, 500),
     send_response(Resp),
     {noreply, State}.
 
