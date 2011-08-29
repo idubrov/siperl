@@ -29,7 +29,7 @@
 
 -record(req_info, {request :: #sip_message{},                 % SIP request message
                    destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-                   target_set2 = sip_priority_set:new(),      % URI to visit next (redirects)
+                   target_set = sip_priority_set:new(),      % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
@@ -77,7 +77,7 @@ send_request(Request, UserData) ->
 
     % Dispatch asynchronously
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
-    ReqInfo = #req_info{request = Request, user_data = UserData, target_set2 = TargetSet},
+    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
     gen_server:cast(self(), {send, ReqInfo}),
     ok.
 
@@ -189,7 +189,7 @@ handle_response(_UserData, _Msg, State) ->
 %% @end
 send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
     % no destination IPs -- resolve next URI from target_set
-    case sip_priority_set:take(ReqInfo#req_info.target_set2) of
+    case sip_priority_set:take(ReqInfo#req_info.target_set) of
         false ->
             % Handle failed requests (8.1.3.1, RFC 3261)
             Status = error_to_status(Reason),
@@ -205,7 +205,7 @@ send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
             Kind = Request#sip_message.kind,
             Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
             Destinations = lookup_destinations(Request2),
-            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set2 = TargetSet2},
+            ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
             send_to_next(Reason, ReqInfo2, State)
     end;
 send_to_next(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
@@ -232,8 +232,8 @@ process_redirect(Msg, State) ->
                  sip_priority_set:put(Contact#sip_hdr_address.uri, QValue, TargetSet)
         end,
     % go through Contact: headers and add URIs to our current redirect set
-    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set2, Msg),
-    ReqInfo2 = ReqInfo#req_info{target_set2 = NewTargetSet, destinations = []},
+    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Msg),
+    ReqInfo2 = ReqInfo#req_info{target_set = NewTargetSet, destinations = []},
     Transactions2 = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
 
     % try next destination, was redirected
