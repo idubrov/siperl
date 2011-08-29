@@ -130,6 +130,7 @@ parse('call-id', Bin) -> Bin;
 parse(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
     {Top, <<>>} = parse_address(Bin),
     Top;
+
 %% Contact        =  ("Contact" / "m" ) HCOLON
 %%                  ( STAR / (contact-param *(COMMA contact-param)))
 %% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
@@ -162,6 +163,20 @@ parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-rou
             end;
         {Top, <<>>} -> Top
     end;
+
+%% Allow  = "Allow" HCOLON [Method *(COMMA Method)]
+parse('allow', Bin) ->
+    {MethodBin, Bin2} = sip_binary:parse_token(Bin),
+    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    case Bin2 of
+        <<?COMMA, Bin3/binary>> ->
+            % Parse the rest of the Allow
+            % *(COMMA Method)
+            [Method | parse('allow', Bin3)];
+
+        <<>> -> [Method]
+    end;
+
 %% Any other header, just return value as is
 parse(_Name, Value) ->
     Value.
@@ -268,7 +283,7 @@ format(Name, [Value]) -> format(Name, Value);
 format(Name, [Top | Rest]) ->
     Joiner = fun (Elem, Bin) ->
                       ElemBin = format(Name, Elem),
-                      <<Bin/binary, ?COMMA, ElemBin/binary>>
+                      <<Bin/binary, ?COMMA, ?SP, ElemBin/binary>>
              end,
     TopBin = format(Name, Top),
     lists:foldl(Joiner, TopBin, Rest);
@@ -482,6 +497,7 @@ header_name_to_binary('call-id') -> <<"Call-Id">>;
 header_name_to_binary('from') -> <<"From">>;
 header_name_to_binary('to') -> <<"To">>;
 header_name_to_binary('contact') -> <<"Contact">>;
+header_name_to_binary('allow') -> <<"Allow">>;
 header_name_to_binary(Name) when is_binary(Name) -> Name;
 header_name_to_binary(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 
@@ -522,11 +538,12 @@ parse_test_() ->
                    parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
      ?_assertEqual(<<"Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\nCall-Id: callid\r\nContact: Alice <sip:example.com>\r\n"
-                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\n">>,
+                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n">>,
                    format_headers([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
-                                   {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25}])),
+                                   {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25},
+                                   {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>}])),
 
      % Formatting
      ?_assertEqual(<<"Content-Length: 5\r\n">>,
@@ -590,15 +607,15 @@ parse_test_() ->
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                     address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}]),
                     address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
-                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
+                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
      ?_assertEqual('*', parse('contact', <<"*">>)),
 
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
                    format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2,<sip:anonymous@example.com>;param=\"va lue\"">>,
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>,
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
                                       address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
@@ -636,7 +653,7 @@ parse_test_() ->
                    parse('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com;branch=z9hG4bK776asdhds,SIP/2.0/UDP pc22.atlanta.com;branch=z9hG4bK43nthoeu3">>)),
      ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>,
                    format('via', [via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}])])),
-     ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag,SIP/2.0/TCP pc33.atlanta.com:5060;branch=z9hG4bK776asdhds">>,
+     ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag, SIP/2.0/TCP pc33.atlanta.com:5060;branch=z9hG4bK776asdhds">>,
                    format('via', [via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                                          via(tcp, "pc33.atlanta.com", [{branch, <<"z9hG4bK776asdhds">>}])])),
      ?_assertEqual(<<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>,
@@ -647,8 +664,14 @@ parse_test_() ->
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=224.0.0.1;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
      ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
+     
+     % Allow
+     ?_assertEqual(['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'],
+                   parse('allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>)),
+     ?_assertEqual(<<"INVITE, ACK, CANCEL, OPTIONS, BYE">>,
+                   format('allow', ['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'])),
 
-     % Subject
+     % Subject (FIXME: implement proper tests)
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
         format('subject', <<"I know you're there, pick up the phone and talk to me!">>))
     ].
