@@ -49,5 +49,6 @@ handle_call(Req, From, State) ->
 
 -spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> any().
 handle_response(Client, Response, State) ->
-    gen_server:reply(Client, Response),
+    Response2 = sip_message:parse_all_headers(Response),
+    gen_server:reply(Client, Response2),
     {noreply, State}.
