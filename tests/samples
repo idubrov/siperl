@@ -1,3 +1,5 @@
+application:start(gproc), application:start(sip), sip_pingable:start_link(), sip_pinger:ping(element(2, sip_pinger:start_link()), sip_headers:address(<<>>, <<"sip:127.0.0.1">>, [])).
+
 sip_pingable:start_link(), sip_pinger:ping(element(2, sip_pinger:start_link()), sip_headers:address(<<>>, <<"sip:127.0.0.1">>, [])).
 
 sip_pinger:ping(element(2, sip_pinger:start_link()), sip_headers:address(<<>>, <<"sip:sipnet.ru">>, [])).
