@@ -417,7 +417,8 @@ hex(N) when N >= 10, N =< 15 -> N - 10 + $a.
 
 -spec binary_test_() -> list().
 binary_test_() ->
-    [?_assertEqual(<<>>, trim_leading(<<>>)),
+    [% trimming, upper, lower
+     ?_assertEqual(<<>>, trim_leading(<<>>)),
      ?_assertEqual(<<>>, trim_leading(<<"    ">>)),
      ?_assertEqual(<<"ABC DEF    ">>, trim_leading(<<"  ABC DEF    ">>)),
      ?_assertEqual(<<>>, trim_trailing(<<>>)),
@@ -428,7 +429,10 @@ binary_test_() ->
      ?_assertEqual(<<"ABC DEF">>, trim(<<"  ABC DEF    ">>)),
      ?_assertEqual(<<"hello">>, to_lower(<<"HELlo">>)),
      ?_assertEqual(<<"HELLO">>, to_upper(<<"HELlo">>)),
-     
+
+     % quoting
+     ?_assertEqual(<<"\"va\\\\lue\"">>, quote_string(<<"va\\lue">>)),
+
      % "is" tests
      ?_assertEqual(true, is_digit_char($5)),
      ?_assertEqual(false, is_digit_char($a)),
@@ -463,9 +467,12 @@ binary_test_() ->
      ?_assertEqual(<<"some">>, any_to_binary(some)),
      ?_assertEqual(<<"some">>, any_to_binary(<<"some">>)),
      ?_assertEqual(<<"123">>, any_to_binary(123)),
-     ?_assertEqual(<<"some">>, any_to_binary("some")),
+     ?_assertEqual(<<"123.35">>, any_to_binary(123.35)),
+     ?_assertEqual(<<"example.com">>, any_to_binary("example.com")),
      ?_assertEqual(<<"10.0.0.1">>, any_to_binary({10, 0, 0, 1})),
+     ?_assertEqual(<<"example.com">>, addr_to_binary("example.com")),
      ?_assertEqual(<<"10.0.0.1">>, addr_to_binary({10, 0, 0, 1})),
+     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, addr_to_binary({8193,3512,4515,2519,7988,35374,1952,30301})),
      ?_assertEqual(<<"neverexistingatom">>, binary_to_existing_atom(<<"neverexistingatom">>)),
      ?_assertEqual('existingatom', binary_to_existing_atom(<<"existingatom">>)),
 
