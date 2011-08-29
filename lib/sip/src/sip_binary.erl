@@ -362,6 +362,7 @@ binary_to_existing_atom(Bin) ->
 any_to_binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
 any_to_binary(Bin) when is_binary(Bin) -> Bin;
 any_to_binary(Int) when is_integer(Int) -> integer_to_binary(Int);
+any_to_binary(Float) when is_float(Float) -> float_to_binary(Float);
 any_to_binary(List) when is_list(List) -> list_to_binary(List);
 any_to_binary(MaybeAddr) -> addr_to_binary(MaybeAddr).
 

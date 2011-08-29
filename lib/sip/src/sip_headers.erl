@@ -509,6 +509,8 @@ parse_via_param(_Name, Value) -> Value.
 parse_test_() ->
     [
      % Parsing
+     ?_assertEqual([], parse_headers(<<>>)),
+
      ?_assertEqual([{'content-length', <<"5">>}],
                    parse_headers(<<"Content-Length: 5\r\n">>)),
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -533,18 +535,19 @@ parse_test_() ->
 
      % Custom header
      ?_assertEqual(<<"custom">>, parse('x-custom2', <<"custom">>)),
+     ?_assertEqual(<<"25">>, format('x-custom2', 25)),
+
+     % Call-Id
+     ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
 
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
      ?_assertEqual(<<"98083">>,
                    format('content-length', 98083)),
      % CSeq
-     ?_assertEqual(#sip_hdr_cseq{sequence = 1231, method = 'ACK'},
-                   parse('cseq', <<"1231 ACK">>)),
-     ?_assertEqual(<<"123453 INVITE">>,
-                   format('cseq', #sip_hdr_cseq{sequence=  123453, method = 'INVITE'})),
-     ?_assertEqual(<<"123453 INVITE">>,
-                   format('cseq', <<"123453 INVITE">>)),
+     ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
+     ?_assertEqual(<<"123453 INVITE">>, format('cseq', cseq(123453, 'INVITE'))),
+     ?_assertEqual(<<"123453 INVITE">>, format('cseq', <<"123453 INVITE">>)),
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
@@ -580,19 +583,27 @@ parse_test_() ->
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                     address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>)),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}]),
+                    address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
+                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
      ?_assertEqual('*', parse('contact', <<"*">>)),
 
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
                    format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
-                                             address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
+                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.200,<sip:anonymous@example.com>;param=\"va lue\"">>,
+                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
+                                      address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
      ?_assertEqual(<<"*">>, format('contact', '*')),
 
      % q-value
-     ?_assertEqual(1.0, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, []))),
-     ?_assertEqual(0.2, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}]))),
-     ?_assertEqual(0.5, qvalue(address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.5}]))),
+     ?_assertEqual(1.0, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), []))),
+     ?_assertEqual(0.2, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{q, <<"0.2">>}]))),
+     ?_assertEqual(0.5, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{q, 0.5}]))),
 
      % Route, Record-Route
      ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),
@@ -633,7 +644,7 @@ parse_test_() ->
      ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
 
-     % Formatting
+     % Subject
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
         format('subject', <<"I know you're there, pick up the phone and talk to me!">>))
     ].
