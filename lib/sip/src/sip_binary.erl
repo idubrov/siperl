@@ -417,7 +417,6 @@ hex(N) when N >= 10, N =< 15 -> N - 10 + $a.
 
 -spec binary_test_() -> list().
 binary_test_() ->
-    % for join tests
     [?_assertEqual(<<>>, trim_leading(<<>>)),
      ?_assertEqual(<<>>, trim_leading(<<"    ">>)),
      ?_assertEqual(<<"ABC DEF    ">>, trim_leading(<<"  ABC DEF    ">>)),
@@ -429,8 +428,22 @@ binary_test_() ->
      ?_assertEqual(<<"ABC DEF">>, trim(<<"  ABC DEF    ">>)),
      ?_assertEqual(<<"hello">>, to_lower(<<"HELlo">>)),
      ?_assertEqual(<<"HELLO">>, to_upper(<<"HELlo">>)),
+     
+     % "is" tests
+     ?_assertEqual(true, is_digit_char($5)),
+     ?_assertEqual(false, is_digit_char($a)),
+     ?_assertEqual(true, is_alphanum_char($a)),
+     ?_assertEqual(false, is_alphanum_char($:)),
+     ?_assertEqual(true, is_unreserved_char($~)),
+     ?_assertEqual(false, is_unreserved_char($;)),
+     ?_assertEqual(true, is_space_char($ )),
+     ?_assertEqual(false, is_space_char($b)),
      ?_assertEqual(true, is_token_char($+)),
      ?_assertEqual(false, is_token_char($:)),
+     ?_assertEqual(true, is_reserved_char($;)),
+     ?_assertEqual(false, is_reserved_char($~)),
+     ?_assertEqual(true, is_user_unreserved_char($&)),
+     ?_assertEqual(false, is_user_unreserved_char($~)),
 
      % parse token and quoted strings
      ?_assertEqual({<<"some">>, <<"data ">>}, parse_token(<<"   some data ">>)),
