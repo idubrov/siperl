@@ -438,14 +438,11 @@ qvalue(Address) when is_record(Address, sip_hdr_address) ->
 
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
--spec add_tag(atom(), #sip_hdr_address{}, binary() | undefined) -> #sip_hdr_address{}.
-add_tag(Name, Value, undefined) when Name =:= 'to'; Name =:= 'from' -> Value;
+-spec add_tag(atom(), #sip_hdr_address{}, binary()) -> #sip_hdr_address{}.
 add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
     Value2 = parse(Name, Value),
     Params = lists:keystore('tag', 1, Value2#sip_hdr_address.params, {'tag', Tag}),
     Value2#sip_hdr_address{params = Params}.
-
-
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -515,14 +512,21 @@ parse_test_() ->
                    parse_headers(<<"Content-Length: 5\r\n">>)),
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                    {'call-id', <<"callid">>}],
-                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\nt: sip:bob@localhost\r\ni: callid\r\n">>)),
+                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>}],
+                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\nt: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n">>)),
      ?_assertEqual([{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}],
                    parse_headers(<<"X-Custom: Nothing\r\nContent-Length: 5\r\n">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
+     ?_assertEqual(<<"Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
+                     "To: sip:bob@localhost\r\nCall-Id: callid\r\nContact: Alice <sip:example.com>\r\n"
+                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\n">>,
+                   format_headers([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
+                                   {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
+                                   {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
+                                   {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25}])),
 
      % Formatting
      ?_assertEqual(<<"Content-Length: 5\r\n">>,
@@ -594,7 +598,7 @@ parse_test_() ->
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.200,<sip:anonymous@example.com>;param=\"va lue\"">>,
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2,<sip:anonymous@example.com>;param=\"va lue\"">>,
                    format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
                                       address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
@@ -648,5 +652,12 @@ parse_test_() ->
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
         format('subject', <<"I know you're there, pick up the phone and talk to me!">>))
     ].
+
+-spec utility_test_() -> list().
+utility_test_() ->
+    URI = sip_uri:parse(<<"sip:example.com">>),
+    [
+     ?_assertEqual(address(<<>>, URI, [{tag, <<"123456">>}]), add_tag('to', address(<<>>, URI, []), <<"123456">>))
+     ].
 
 -endif.

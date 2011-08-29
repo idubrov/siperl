@@ -338,12 +338,20 @@ binary_to_float(Bin) when is_binary(Bin) ->
 
 %% @doc Convert floating point number to ASCII binary.
 %%
-%% <em>Note that only three digits after floating point are returned</em>
+%% <em>Note that at most three digits after floating point are returned</em>
 %% @end
 -spec float_to_binary(float()) -> binary().
 float_to_binary(Float) when is_float(Float) ->
     [Res] = io_lib:format("~.3f", [Float]),
-    list_to_binary(Res).
+    Bin = list_to_binary(Res),
+    Sz1 = size(Bin) - 1,
+    Sz2 = Sz1 - 1,
+    % Strip last zeros
+    case Bin of
+        <<R:Sz2/binary, "00">> -> R;
+        <<R:Sz1/binary, "0">> -> R;
+        R -> R
+    end.
 
 %% @doc Convert binary to existing atom
 %%
