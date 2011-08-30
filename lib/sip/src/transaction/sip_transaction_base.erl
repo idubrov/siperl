@@ -27,9 +27,21 @@
 %% API
 %%-----------------------------------------------------------------
 -spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
-init(#tx_state{tx_key = Key, tx_user = TxUser} = TxState) ->
+init(#tx_state{tx_key = Key, tx_user = TxUser, request = Msg} = TxState) ->
     % Register transaction under its key
     gproc:add_local_name({tx, Key}),
+
+    % Add gproc: property for loop detection for server transactions, see 8.2.2.2
+    case Key of
+        #sip_tx_server{} ->
+            FromTag = sip_message:tag('from', Msg),
+            CallId = sip_message:top_header('call-id', Msg),
+            CSeq = sip_message:top_header('cseq', Msg),
+            gproc:add_local_property({tx_loop, FromTag, CallId, CSeq}, Key),
+            ok;
+        #sip_tx_client{} ->
+            ok
+    end,
 
     % start monitoring TU user so we terminate if it does
     % FIXME: mechanism for detecting gproc-registered TUs failures

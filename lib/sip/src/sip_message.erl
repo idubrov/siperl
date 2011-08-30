@@ -16,7 +16,8 @@
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
--export([top_header/2, top_via_branch/1, with_branch/2, foldl_headers/4]).
+-export([top_header/2, top_via_branch/1, tag/2]).
+-export([with_branch/2, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -167,6 +168,22 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
         false -> {error, not_found}
     end.
 
+%% @doc Retrieve `tag' parameter of From/To header
+%%
+%% Retrieve `tag' parameter of `From:'/`To:' header or `undefined' if no such
+%% parameter present.
+%%
+%% This function parses the header value if header is in binary form.
+%% @end
+-spec tag('to' | 'from', #sip_message{}) -> {ok, binary()} | {error, not_found}.
+tag(Header, Message) when
+  is_record(Message, sip_message), (Header =:= 'to' orelse Header =:= 'from') ->
+    {ok, Value} = top_header(Header, Message#sip_message.headers),
+    case lists:keyfind(tag, 1, Value#sip_hdr_address.params) of
+        {tag, Tag} when is_binary(Tag) -> Tag;
+        false -> undefined
+    end.
+
 %% @doc Calls `Fun(Value, AccIn)' on all successive header values named `Name'
 %%
 %% <em>Note: this function parses the header value if header is in binary form.</em>
@@ -185,7 +202,7 @@ foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip
 %% Retrieve top value of given header. Accepts either full SIP message
 %% or list of headers.
 %%
-%% This function parses the header value if header is in binary form.
+%% <em>This function parses the header value if header is in binary form.</em>
 %% @end
 -spec top_header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
           {ok, term()} | {error, not_found}.

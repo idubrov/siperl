@@ -29,7 +29,7 @@
 
 -record(req_info, {request :: #sip_message{},                 % SIP request message
                    destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-                   target_set = sip_priority_set:new(),      % URI to visit next (redirects)
+                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
@@ -56,7 +56,7 @@ create_request(Method, ToValue, ContactValue) when
     MaxForwards = {'max-forwards', 70},
     From = {'from', sip_headers:address(<<"Anonymous">>,
                                         <<"sip:thisis@anonymous.invalid">>,
-                                        [{tag, sip_idgen:generate_tag()}])},
+                                        [{'tag', sip_idgen:generate_tag()}])},
     To = {'to', ToValue},
     % FIXME: for REGISTER requests CSeqs are not arbitrary...
     CSeq = {'cseq', sip_headers:cseq(sip_idgen:generate_cseq(), Method)},
@@ -117,18 +117,23 @@ handle_info({request, Msg}, #sip_ua_state{callback = Mod, allow = Allow} = State
     % start new server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
+    % Verify method according to the 8.2.1
     case lists:any(fun (V) -> V =:= Method end, Allow) of
         true ->
-            % FIXME: rules 8.2.1 and further
-            Mod:handle_request(Method, Msg, State);
+            % Verify for loop according to the 8.2.2.2
+            case is_loop(Msg) of
+                false ->
+                    Mod:handle_request(Method, Msg, State);
+                true ->
+                    % Send "482 Loop Detected"
+                    Resp = sip_message:create_response(Msg, 482),
+                    send_response(Resp),
+                    {noreply, State}
+            end;
         false ->
-            % Send 'Method Not Allowed'
+            % Send "405 Method Not Allowed"
             Resp = sip_message:create_response(Msg, 405),
-
-            % Add `Allow:' header
             Resp2 = sip_message:append_header('allow', Allow, Resp),
-
-            % Send response
             send_response(Resp2),
             {noreply, State}
     end;
@@ -289,6 +294,23 @@ lookup_destinations(Request) ->
 
 is_strict_router(#sip_uri{params = Params}) ->
     not proplists:get_bool('lr', Params).
+
+%% Check against loop by following 8.2.2.2 procedures
+is_loop(Msg) ->
+    ToTag = sip_message:tag('to', Msg),
+    case ToTag of
+        undefined ->
+            % Search transaction by From tag, Call-ID, and CSeq
+            % There must be exactly one matching transaction (with same key)
+            TxKey = sip_transaction:tx_key(server, Msg),
+            case sip_transaction:check_for_loop(Msg) of
+                [TxKey] -> false;
+                _Other -> true
+            end;
+
+        _ ->
+            false % tag present, no loop
+    end.
 
 %%-----------------------------------------------------------------
 %% Tests
