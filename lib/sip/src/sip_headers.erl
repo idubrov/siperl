@@ -164,10 +164,15 @@ parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-rou
         {Top, <<>>} -> Top
     end;
 
-%% Allow  = "Allow" HCOLON [Method *(COMMA Method)]
-parse('allow', Bin) ->
+%% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
+%% Require = "Require" HCOLON option-tag *(COMMA option-tag)
+parse(Name, Bin) when
+  Name =:= 'allow'; Name =:= 'require' ->
+    Normalize = if Name =:= 'allow' -> fun sip_binary:to_upper/1;
+                   true -> fun sip_binary:to_lower/1
+                end,
     {MethodBin, Bin2} = sip_binary:parse_token(Bin),
-    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    Method = sip_binary:binary_to_existing_atom(Normalize(MethodBin)),
     case Bin2 of
         <<?COMMA, Bin3/binary>> ->
             % Parse the rest of the Allow
@@ -486,6 +491,7 @@ binary_to_header_name(<<"f">>) -> 'from';
 binary_to_header_name(<<"t">>) -> 'to';
 binary_to_header_name(<<"i">>) -> 'call-id';
 binary_to_header_name(<<"m">>) -> 'contact';
+binary_to_header_name(<<"k">>) -> 'supported';
 binary_to_header_name(Bin) -> sip_binary:binary_to_existing_atom(Bin).
 
 %% Converting header name back to binary
@@ -498,6 +504,9 @@ header_name_to_binary('from') -> <<"From">>;
 header_name_to_binary('to') -> <<"To">>;
 header_name_to_binary('contact') -> <<"Contact">>;
 header_name_to_binary('allow') -> <<"Allow">>;
+header_name_to_binary('require') -> <<"Require">>;
+header_name_to_binary('supported') -> <<"Supported">>;
+header_name_to_binary('unsupported') -> <<"Unsupported">>;
 header_name_to_binary(Name) when is_binary(Name) -> Name;
 header_name_to_binary(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 

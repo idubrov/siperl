@@ -94,10 +94,11 @@
 %% SIP UAC/UAS
 %%-----------------------------------------------------------------
 
--record(sip_ua_state, {requests = dict:new(),    % Requests being sent by UAC
-                       callback :: module(),     % Callback module
-                       allow = [] :: [atom()],   % List of allowed methods
-                       state}).                  % Callback module state
+-record(sip_ua_state, {requests = dict:new(),       % Requests being sent by UAC
+                       callback :: module(),        % Callback module
+                       allow = [] :: [atom()],      % List of allowed methods
+                       supported = [] :: [atom()],  % List of supported extensions
+                       state}).                     % Callback module state
 
 -define(CORE_PROPERTY, core_registration).
 -record(sip_core_info, {is_applicable :: fun((#sip_message{}) -> boolean())}). % check if message is applicable

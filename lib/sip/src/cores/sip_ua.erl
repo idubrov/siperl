@@ -110,31 +110,19 @@ handle_cast(_Req, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({request, Msg}, #sip_ua_state{callback = Mod, allow = Allow} = State) ->
+handle_info({request, Msg}, #sip_ua_state{callback = Mod} = State) ->
     Method = Msg#sip_message.kind#sip_request.method,
 
-    % FIXME: stateless behaviour..
     % start new server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
-    % Verify method according to the 8.2.1
-    case lists:any(fun (V) -> V =:= Method end, Allow) of
-        true ->
-            % Verify for loop according to the 8.2.2.2
-            case is_loop(Msg) of
-                false ->
-                    Mod:handle_request(Method, Msg, State);
-                true ->
-                    % Send "482 Loop Detected"
-                    Resp = sip_message:create_response(Msg, 482),
-                    send_response(Resp),
-                    {noreply, State}
-            end;
-        false ->
-            % Send "405 Method Not Allowed"
-            Resp = sip_message:create_response(Msg, 405),
-            Resp2 = sip_message:append_header('allow', Allow, Resp),
-            send_response(Resp2),
+    % Perform validation
+    Validation = [fun validate_allowed/1, fun validate_loop/1, fun validate_required/1],
+    case validate(Validation, {Msg, State}) of
+        ok ->
+            Mod:handle_request(Method, Msg, State);
+        {error, ActFun} ->
+            ActFun(),
             {noreply, State}
     end;
 
@@ -295,21 +283,67 @@ lookup_destinations(Request) ->
 is_strict_router(#sip_uri{params = Params}) ->
     not proplists:get_bool('lr', Params).
 
-%% Check against loop by following 8.2.2.2 procedures
-is_loop(Msg) ->
-    ToTag = sip_message:tag('to', Msg),
-    case ToTag of
-        undefined ->
-            % Search transaction by From tag, Call-ID, and CSeq
-            % There must be exactly one matching transaction (with same key)
-            TxKey = sip_transaction:tx_key(server, Msg),
-            case sip_transaction:check_for_loop(Msg) of
-                [TxKey] -> false;
-                _Other -> true
-            end;
+validate([], _Obj) -> ok;
+validate([ValidateFun | Rest], Obj) ->
+    case ValidateFun(Obj) of
+        ok -> validate(Rest, Obj);
+        {error, Reply} -> {error, Reply}
+    end.
 
-        _ ->
-            false % tag present, no loop
+%% Validation
+
+%% Validate message according to the 8.2.1
+validate_allowed({Msg, State}) ->
+    Method = Msg#sip_message.kind#sip_request.method,
+    Allow = State#sip_ua_state.allow,
+    Contains = lists:any(fun (V) -> V =:= Method end, Allow),
+    case Contains of
+        true -> ok;
+        false ->
+
+            ActFun =
+                fun() ->
+                        % Send "405 Method Not Allowed"
+                        Resp = sip_message:create_response(Msg, 405),
+                        Resp2 = sip_message:append_header('allow', Allow, Resp),
+                        send_response(Resp2)
+                end,
+            {error, ActFun}
+    end.
+
+%% Validate message according to the 8.2.2.2
+validate_loop({Msg, _State}) ->
+    case sip_transaction:is_loop_detected(Msg) of
+        false -> ok;
+        true ->
+            ActFun =
+                fun() ->
+                        % Send "482 Loop Detected"
+                        Resp = sip_message:create_response(Msg, 482),
+                        send_response(Resp)
+                end,
+            {error, ActFun}
+    end.
+
+%% Validate message according to the 8.2.2.3
+validate_required({Msg, State}) ->
+    Supported = State#sip_ua_state.supported,
+    IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,
+
+    %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
+    case lists:keyfind('require', 1, Msg#sip_message.headers) of
+        false -> ok;
+        {'require', ExtensionsBin} ->
+            Extensions = sip_headers:parse('require', ExtensionsBin),
+            Unsupported = lists:filter(IsNotSupported, Extensions),
+            ActFun =
+                fun() ->
+                        % Send "420 Bad Extension"
+                        Resp = sip_message:create_response(Msg, 420),
+                        Resp2 = sip_message:append_header('unsupported', Unsupported, Resp),
+                        send_response(Resp2)
+                end,
+            {error, ActFun}
     end.
 
 %%-----------------------------------------------------------------

@@ -15,7 +15,7 @@
 
 % Client API
 -export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2]).
--export([list_tx/0, check_for_loop/1]).
+-export([list_tx/0, is_loop_detected/1]).
 
 % Internal API for transport layer
 -export([handle_request/1, handle_response/1]).
@@ -110,12 +110,33 @@ send_response(Msg) ->
     TxKey = tx_key(server, Msg),
     tx_send(TxKey, Msg).
 
-check_for_loop(Msg) ->
-    FromTag = sip_message:tag('from', Msg),
-    CallId = sip_message:top_header('call-id', Msg),
-    CSeq = sip_message:top_header('cseq', Msg),
-    List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
-    [TxKey || {_Pid, TxKey} <- List].
+%% @doc Check message against loop conditions
+%%
+%% Check if loop is detected by by following procedures from 8.2.2.2
+%% @end
+-spec is_loop_detected(#sip_message{}) -> boolean().
+is_loop_detected(Msg) ->
+    ToTag = sip_message:tag('to', Msg),
+    case ToTag of
+        undefined ->
+            TxKey = sip_transaction:tx_key(server, Msg),
+
+            FromTag = sip_message:tag('from', Msg),
+            CallId = sip_message:top_header('call-id', Msg),
+            CSeq = sip_message:top_header('cseq', Msg),
+            List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
+            case List of
+                % either no transactions with same From: tag, Call-Id and CSeq
+                % or there is one such transaction and message matches it
+                [] -> false;
+                [{_Pid, TxKey}] -> false;
+                % there are transactions that have same From: tag, Call-Id and CSeq,
+                % but message does not matches them --> loop detected
+                _Other -> true
+            end;
+        % tag present, no loop
+        _Tag -> false
+    end.
 
 %%-----------------------------------------------------------------
 %% Internal functions
