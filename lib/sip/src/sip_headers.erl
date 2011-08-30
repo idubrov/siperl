@@ -84,12 +84,9 @@ parse('via', Bin) ->
         <<?COMMA, Bin5/binary>> ->
             % Parse the rest of the Via
             % *(COMMA via-parm)
-            case parse('via', Bin5) of
-                Via when is_list(Via) -> [Top | Via];
-                Via -> [Top | [Via]]
-            end;
-        <<>> -> Top
-               end;
+            [Top | parse('via', Bin5)];
+        <<>> -> [Top]
+    end;
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 parse('content-length', Bin) ->
@@ -167,17 +164,22 @@ parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-rou
 %% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
 %% Require = "Require" HCOLON option-tag *(COMMA option-tag)
 parse(Name, Bin) when
-  Name =:= 'allow'; Name =:= 'require' ->
-    Normalize = if Name =:= 'allow' -> fun sip_binary:to_upper/1;
-                   true -> fun sip_binary:to_lower/1
-                end,
+  Name =:= 'allow'; Name =:= 'require'; Name =:= 'proxy-require';
+  Name =:= 'supported'; Name =:= 'unsupported' ->
+
     {MethodBin, Bin2} = sip_binary:parse_token(Bin),
-    Method = sip_binary:binary_to_existing_atom(Normalize(MethodBin)),
+    % by convention, method names are upper-case atoms
+    % all other are in lower case
+    MethodBin2 =
+        if Name =:= 'allow' -> sip_binary:to_upper(MethodBin);
+           Name =/= 'allow' -> sip_binary:to_lower(MethodBin)
+        end,
+    Method = sip_binary:binary_to_existing_atom(MethodBin2),
     case Bin2 of
         <<?COMMA, Bin3/binary>> ->
             % Parse the rest of the Allow
             % *(COMMA Method)
-            [Method | parse('allow', Bin3)];
+            [Method | parse(Name, Bin3)];
 
         <<>> -> [Method]
     end;
@@ -505,6 +507,7 @@ header_name_to_binary('to') -> <<"To">>;
 header_name_to_binary('contact') -> <<"Contact">>;
 header_name_to_binary('allow') -> <<"Allow">>;
 header_name_to_binary('require') -> <<"Require">>;
+header_name_to_binary('proxy-require') -> <<"Proxy-Require">>;
 header_name_to_binary('supported') -> <<"Supported">>;
 header_name_to_binary('unsupported') -> <<"Unsupported">>;
 header_name_to_binary(Name) when is_binary(Name) -> Name;
@@ -532,33 +535,32 @@ parse_test_() ->
     [
      % Parsing
      ?_assertEqual([], parse_headers(<<>>)),
-
-     ?_assertEqual([{'content-length', <<"5">>}],
-                   parse_headers(<<"Content-Length: 5\r\n">>)),
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>}],
-                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\nt: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n">>)),
-     ?_assertEqual([{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}],
-                   parse_headers(<<"X-Custom: Nothing\r\nContent-Length: 5\r\n">>)),
+                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
+                    {'supported', <<"100rel">>}],
+                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\n",
+                                   "t: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n",
+                                   "k: 100rel\r\n">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
+
+     % Formatting
      ?_assertEqual(<<"Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\nCall-Id: callid\r\nContact: Alice <sip:example.com>\r\n"
-                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n">>,
+                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
+                     "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
+                     "X-Custom: value\r\n">>,
                    format_headers([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
                                    {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25},
-                                   {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>}])),
-
-     % Formatting
-     ?_assertEqual(<<"Content-Length: 5\r\n">>,
-                   format_headers([{'content-length', <<"5">>}])),
-     ?_assertEqual(<<"x-custom: Nothing\r\nContent-Length: 5\r\n">>,
-                   format_headers([{<<"x-custom">>, <<"Nothing">>}, {'content-length', <<"5">>}])),
+                                   {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
+                                   {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
+                                   {'require', <<"foo">>}, {'proxy-require', <<"some">>},
+                                   {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
      ?_assertEqual({parsed, value}, parse('x-custom2', {parsed, value})),
@@ -572,8 +574,7 @@ parse_test_() ->
 
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
-     ?_assertEqual(<<"98083">>,
-                   format('content-length', 98083)),
+     ?_assertEqual(<<"98083">>, format('content-length', 98083)),
      % CSeq
      ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
      ?_assertEqual(<<"123453 INVITE">>, format('cseq', cseq(123453, 'INVITE'))),
@@ -647,11 +648,11 @@ parse_test_() ->
                    format('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
      % Via
-     ?_assertEqual(via(udp, {{8193,3512,0,0,0,0,44577,44306}, undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual([via(udp, {{8193,3512,0,0,0,0,44577,44306}, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP [2001:0db8:0000:0000:0000:0000:ae21:ad12];branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com ; branch=z9hG4bK776asdhds">>)),
      ?_assertEqual([via(udp, {{127, 0, 0, 1}, 15060}, [{param, <<"value">>}, flag]),
                     via(tcp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
@@ -669,9 +670,9 @@ parse_test_() ->
                    format('via', <<"SIP/2.0/UDP 127.0.0.1:15060;param=value;flag">>)),
      ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;extra=\"Hello world\"">>,
                    format('via', [via(udp, {"pc33.atlanta.com", undefined}, [{extra, <<"Hello world">>}])])),
-     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, {224, 0, 0, 1}}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, {224, 0, 0, 1}}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=224.0.0.1;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
-     ?_assertEqual(via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}]),
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
 
      % Allow
@@ -679,6 +680,19 @@ parse_test_() ->
                    parse('allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>)),
      ?_assertEqual(<<"INVITE, ACK, CANCEL, OPTIONS, BYE">>,
                    format('allow', ['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'])),
+
+     % Require, Proxy-Require, Supported, Unsupported
+     ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
+
+     ?_assertEqual([foo, bar], parse('proxy-require', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('proxy-require', [foo, bar])),
+
+     ?_assertEqual([foo, bar], parse('supported', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('supported', [foo, bar])),
+
+     ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
 
      % Subject (FIXME: implement proper tests)
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
