@@ -16,7 +16,7 @@
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
--export([top_header/2, top_via_branch/1, tag/2]).
+-export([header/2, top_header/2, top_via_branch/1, tag/2]).
 -export([with_branch/2, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
@@ -135,12 +135,12 @@ update_header(HeaderName, Fun, []) ->
 %% header value is multi-value (a list), the first element of the list
 %% is replaced.
 %%
-%% <em>Note that header is NOT added automatically, if there is no header with given name</em>
+%% <em>Note that header is added automatically, if there is no header with given name</em>
 %% @end
 -spec replace_top_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
 replace_top_header(HeaderName, Value, Message) ->
     UpdateFun = fun
-                   (undefined) -> undefined; % do not add a new one
+                   (undefined) -> Value; % add a new one
                    ([_ | Rest]) -> [Value | Rest];
                    (_) -> Value
                 end,
@@ -193,10 +193,25 @@ tag(Header, Message) when
                     term(),
                     #sip_message{}) -> Acc :: term().
 foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip_message) ->
-    Headers = lists:filter(fun ({N, _Value}) -> N =:= Name end, Msg#sip_message.headers),
-    Parsed = lists:map(fun ({_Name, Value}) -> sip_headers:parse(Name, Value) end, Headers),
-    Flat = lists:flatten(Parsed),
-    lists:foldl(Fun, Acc0, Flat).
+    Values = header(Name, Msg),
+    lists:foldl(Fun, Acc0, Values).
+
+%% @doc Retrieve value for given header.
+%%
+%% Retrieve value of given header. Accepts either full SIP message or list of
+%% headers. Values of several headers with the same name are merged into single
+%% list.
+%%
+%% <em>This function parses the header value if header is in binary form.</em>
+%% @end
+-spec header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
+          {ok, term()} | {error, not_found}.
+header(Name, Message) when is_record(Message, sip_message) ->
+    header(Name, Message#sip_message.headers);
+header(Name, Headers) when is_list(Headers) ->
+    Filtered = lists:filter(fun ({N, _Value}) -> N =:= Name end, Headers),
+    Parsed = lists:map(fun ({_Name, Value}) -> sip_headers:parse(Name, Value) end, Filtered),
+    lists:flatten(Parsed).
 
 %% @doc
 %% Retrieve top value of given header. Accepts either full SIP message
@@ -388,7 +403,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 
     #sip_message{kind = #sip_request{method = 'ACK', uri = RequestURI},
                  body = <<>>,
-                 headers = [{'via', Via}, {'to', To} | ReqHeaders]}.
+                 headers = [{'via', [Via]}, {'to', To} | ReqHeaders]}.
 
 
 %% @doc Create response for given request
@@ -708,12 +723,13 @@ header_test_() ->
      ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
      ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [{'via', [Via1]}, {'via', [Via2]}]})),
      ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [{'via', [Via2]}]})),
+     ?_assertEqual([Via1, Via2, Via1Up], header('via', #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
      % Header update functions
      ?_assertEqual(ViaMsgUp, update_top_header('via', UpdateFun, ViaMsg)),
      ?_assertEqual(NewViaMsg, update_top_header('via', InsertFun, NoViaMsg)),
 
-     ?_assertEqual(NoViaMsg, replace_top_header('via', Via1Up, NoViaMsg)),
+     ?_assertEqual(NewViaMsg, replace_top_header('via', Via1Up, NoViaMsg)),
      ?_assertEqual(ViaMsgUp, replace_top_header('via', Via1Up, ViaMsg)),
      ?_assertEqual(ViaMsg2Up, replace_top_header('via', Via1Up, ViaMsg2)),
 
