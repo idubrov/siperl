@@ -149,8 +149,11 @@ replace_top_header(HeaderName, Value, Message) ->
 %% @doc Append header with given name and value
 %%
 %% Appends header with given name and value to the end of the headers list.
+%% <em>If header value is empty list, message is not modified</em>
 %% @end
 -spec append_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
+append_header(_HeaderName, [], Message) when is_record(Message, sip_message) ->
+    Message;
 append_header(HeaderName, Value, Message) when is_record(Message, sip_message) ->
     Message#sip_message{headers = Message#sip_message.headers ++ [{HeaderName, Value}]}.
 

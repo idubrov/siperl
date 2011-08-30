@@ -78,14 +78,14 @@ send_request(Request, UserData) ->
     % Dispatch asynchronously
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
-    gen_server:cast(self(), {send, ReqInfo}),
+    gen_server:cast(self(), {send_request, ReqInfo}),
     ok.
 
 %% @doc Send the response according to the XXXXXXXXXXX
 %% @end
 -spec send_response(#sip_message{}) -> {ok, #sip_tx_server{}}.
 send_response(Response) ->
-    sip_transaction:send_response(Response).
+    gen_server:cast(self(), {send_response, Response}).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -103,10 +103,18 @@ handle_call(_Req, _From, State) ->
 
 %% @private
 -spec handle_cast(_, #sip_ua_state{}) -> any().
-handle_cast({send, ReqInfo}, State) ->
+handle_cast({send_request, ReqInfo}, State) ->
     send_to_next(none, ReqInfo, State);
+
+handle_cast({send_response, Response}, #sip_ua_state{allow = Allow, supported = Supported} = State) ->
+    % Append Supported and Allow headers
+    Resp2 = sip_message:append_header('allow', Allow, Response),
+    Resp3 = sip_message:append_header('supported', Supported, Resp2),
+    sip_transaction:send_response(Resp3),
+    {noreply, State};
+
 handle_cast(_Req, State) ->
-   {stop, unexpected, State}.
+    {stop, unexpected, State}.
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
@@ -144,10 +152,12 @@ handle_info({response, Msg}, #sip_ua_state{callback = Mod} = State) ->
                                          {msg, Msg}]),
             {noreply, State}
     end;
+
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#sip_ua_state.requests),
     {noreply, State#sip_ua_state{requests = Dict}};
+
 handle_info({tx, TxKey, {terminated, Reason}}, State) ->
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
 
@@ -157,6 +167,7 @@ handle_info({tx, TxKey, {terminated, Reason}}, State) ->
 
     % transaction failure, let's retry with new transaction, see 8.1.2
     send_to_next(Reason, ReqInfo, State2);
+
 handle_info(_Req, State) ->
     {stop, unexpected, State}.
 
@@ -305,8 +316,7 @@ validate_allowed({Msg, State}) ->
                 fun() ->
                         % Send "405 Method Not Allowed"
                         Resp = sip_message:create_response(Msg, 405),
-                        Resp2 = sip_message:append_header('allow', Allow, Resp),
-                        send_response(Resp2)
+                        send_response(Resp)
                 end,
             {error, ActFun}
     end.
@@ -340,8 +350,7 @@ validate_required({Msg, State}) ->
                     % Send "420 Bad Extension"
                     Resp = sip_message:create_response(Msg, 420),
                     Resp2 = sip_message:append_header('unsupported', Unsupported, Resp),
-                    Resp3 = sip_message:append_header('supported', Supported, Resp2),
-                    send_response(Resp3)
+                    send_response(Resp2)
                 end,
             {error, ActFun}
     end.
