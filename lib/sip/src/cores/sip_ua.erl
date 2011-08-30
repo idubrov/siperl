@@ -331,17 +331,17 @@ validate_required({Msg, State}) ->
     IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,
 
     %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
-    case lists:keyfind('require', 1, Msg#sip_message.headers) of
-        false -> ok;
-        {'require', ExtensionsBin} ->
-            Extensions = sip_headers:parse('require', ExtensionsBin),
-            Unsupported = lists:filter(IsNotSupported, Extensions),
+    Require = sip_message:header('require', Msg),
+    case lists:filter(IsNotSupported, Require) of
+        [] -> ok;
+        Unsupported ->
             ActFun =
                 fun() ->
-                        % Send "420 Bad Extension"
-                        Resp = sip_message:create_response(Msg, 420),
-                        Resp2 = sip_message:append_header('unsupported', Unsupported, Resp),
-                        send_response(Resp2)
+                    % Send "420 Bad Extension"
+                    Resp = sip_message:create_response(Msg, 420),
+                    Resp2 = sip_message:append_header('unsupported', Unsupported, Resp),
+                    Resp3 = sip_message:append_header('supported', Supported, Resp2),
+                    send_response(Resp3)
                 end,
             {error, ActFun}
     end.
