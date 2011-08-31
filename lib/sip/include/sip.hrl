@@ -101,10 +101,10 @@
                    user_data}).                               % Custom user data associated with request
 
 -record(sip_ua_state, {requests = dict:new(),       % Requests being sent by UAC
-                       request_pipeline =           % Functions to apply to the incoming requests (UAS)
-                           sip_ua_pipeline:request_pipeline(),
-                       response_pipeline =          % Functions to apply to the incoming responses (UAC)
-                           sip_ua_pipeline:response_pipeline(),
+                       uas_pipeline =               % Functions to apply to the incoming requests (UAS)
+                           sip_uas:pipeline(),
+                       uac_pipeline =               % Functions to apply to the incoming responses (UAC)
+                           sip_uac:pipeline(),
                        callback :: module(),        % Callback module
                        allow = [] :: [atom()],      % List of allowed methods
                        supported = [] :: [atom()],  % List of supported extensions

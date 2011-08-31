@@ -39,9 +39,8 @@ init({}) ->
 %% @private
 handle_request('OPTIONS', Request, State) ->
     Response = sip_message:create_response(Request, 200),
-    sip_ua:send_response(Response),
-    {noreply, State};
-handle_request(Method, Request, State) ->
-    sip_ua:handle_request(Method, Request, State).
+    {reply, Response, State};
+handle_request(_Method, _Request, State) ->
+    {next, State}.
 
 is_applicable(_Msg) -> true.
