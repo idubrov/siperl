@@ -4,6 +4,9 @@ RFC 3261 (SIP) implementation in Erlang
 This project is implementation of RFC 3261 (SIP: Session Initiation Protocol)
 in Erlang.
 
+General notes
+-------------
+
 Currently, a lot of the pieces are missing, some implemented only partially.
 
 Here is a checklist of most important areas:
@@ -47,4 +50,23 @@ Hacking the code:
 Running simplest scenario of UAC and UAS interaction:
 
     $ rebar compile & shell/siperl -run sip_test_ua
+
+API Notes
+---------
+
+ * Parsing, formatting, generating and processing messages is mostly in
+   `sip_headers` and `sip_message`. modules The The former is mostly used for
+   individual headers, the latter -- to update message as a whole.
+ * Transport layer API is `sip_transport` module. Transport layer dispatches
+   messages to the transaction layer. If transaction layer cannot handle the
+   message, transport layer lookups core via `sip_cores:lookup_core/1`
+   invocation. If core process is found, message is sent to it in form of either
+   `{request, Msg}` or `{response, Msg}`.
+ * Transaction layer API is in `sip_transaction` module. When transaction is
+   started, a TU PID is provided to the transaction. Responses to client
+   transactions are sent to it in form of `{response, Msg}`.
+ * Cores are registered via `sip_cores:register_core/1` invocation. Basically,
+   registration is a `gproc` property added to the core process with value of
+   `#sip_core_info{}`. For now, it contains single element -- function that if
+   core is applicable for given message or not.
 
