@@ -4,7 +4,7 @@
 %%% Base transaction functions. Used in macroses froms
 %%% sip_transaction.hrl to simplify transactions FSM code.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transaction_base).
 

@@ -7,7 +7,7 @@
 %%%
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-8">RFC 3261</a> for details.
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_priority_set).
 

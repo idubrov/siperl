@@ -4,7 +4,7 @@
 %%% Transaction layer API. Implements transport layer handler
 %%% behaviour.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transaction).
 

@@ -3,7 +3,7 @@
 %%% @doc
 %%% SIP application. Starts SIP listeners on configured endpoints.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_app).
 

@@ -3,7 +3,7 @@
 %%% @doc
 %%% SIP implementation data types.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 
 %%-----------------------------------------------------------------

@@ -7,7 +7,7 @@
 %%% receiving ICMP error messages and propagate them back to the
 %%% caller.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transport_udp_socket_sup).
 

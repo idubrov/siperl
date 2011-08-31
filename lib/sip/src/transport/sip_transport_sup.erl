@@ -3,7 +3,7 @@
 %%% @doc
 %%% SIP transport layer supervisor.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transport_sup).
 

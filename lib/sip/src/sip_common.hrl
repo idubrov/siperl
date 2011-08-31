@@ -2,7 +2,7 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 
 %%-----------------------------------------------------------------

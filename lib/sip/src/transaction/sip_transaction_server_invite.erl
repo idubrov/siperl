@@ -3,7 +3,7 @@
 %%% @doc
 %%% RFC 3261 17.2.1 INVITE Server Transaction
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transaction_server_invite).
 -extends(sip_transaction_base).

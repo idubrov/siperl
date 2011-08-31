@@ -9,7 +9,7 @@
 %%% If it fails for any other reason, it tries to send message on
 %%% a new connection
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transport).
 

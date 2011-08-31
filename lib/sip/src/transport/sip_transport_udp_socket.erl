@@ -31,7 +31,7 @@
 %%% mode, the same process should be used by all parties communicating
 %%% with same remote address</em>
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------,
 -module(sip_transport_udp_socket).
 

@@ -3,7 +3,7 @@
 %%% @doc Transport layer TCP connection implementation
 %%%
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_transport_tcp_conn).
 
