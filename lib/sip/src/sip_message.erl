@@ -199,16 +199,16 @@ foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip
     Values = header(Name, Msg),
     lists:foldl(Fun, Acc0, Values).
 
-%% @doc Retrieve value for given header.
+%% @doc Retrieve values for given header name
 %%
 %% Retrieve value of given header. Accepts either full SIP message or list of
 %% headers. Values of several headers with the same name are merged into single
 %% list.
-%%
+%% TODO: Rename to `header_values'.
 %% <em>This function parses the header value if header is in binary form.</em>
 %% @end
 -spec header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
-          {ok, term()} | {error, not_found}.
+          {ok, [term()]}.
 header(Name, Message) when is_record(Message, sip_message) ->
     header(Name, Message#sip_message.headers);
 header(Name, Headers) when is_list(Headers) ->

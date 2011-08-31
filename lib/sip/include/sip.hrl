@@ -94,7 +94,17 @@
 %% SIP UAC/UAS
 %%-----------------------------------------------------------------
 
+
+-record(req_info, {request :: #sip_message{},                 % SIP request message
+                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
+                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
+                   user_data}).                               % Custom user data associated with request
+
 -record(sip_ua_state, {requests = dict:new(),       % Requests being sent by UAC
+                       request_pipeline =           % Functions to apply to the incoming requests (UAS)
+                           sip_ua_pipeline:request_pipeline(),
+                       response_pipeline =          % Functions to apply to the incoming responses (UAC)
+                           sip_ua_pipeline:response_pipeline(),
                        callback :: module(),        % Callback module
                        allow = [] :: [atom()],      % List of allowed methods
                        supported = [] :: [atom()],  % List of supported extensions

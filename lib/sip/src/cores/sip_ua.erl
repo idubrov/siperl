@@ -20,17 +20,12 @@
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
 
-%% UAC/UAS callbacks
+%% UAC/UAS overridable callbacks
 -export([handle_request/3, handle_response/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
-
--record(req_info, {request :: #sip_message{},                 % SIP request message
-                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
-                   user_data}).                               % Custom user data associated with request
 
 -spec behaviour_info(callbacks | term()) -> [{Function :: atom(), Arity :: integer()}].
 behaviour_info(callbacks) ->
@@ -118,39 +113,17 @@ handle_cast(_Req, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({request, Msg}, #sip_ua_state{callback = Mod} = State) ->
-    Method = Msg#sip_message.kind#sip_request.method,
-
-    % start new server transaction
-    sip_transaction:start_server_tx(self(), Msg),
-
-    % Perform validation
-    Validation = [fun validate_allowed/1, fun validate_loop/1, fun validate_required/1],
-    case validate(Validation, {Msg, State}) of
-        ok ->
-            Mod:handle_request(Method, Msg, State);
-        {error, ActFun} ->
-            ActFun(),
-            {noreply, State}
-    end;
-
-handle_info({response, Msg}, #sip_ua_state{callback = Mod} = State) ->
-    TxKey = sip_transaction:tx_key(client, Msg),
-
-    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
-    UserData = ReqInfo#req_info.user_data,
-
-    % RFC 3261 8.1.3.3 Vias
-    case count_via(Msg) of
-        1 ->
-            % handle response from transaction layer
-            Mod:handle_response(UserData, Msg, State);
-        _Other ->
-            % discard response, too much/few Via's
-            error_logger:warning_report(['message_discarded',
-                                         {reason, wrong_vias},
-                                         {msg, Msg}]),
-            {noreply, State}
+handle_info({Kind, Msg}, State) when Kind =:= request; Kind =:= response ->
+    % Apply request/response pipeline to the incoming message
+    % Default pipelines are
+    % `sip_ua_pipeline:request_pipeline/0' and `sip_ua_pipeline:response_pipeline/0'
+    Pipeline =
+        if Kind =:= request -> State#sip_ua_state.request_pipeline;
+           Kind =:= response -> State#sip_ua_state.response_pipeline
+        end,
+    case sip_ua_pipeline:invoke(Pipeline, {Msg, State}) of
+        {stop, Result} -> Result;
+        {next, {_Msg, State}} -> {noreply, State}
     end;
 
 handle_info({tx, TxKey, {terminated, normal}}, State) ->
@@ -259,9 +232,6 @@ process_redirect(Msg, State) ->
     % try next destination, was redirected
     send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}).
 
-count_via(Msg) ->
-    sip_message:foldl_headers('via', fun (_Value, Acc) -> Acc + 1 end, 0, Msg).
-
 error_to_status({timeout, _Timer}) -> 408;
 error_to_status({econnrefused, _}) -> 503;
 error_to_status(no_more_destinations) -> 503;
@@ -293,67 +263,6 @@ lookup_destinations(Request) ->
 
 is_strict_router(#sip_uri{params = Params}) ->
     not proplists:get_bool('lr', Params).
-
-validate([], _Obj) -> ok;
-validate([ValidateFun | Rest], Obj) ->
-    case ValidateFun(Obj) of
-        ok -> validate(Rest, Obj);
-        {error, Reply} -> {error, Reply}
-    end.
-
-%% Validation
-
-%% Validate message according to the 8.2.1
-validate_allowed({Msg, State}) ->
-    Method = Msg#sip_message.kind#sip_request.method,
-    Allow = State#sip_ua_state.allow,
-    Contains = lists:any(fun (V) -> V =:= Method end, Allow),
-    case Contains of
-        true -> ok;
-        false ->
-
-            ActFun =
-                fun() ->
-                        % Send "405 Method Not Allowed"
-                        Resp = sip_message:create_response(Msg, 405),
-                        send_response(Resp)
-                end,
-            {error, ActFun}
-    end.
-
-%% Validate message according to the 8.2.2.2
-validate_loop({Msg, _State}) ->
-    case sip_transaction:is_loop_detected(Msg) of
-        false -> ok;
-        true ->
-            ActFun =
-                fun() ->
-                        % Send "482 Loop Detected"
-                        Resp = sip_message:create_response(Msg, 482),
-                        send_response(Resp)
-                end,
-            {error, ActFun}
-    end.
-
-%% Validate message according to the 8.2.2.3
-validate_required({Msg, State}) ->
-    Supported = State#sip_ua_state.supported,
-    IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,
-
-    %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
-    Require = sip_message:header('require', Msg),
-    case lists:filter(IsNotSupported, Require) of
-        [] -> ok;
-        Unsupported ->
-            ActFun =
-                fun() ->
-                    % Send "420 Bad Extension"
-                    Resp = sip_message:create_response(Msg, 420),
-                    Resp2 = sip_message:append_header('unsupported', Unsupported, Resp),
-                    send_response(Resp2)
-                end,
-            {error, ActFun}
-    end.
 
 %%-----------------------------------------------------------------
 %% Tests
