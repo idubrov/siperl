@@ -12,7 +12,7 @@
 -export([send_response/2, handle_info/2]).
 
 %% Request processing
--export([start_server_tx/2, validate_allowed/2, validate_loop/2, validate_required/2, invoke_handler/2, default_response/2]).
+-export([validate_allowed/2, validate_loop/2, validate_required/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -52,11 +52,6 @@ handle_info({request, Msg}, State) ->
     end;
 
 handle_info(_Info, State) ->
-    pipeline_m:next(State).
-
-%% Request handling
-start_server_tx(Request, State) ->
-    sip_transaction:start_server_tx(self(), Request),
     pipeline_m:next(State).
 
 %% Validate message according to the 8.2.1
@@ -100,16 +95,3 @@ validate_required(Request, State) ->
             Response2 = sip_message:append_header('unsupported', Unsupported, Response),
             pipeline_m:stop({reply, Response2, State})
     end.
-
-%% Invoke request handler
-invoke_handler(Request, #sip_ua_state{callback = Mod} = State) ->
-    Method = sip_message:method(Request),
-    case Mod:handle_request(Method, Request, State) of
-        {next, S} -> pipeline_m:next(S);
-        Other -> pipeline_m:stop(Other)
-    end.
-
-default_response(Request, State) ->
-    % Send 'Server Internal Error' by default
-    Response = sip_message:create_response(Request, 500),
-    pipeline_m:stop({reply, Response, State}).
