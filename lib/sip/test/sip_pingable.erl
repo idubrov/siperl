@@ -38,7 +38,7 @@ init({}) ->
 
 %% @private
 handle_request('OPTIONS', Request, State) ->
-    Response = sip_message:create_response(Request, 200, <<"Ok. Hello!">>),
+    Response = sip_message:create_response(Request, 200),
     sip_ua:send_response(Response),
     {noreply, State};
 handle_request(Method, Request, State) ->
