@@ -485,33 +485,40 @@ fold_header(HeaderLine, List) ->
     Name3 = binary_to_header_name(Name2),
     [{Name3, sip_binary:trim_leading(Value)} | List].
 
-%% Converting binary to header name
-%% Short header names support
-binary_to_header_name(<<"v">>) -> 'via';
-binary_to_header_name(<<"l">>) -> 'content-length';
-binary_to_header_name(<<"f">>) -> 'from';
-binary_to_header_name(<<"t">>) -> 'to';
-binary_to_header_name(<<"i">>) -> 'call-id';
-binary_to_header_name(<<"m">>) -> 'contact';
-binary_to_header_name(<<"k">>) -> 'supported';
-binary_to_header_name(Bin) -> sip_binary:binary_to_existing_atom(Bin).
+%% @doc Converting short binary name to header name atom
+%% @end
+binary_to_header_name(Name) ->
+    case Name of
+        <<"v">> -> 'via';
+        <<"l">> -> 'content-length';
+        <<"f">> -> 'from';
+        <<"t">> -> 'to';
+        <<"i">> -> 'call-id';
+        <<"m">> -> 'contact';
+        <<"k">> -> 'supported';
+        Bin -> sip_binary:binary_to_existing_atom(Bin)
+    end.
 
-%% Converting header name back to binary
-header_name_to_binary('via') -> <<"Via">>;
-header_name_to_binary('content-length') -> <<"Content-Length">>;
-header_name_to_binary('cseq') -> <<"CSeq">>;
-header_name_to_binary('max-forwards') -> <<"Max-Forwards">>;
-header_name_to_binary('call-id') -> <<"Call-Id">>;
-header_name_to_binary('from') -> <<"From">>;
-header_name_to_binary('to') -> <<"To">>;
-header_name_to_binary('contact') -> <<"Contact">>;
-header_name_to_binary('allow') -> <<"Allow">>;
-header_name_to_binary('require') -> <<"Require">>;
-header_name_to_binary('proxy-require') -> <<"Proxy-Require">>;
-header_name_to_binary('supported') -> <<"Supported">>;
-header_name_to_binary('unsupported') -> <<"Unsupported">>;
+%% @doc Converting header name atom back to binary
+%% @end
 header_name_to_binary(Name) when is_binary(Name) -> Name;
-header_name_to_binary(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
+header_name_to_binary(Name) when is_atom(Name) ->
+    case Name of
+        'via' -> <<"Via">>;
+        'content-length' -> <<"Content-Length">>;
+        'cseq' -> <<"CSeq">>;
+        'max-forwards' -> <<"Max-Forwards">>;
+        'call-id' -> <<"Call-Id">>;
+        'from' -> <<"From">>;
+        'to' -> <<"To">>;
+        'contact' -> <<"Contact">>;
+        'allow' -> <<"Allow">>;
+        'require' -> <<"Require">>;
+        'proxy-require' -> <<"Proxy-Require">>;
+        'supported' -> <<"Supported">>;
+        'unsupported' -> <<"Unsupported">>;
+        Name -> atom_to_binary(Name, utf8)
+    end.
 
 %% Parse standard Via: parameters
 parse_via_param('ttl', TTL) -> sip_binary:binary_to_integer(TTL);
