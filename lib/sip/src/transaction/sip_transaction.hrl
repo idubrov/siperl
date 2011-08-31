@@ -9,7 +9,7 @@
 %% Types
 -record(tx_state,
         {tx_key,        % Transaction key
-         tx_user,        % Transaction user
+         tx_user,       % Transaction user
          timerA,        % Timer A, RFC 3261 17.1.1.2
          timerB,        % Timer B, RFC 3261 17.1.1.2
          timerD,        % Timer D, RFC 3261 17.1.1.2
