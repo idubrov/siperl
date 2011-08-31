@@ -19,7 +19,13 @@
 -include("sip.hrl").
 
 
-send_response(Response, #sip_ua_state{allow = Allow, supported = Supported} = State) ->
+%% @doc Send response
+%%
+%% Automatically adds `Allow:' and `Supported:' headers for every reply.
+%% @end
+-spec send_response(#sip_message{}, #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+send_response(#sip_message{kind = #sip_response{}} = Response,
+              #sip_ua_state{allow = Allow, supported = Supported} = State) ->
     % Append Supported and Allow headers
     Resp2 = sip_message:append_header('allow', Allow, Response),
     Resp3 = sip_message:append_header('supported', Supported, Resp2),
@@ -55,6 +61,7 @@ handle_info(_Info, State) ->
     pipeline_m:next(State).
 
 %% Validate message according to the 8.2.1
+-spec validate_allowed(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 validate_allowed(Request, State) ->
     Method = Request#sip_message.kind#sip_request.method,
     Allow = State#sip_ua_state.allow,
@@ -69,6 +76,7 @@ validate_allowed(Request, State) ->
     end.
 
 %% Validate message according to the 8.2.2.2
+-spec validate_loop(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 validate_loop(Request, State) ->
     case sip_transaction:is_loop_detected(Request) of
         false ->
@@ -80,6 +88,7 @@ validate_loop(Request, State) ->
     end.
 
 %% Validate message according to the 8.2.2.3
+-spec validate_required(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 validate_required(Request, State) ->
     Supported = State#sip_ua_state.supported,
     IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,

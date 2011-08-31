@@ -9,7 +9,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([create_request/3, send_request/3, handle_info/2]).
+-export([create_request/3, send_request/3, handle_info/2, user_data/2]).
 
 %% Response processing
 -export([validate_vias/2, process_redirects/2]).
@@ -97,6 +97,7 @@ handle_info(_Info, State) ->
     pipeline_m:next(State).
 
 %% Validate message according to the 8.1.3.3
+-spec validate_vias(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 validate_vias(Msg, State) ->
     Count = length(sip_message:header('via', Msg)),
     case Count of
@@ -110,8 +111,9 @@ validate_vias(Msg, State) ->
             pipeline_m:stop({noreply, State})
     end.
 
-%% @doc Automatic handling of 3xx responses (redirects)
+%% @doc Automatic handling of 3xx responses (redirects) valve
 %% @end
+-spec process_redirects(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request, State)
   when Status >= 300, Status =< 399 ->
     TxKey = sip_transaction:tx_key(client, Request),
@@ -135,6 +137,9 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
 process_redirects(_Msg, State) ->
     pipeline_m:next(State).
 
+%% @doc Retrieve user data associated with given response
+%% @end
+-spec user_data(#sip_message{}, #sip_ua_state{}) -> any().
 user_data(Response, State) ->
     TxKey = sip_transaction:tx_key(client, Response),
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
