@@ -7,6 +7,7 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_ua).
+-compile({parse_transform, do}).
 
 -behaviour(gen_server).
 
@@ -51,12 +52,14 @@ handle_cast(_Req, State) ->
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
 handle_info(Info, State) ->
-    InfoPipeline = [fun (S) -> sip_uas:handle_info(Info, S) end,
-                    fun (S) -> sip_uac:handle_info(Info, S) end],
-    case pipeline_m:process(State, InfoPipeline) of
-        {stop, Result} -> Result;
-        {next, S} -> {stop, unexpected, S}
-    end.
+    {stop, Result} =
+        do([pipeline_m ||
+            S1 <- sip_uas:handle_info(Info, State),
+            S2 <- sip_uac:handle_info(Info, S1),
+            % terminate process with `unexpected' reason
+            S3 <- fail({stop, unexpected, S2}),
+            S3]),
+    Result.
 
 %% @private
 -spec terminate(term(), #sip_ua_state{}) -> ok.

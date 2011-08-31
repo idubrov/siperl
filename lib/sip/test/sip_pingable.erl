@@ -39,8 +39,8 @@ init({}) ->
 %% @private
 handle_request('OPTIONS', Request, State) ->
     Response = sip_message:create_response(Request, 200),
-    {reply, Response, State};
+    pipeline_m:stop({reply, Response, State});
 handle_request(_Method, _Request, State) ->
-    {next, State}.
+    pipeline_m:next(State).
 
 is_applicable(_Msg) -> true.

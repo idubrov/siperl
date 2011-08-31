@@ -6,12 +6,13 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_uac).
+-compile({parse_transform, do}).
 
 %% API
 -export([create_request/3, send_request/3, handle_info/2]).
 
 %% Response processing
--export([response_pipeline/0, validate_vias/2, process_redirects/2, invoke_handler/2]).
+-export([validate_vias/2, process_redirects/2, invoke_handler/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -67,10 +68,12 @@ send_request(Request, UserData, State) ->
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
 handle_info({response, Msg}, State) ->
-    % first, bind Msg as first argument to pipeline functions, then apply to message
-    Pipeline = [fun (S) -> Fun(Msg, S) end || Fun <- State#sip_ua_state.uac_pipeline],
-    {stop, Result} = pipeline_m:process(State, Pipeline),
-    pipeline_m:stop(Result);
+    do([pipeline_m ||
+        S1 <- validate_vias(Msg, State),
+        S2 <- process_redirects(Msg, S1),
+        S3 <- invoke_handler(Msg, S2),
+        % TODO: log unhandled requests?
+        S3]);
 
 %% @doc Process terminated client transactions
 %% @end
@@ -91,11 +94,6 @@ handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_
 
 handle_info(_Info, State) ->
     pipeline_m:next(State).
-
-response_pipeline() ->
-    [fun validate_vias/2,
-     fun process_redirects/2,
-     fun invoke_handler/2].
 
 %% Validate message according to the 8.1.3.3
 validate_vias(Msg, State) ->

@@ -6,17 +6,18 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_uas).
+-compile({parse_transform, do}).
 
 %% API
 -export([send_response/2, handle_info/2]).
 
 %% Request processing
--export([request_pipeline/0]).
 -export([start_server_tx/2, validate_allowed/2, validate_loop/2, validate_required/2, invoke_handler/2, default_response/2]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
+
 
 send_response(Response, #sip_ua_state{allow = Allow, supported = Supported} = State) ->
     % Append Supported and Allow headers
@@ -28,27 +29,27 @@ send_response(Response, #sip_ua_state{allow = Allow, supported = Supported} = St
 % @private
 -spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
 handle_info({request, Msg}, State) ->
-    % first, bind Msg as first argument to pipeline functions, then apply to message
-    Pipeline = [fun (S) -> Fun(Msg, S) end || Fun <- State#sip_ua_state.uas_pipeline],
+    Method = sip_message:method(Msg),
+    Mod = State#sip_ua_state.callback,
     Result =
-        case pipeline_m:process(State, Pipeline) of
-            {stop, {reply, Response, S}} ->
-                send_response(Response, S),
-                {noreply, S};
-            {stop, R} -> R
-    end,
-    pipeline_m:stop(Result);
+        do([pipeline_m ||
+            S1 <- start_server_tx(Msg, State),
+            S2 <- validate_allowed(Msg, S1),
+            S3 <- validate_loop(Msg, S2),
+            S4 <- validate_required(Msg, S3),
+            S5 <- Mod:handle_request(Method, Msg, S4),
+            S6 <- fail({reply, sip_message:create_response(Msg, 500), S5}),
+            S6]),
+
+    case Result of
+        {stop, {reply, Response, S}} ->
+            {ok, S2} = send_response(Response, S),
+            {stop, {noreply, S2}};
+        Other -> Other
+    end;
 
 handle_info(_Info, State) ->
     pipeline_m:next(State).
-
-request_pipeline() ->
-    [fun start_server_tx/2,
-     fun validate_allowed/2,
-     fun validate_loop/2,
-     fun validate_required/2,
-     fun invoke_handler/2,
-     fun default_response/2].
 
 %% Request handling
 start_server_tx(Request, State) ->
