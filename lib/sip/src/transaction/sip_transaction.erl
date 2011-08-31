@@ -107,8 +107,7 @@ handle_response(Msg) ->
 -spec send_response(#sip_message{}) -> {ok, #sip_tx_server{}}.
 send_response(Msg) ->
     true = sip_message:is_response(Msg),
-    TxKey = tx_key(server, Msg),
-    tx_send(TxKey, Msg).
+    handle_internal(server, Msg).
 
 %% @doc Check message against loop conditions
 %%
