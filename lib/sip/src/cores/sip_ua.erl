@@ -35,8 +35,8 @@ behaviour_info(_) -> undefined.
 
 %% @private
 -spec init(term()) -> {ok, #sip_ua_state{}}.
-init(Module) ->
-    {ok, #sip_ua_state{callback = Module}}.
+init(_Args) ->
+    {ok, #sip_ua_state{}}.
 
 %% @private
 -spec handle_call(term(), term(), #sip_ua_state{}) -> any().
@@ -49,40 +49,14 @@ handle_cast(_Req, State) ->
     {stop, unexpected, State}.
 
 %% @private
--spec handle_info(term(), #sip_ua_state{}) -> any().
-handle_info({Kind, Msg}, State) when Kind =:= request; Kind =:= response ->
-    % Apply request/response pipeline to the incoming message
-    % Default pipelines are
-    % `sip_ua_pipeline:request_pipeline/0' and `sip_ua_pipeline:response_pipeline/0'
-    Pipeline =
-        if Kind =:= request -> State#sip_ua_state.uas_pipeline;
-           Kind =:= response -> State#sip_ua_state.uac_pipeline
-        end,
-
-    FoldFun =
-        fun(ProcFun, {next, S}) -> ProcFun(Msg, S);
-           (_ProcFun, {noreply, S}) -> {noreply, S};
-           (_ProcFun, {reply, Response, S}) ->
-                {ok, S2} = sip_uas:send_response(Response, S),
-                {noreply, S2}
-        end,
-    {noreply, State2} = lists:foldl(FoldFun, {next, State}, Pipeline),
-    {noreply, State2};
-
-%% @doc Process terminated client transactions, notify UAC
-%% @end
-handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_tx_client) ->
-    {ok, State2} = sip_uac:tx_terminated(TxKey, Reason, State),
-    {noreply, State2};
-
-%% @doc Process terminated server transactions, notify UAS
-%% @end
-handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_tx_server) ->
-    {ok, State2} = sip_ua:tx_terminated(TxKey, Reason, State),
-    {noreply, State2};
-
-handle_info(_Req, State) ->
-    {stop, unexpected, State}.
+-spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+handle_info(Info, State) ->
+    InfoPipeline = [fun (S) -> sip_uas:handle_info(Info, S) end,
+                    fun (S) -> sip_uac:handle_info(Info, S) end],
+    case pipeline_m:process(State, InfoPipeline) of
+        {stop, Result} -> Result;
+        {next, S} -> {stop, unexpected, S}
+    end.
 
 %% @private
 -spec terminate(term(), #sip_ua_state{}) -> ok.

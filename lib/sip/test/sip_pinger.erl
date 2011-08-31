@@ -35,7 +35,7 @@ ping(Pid, To) ->
 %%-----------------------------------------------------------------
 %% @private
 init({}) ->
-    sip_ua:init(?MODULE).
+    {ok, #sip_ua_state{callback = ?MODULE}}.
 
 %% @private
 handle_call({ping, To}, Client, State) ->

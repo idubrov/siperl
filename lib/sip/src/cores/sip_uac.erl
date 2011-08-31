@@ -8,10 +8,10 @@
 -module(sip_uac).
 
 %% API
--export([create_request/3, send_request/3, tx_terminated/3]).
+-export([create_request/3, send_request/3, handle_info/2]).
 
-%% Request processing
--export([pipeline/0, validate_vias/2, process_redirects/2, invoke_handler/2]).
+%% Response processing
+-export([response_pipeline/0, validate_vias/2, process_redirects/2, invoke_handler/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -61,12 +61,24 @@ send_request(Request, UserData, State) ->
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
     send_to_next(none, ReqInfo, State).
 
-tx_terminated(TxKey, normal, State) ->
+
+%% @private
+-spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+%% @doc Process received response by pushing it through our processing pipeline
+%% @end
+handle_info({response, Msg}, State) ->
+    % first, bind Msg as first argument to pipeline functions, then apply to message
+    Pipeline = [fun (S) -> Fun(Msg, S) end || Fun <- State#sip_ua_state.uac_pipeline],
+    {stop, Result} = pipeline_m:process(State, Pipeline),
+    pipeline_m:stop(Result);
+
+%% @doc Process terminated client transactions
+%% @end
+handle_info({tx, TxKey, {terminated, normal}}, State) when is_record(TxKey, sip_tx_client) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#sip_ua_state.requests),
-    {ok, State#sip_ua_state{requests = Dict}};
-
-tx_terminated(TxKey, Reason, State) ->
+    pipeline_m:stop({noreply, State#sip_ua_state{requests = Dict}});
+handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_tx_client) ->
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
 
     % remove transaction from the list
@@ -74,9 +86,13 @@ tx_terminated(TxKey, Reason, State) ->
     State2 = State#sip_ua_state{requests = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    send_to_next(Reason, ReqInfo, State2).
+    {ok, State3} = send_to_next(Reason, ReqInfo, State2),
+    pipeline_m:stop({noreply, State3});
 
-pipeline() ->
+handle_info(_Info, State) ->
+    pipeline_m:next(State).
+
+response_pipeline() ->
     [fun validate_vias/2,
      fun process_redirects/2,
      fun invoke_handler/2].
@@ -86,13 +102,13 @@ validate_vias(Msg, State) ->
     Count = length(sip_message:header('via', Msg)),
     case Count of
         1 ->
-            {next, State};
+            pipeline_m:next(State);
         _Other ->
             % discard response, too much/few Via's
             error_logger:warning_report(['message_discarded',
                                          {reason, wrong_vias},
                                          {msg, Msg}]),
-            {noreply, State}
+            pipeline_m:stop({noreply, State})
     end.
 
 %% @doc Automatic handling of 3xx responses (redirects)
@@ -116,18 +132,20 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
 
     % try next destination, was redirected
     {ok, State2} = send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}),
-    {noreply, State2};
+    pipeline_m:stop(State2);
 process_redirects(_Msg, State) ->
-    {next, State}.
+    pipeline_m:next(State).
 
 %% Invoke response handler
-invoke_handler(Msg, #sip_ua_state{callback = Mod} = State) ->
-    TxKey = sip_transaction:tx_key(client, Msg),
+invoke_handler(Response, #sip_ua_state{callback = Mod} = State) ->
+    TxKey = sip_transaction:tx_key(client, Response),
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
     UserData = ReqInfo#req_info.user_data,
 
-    % handle response from transaction layer
-    Mod:handle_response(UserData, Msg, State).
+    case Mod:handle_response(UserData, Response, State) of
+        {next, S} -> pipeline_m:next(S);
+        Other -> pipeline_m:stop(Other)
+    end.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -144,10 +162,9 @@ send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
             % Handle failed requests (8.1.3.1, RFC 3261)
             Status = error_to_status(Reason),
             Msg = sip_message:create_response(ReqInfo#req_info.request, Status),
-            UserData = ReqInfo#req_info.user_data,
 
-            Mod = State#sip_ua_state.callback,
-            Mod:handle_response(UserData, Msg, State);
+            % Process response as if it was received from transaction layer
+            handle_info({response, Msg}, State);
         {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -196,6 +213,7 @@ lookup_destinations(Request) ->
         end,
     sip_resolve:client_resolve(URI2).
 
+% FIXME: Move to sip_uri.
 is_strict_router(#sip_uri{params = Params}) ->
     not proplists:get_bool('lr', Params).
 

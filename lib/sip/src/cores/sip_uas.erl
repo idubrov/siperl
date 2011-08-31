@@ -8,10 +8,10 @@
 -module(sip_uas).
 
 %% API
--export([send_response/2, tx_terminated/3]).
+-export([send_response/2, handle_info/2]).
 
-%% Response processing
--export([pipeline/0]).
+%% Request processing
+-export([request_pipeline/0]).
 -export([start_server_tx/2, validate_allowed/2, validate_loop/2, validate_required/2, invoke_handler/2, default_response/2]).
 
 %% Include files
@@ -25,10 +25,24 @@ send_response(Response, #sip_ua_state{allow = Allow, supported = Supported} = St
     sip_transaction:send_response(Resp3),
     {ok, State}.
 
-tx_terminated(_TxKey, normal, State) ->
-    {ok, State}.
+% @private
+-spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+handle_info({request, Msg}, State) ->
+    % first, bind Msg as first argument to pipeline functions, then apply to message
+    Pipeline = [fun (S) -> Fun(Msg, S) end || Fun <- State#sip_ua_state.uas_pipeline],
+    Result =
+        case pipeline_m:process(State, Pipeline) of
+            {stop, {reply, Response, S}} ->
+                send_response(Response, S),
+                {noreply, S};
+            {stop, R} -> R
+    end,
+    pipeline_m:stop(Result);
 
-pipeline() ->
+handle_info(_Info, State) ->
+    pipeline_m:next(State).
+
+request_pipeline() ->
     [fun start_server_tx/2,
      fun validate_allowed/2,
      fun validate_loop/2,
@@ -39,7 +53,7 @@ pipeline() ->
 %% Request handling
 start_server_tx(Request, State) ->
     sip_transaction:start_server_tx(self(), Request),
-    {next, State}.
+    pipeline_m:next(State).
 
 %% Validate message according to the 8.2.1
 validate_allowed(Request, State) ->
@@ -48,22 +62,22 @@ validate_allowed(Request, State) ->
     Contains = lists:any(fun (V) -> V =:= Method end, Allow),
     case Contains of
         true ->
-            {next, State};
+            pipeline_m:next(State);
         false ->
             % Send "405 Method Not Allowed"
             Response = sip_message:create_response(Request, 405),
-            {reply, Response, State}
+            pipeline_m:stop({reply, Response, State})
     end.
 
 %% Validate message according to the 8.2.2.2
 validate_loop(Request, State) ->
     case sip_transaction:is_loop_detected(Request) of
         false ->
-            {next, State};
+            pipeline_m:next(State);
         true ->
             % Send "482 Loop Detected"
             Response = sip_message:create_response(Request, 482),
-            {reply, Response, State}
+            pipeline_m:stop({reply, Response, State})
     end.
 
 %% Validate message according to the 8.2.2.3
@@ -75,20 +89,23 @@ validate_required(Request, State) ->
     Require = sip_message:header('require', Request),
     case lists:filter(IsNotSupported, Require) of
         [] ->
-            {next, State};
+            pipeline_m:next(State);
         Unsupported ->
             % Send "420 Bad Extension"
             Response = sip_message:create_response(Request, 420),
             Response2 = sip_message:append_header('unsupported', Unsupported, Response),
-            {reply, Response2, State}
+            pipeline_m:stop({reply, Response2, State})
     end.
 
 %% Invoke request handler
 invoke_handler(Request, #sip_ua_state{callback = Mod} = State) ->
     Method = sip_message:method(Request),
-    Mod:handle_request(Method, Request, State).
+    case Mod:handle_request(Method, Request, State) of
+        {next, S} -> pipeline_m:next(S);
+        Other -> pipeline_m:stop(Other)
+    end.
 
 default_response(Request, State) ->
     % Send 'Server Internal Error' by default
     Response = sip_message:create_response(Request, 500),
-    {reply, Response, State}.
+    pipeline_m:stop({reply, Response, State}).
