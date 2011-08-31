@@ -12,7 +12,7 @@
 -export([create_request/3, send_request/3, handle_info/2]).
 
 %% Response processing
--export([validate_vias/2, process_redirects/2, invoke_handler/2]).
+-export([validate_vias/2, process_redirects/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -68,10 +68,11 @@ send_request(Request, UserData, State) ->
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
 handle_info({response, Msg}, State) ->
+    Mod = State#sip_ua_state.callback,
     do([pipeline_m ||
         S1 <- validate_vias(Msg, State),
         S2 <- process_redirects(Msg, S1),
-        S3 <- invoke_handler(Msg, S2),
+        S3 <- Mod:handle_response(user_data(Msg, S2), Msg, S2),
         % TODO: log unhandled requests?
         S3]);
 
@@ -134,16 +135,10 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
 process_redirects(_Msg, State) ->
     pipeline_m:next(State).
 
-%% Invoke response handler
-invoke_handler(Response, #sip_ua_state{callback = Mod} = State) ->
+user_data(Response, State) ->
     TxKey = sip_transaction:tx_key(client, Response),
     ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
-    UserData = ReqInfo#req_info.user_data,
-
-    case Mod:handle_response(UserData, Response, State) of
-        {next, S} -> pipeline_m:next(S);
-        Other -> pipeline_m:stop(Other)
-    end.
+    ReqInfo#req_info.user_data.
 
 %%-----------------------------------------------------------------
 %% Internal functions

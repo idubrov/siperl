@@ -30,15 +30,19 @@ send_response(Response, #sip_ua_state{allow = Allow, supported = Supported} = St
 -spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
 handle_info({request, Msg}, State) ->
     Mod = State#sip_ua_state.callback,
+
+    % first, we start server transaction
+    sip_transaction:start_server_tx(self(), Msg),
+
+    % then we apply our standard valves to the message and state
     Result =
         do([pipeline_m ||
-            S1 <- start_server_tx(Msg, State),
-            S2 <- validate_allowed(Msg, S1),
-            S3 <- validate_loop(Msg, S2),
-            S4 <- validate_required(Msg, S3),
-            S5 <- Mod:handle_request(sip_message:method(Msg), Msg, S4),
-            S6 <- fail({reply, sip_message:create_response(Msg, 500), S5}),
-            S6]),
+            S1 <- validate_allowed(Msg, State),
+            S2 <- validate_loop(Msg, S1),
+            S3 <- validate_required(Msg, S2),
+            S4 <- Mod:handle_request(sip_message:method(Msg), Msg, S3),
+            S5 <- fail({reply, sip_message:create_response(Msg, 500), S4}),
+            S5]),
 
     case Result of
         {stop, {reply, Response, S}} ->

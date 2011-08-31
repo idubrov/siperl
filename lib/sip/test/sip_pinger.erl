@@ -54,4 +54,4 @@ handle_call(Req, From, State) ->
 handle_response(Client, Response, State) ->
     Response2 = sip_message:parse_all_headers(Response),
     gen_server:reply(Client, {ok, Response2}),
-    {noreply, State}.
+    pipeline_m:stop({noreply, State}).
