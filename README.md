@@ -56,7 +56,8 @@ API Notes
 
  * Parsing, formatting, generating and processing messages is mostly in
    `sip_headers` and `sip_message`. modules The The former is mostly used for
-   individual headers, the latter -- to update message as a whole.
+   individual headers, the latter -- to update message as a whole. The format
+   of the supported headers and message are in `sip.hrl`
  * Transport layer API is `sip_transport` module. Transport layer dispatches
    messages to the transaction layer. If transaction layer cannot handle the
    message, transport layer lookups core via `sip_cores:lookup_core/1`
@@ -69,4 +70,7 @@ API Notes
    registration is a `gproc` property added to the core process with value of
    `#sip_core_info{}`. For now, it contains single element -- function that if
    core is applicable for given message or not.
+ * Utility functions for processing binaries are in `sip_binary`.
+ * Functions to process supported URIs (for now, only `sip` scheme is supported)
+   are in `sip_uri`.
 
