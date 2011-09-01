@@ -65,7 +65,6 @@ parse(_Name, Header) when not is_binary(Header) ->
     % Already parsed
     Header;
 
-%% 20.1 Accept
 %% ```
 %% Accept         =  "Accept" HCOLON
 %%                    [ accept-range *(COMMA accept-range) ]
@@ -96,7 +95,6 @@ parse('accept', Bin) ->
     {Media, Rest} = parse_media_range(Bin),
     parse_list('accept', Media, Rest);
 
-%% 20.2 Accept Encoding
 %% ```
 %% Accept-Encoding  =  "Accept-Encoding" HCOLON
 %%                      [ encoding *(COMMA encoding) ]
@@ -121,7 +119,6 @@ parse('accept-language', Bin) ->
     Language = language(parse_language(LanguageBin), Params),
     parse_list('accept-language', Language, Rest);
 
-%% 20.4 Alert-Info
 %% ```
 %% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
 %% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
@@ -132,6 +129,42 @@ parse('alert-info', Bin) ->
     {Params, Rest} = parse_params(Bin3, fun (_Name, Value) -> Value end),
     Info = alert_info(URI, Params),
     parse_list('alert-info', Info, Rest);
+
+%% ```
+%% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
+%%                         *(COMMA ainfo)
+%% ainfo                =  nextnonce / message-qop
+%%                          / response-auth / cnonce
+%%                          / nonce-count
+%% nextnonce            =  "nextnonce" EQUAL nonce-value
+%% response-auth        =  "rspauth" EQUAL response-digest
+%% response-digest      =  LDQUOT *LHEX RDQUOT
+%% message-qop          =  "qop" EQUAL qop-value
+%% qop-value           =  "auth" / "auth-int" / token
+%% nonce-count          =  "nc" EQUAL nc-value
+%% nc-value             =  8LHEX
+%% cnonce               =  "cnonce" EQUAL cnonce-value
+%% cnonce-value         =  nonce-value
+%% '''
+parse('authentication-info', Bin) ->
+    {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_binary:parse_token(Bin),
+    Name = sip_binary:binary_to_existing_atom(NameBin),
+    {Value, Rest} =
+        case Name of
+            nextnonce -> sip_binary:parse_quoted_string(ValueBin);
+            qop ->
+                {QOP, R} = sip_binary:parse_token(ValueBin),
+                {sip_binary:binary_to_existing_atom(QOP), R};
+            rspauth ->
+                sip_binary:parse_quoted_string(ValueBin);
+            cnonce ->
+                sip_binary:parse_quoted_string(ValueBin);
+            nc ->
+                {NC, R} = sip_binary:parse_while(ValueBin, fun sip_binary:is_alphanum_char/1),
+                {list_to_integer(binary_to_list(NC), 16), R}
+        end,
+    Info = {Name, Value},
+    parse_list('authentication-info', Info, Rest);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -216,8 +249,10 @@ parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-rou
     {Top, Rest} = parse_address(Bin),
     parse_list(Name, Top, Rest);
 
+%% ```
 %% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
 %% Require = "Require" HCOLON option-tag *(COMMA option-tag)
+%% '''
 parse(Name, Bin) when
   Name =:= 'allow'; Name =:= 'require'; Name =:= 'proxy-require';
   Name =:= 'supported'; Name =:= 'unsupported' ->
@@ -305,7 +340,8 @@ parse_address_uri(Bin) ->
             % Section 20
             % If the URI is not enclosed in angle brackets, any semicolon-delimited
             % parameters are header-parameters, not URI parameters.
-            Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?SEMI end,
+            % so, parse until comma (next header value), space character or semicolon
+            Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?SEMI orelse C =:= ?COMMA end,
 
             {URI, Params} = sip_binary:parse_until(Bin, Fun),
             {<<>>, URI, Params};
@@ -479,6 +515,35 @@ format('alert-info', Info) when is_record(Info, sip_hdr_alertinfo) ->
     URI = sip_uri:format(Info#sip_hdr_alertinfo.uri),
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
     append_params(Bin, Info#sip_hdr_alertinfo.params);
+
+%% ```
+%% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
+%%                         *(COMMA ainfo)
+%% ainfo                =  nextnonce / message-qop
+%%                          / response-auth / cnonce
+%%                          / nonce-count
+%% nextnonce            =  "nextnonce" EQUAL nonce-value
+%% nonce-value          =  quoted-string
+%% response-auth        =  "rspauth" EQUAL response-digest
+%% response-digest      =  LDQUOT *LHEX RDQUOT
+%% message-qop          =  "qop" EQUAL qop-value
+%% qop-value            =  "auth" / "auth-int" / token
+%% nonce-count          =  "nc" EQUAL nc-value
+%% nc-value             =  8LHEX
+%% cnonce               =  "cnonce" EQUAL cnonce-value
+%% cnonce-value         =  nonce-value
+%% '''
+format('authentication-info', {nextnonce, NextNonce}) ->
+    <<"nextnonce=", (sip_binary:quote_string(NextNonce))/binary>>;
+format('authentication-info', {qop, Qop}) ->
+    <<"qop=", (sip_binary:any_to_binary(Qop))/binary>>;
+format('authentication-info', {rspauth, RspAuth}) ->
+    <<"rspauth=", (sip_binary:quote_string(RspAuth))/binary>>;
+format('authentication-info', {cnonce, CNonce}) ->
+    <<"cnonce=", (sip_binary:quote_string(CNonce))/binary>>;
+format('authentication-info', {nc, NonceCount}) ->
+    [NCBin] = io_lib:format("~8.16.0b", [NonceCount]),
+    <<"nc=", (list_to_binary(NCBin))/binary>>;
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -735,6 +800,14 @@ binary_to_header_name(Name) ->
 header_name_to_binary(Name) when is_binary(Name) -> Name;
 header_name_to_binary(Name) when is_atom(Name) ->
     case Name of
+        'accept' -> <<"Accept">>;
+        'accept-encoding' -> <<"Accept-Encoding">>;
+        'accept-language' -> <<"Accept-Language">>;
+        'alert-info' -> <<"Alert-Info">>;
+        'allow' -> <<"Allow">>;
+        'authentication-info' -> <<"Authentication-Info">>;
+
+
         'via' -> <<"Via">>;
         'content-length' -> <<"Content-Length">>;
         'cseq' -> <<"CSeq">>;
@@ -743,7 +816,6 @@ header_name_to_binary(Name) when is_atom(Name) ->
         'from' -> <<"From">>;
         'to' -> <<"To">>;
         'contact' -> <<"Contact">>;
-        'allow' -> <<"Allow">>;
         'require' -> <<"Require">>;
         'proxy-require' -> <<"Proxy-Require">>;
         'supported' -> <<"Supported">>;
@@ -771,8 +843,10 @@ parse_via_param(_Name, Value) -> Value.
 -spec parse_test_() -> list().
 parse_test_() ->
     [
-     % Parsing
+     % parsing
      ?_assertEqual([], parse_headers(<<>>)),
+
+     % short names support
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                     {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
@@ -780,18 +854,27 @@ parse_test_() ->
                    parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\n",
                                    "t: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n",
                                    "k: 100rel\r\n">>)),
+     % multi-line headers
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
 
-     % Formatting
-     ?_assertEqual(<<"Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
+     % formatting, check that header names have proper case
+     ?_assertEqual(<<"Accept: */*\r\nAccept-Encoding: identity\r\n",
+                     "Accept-Language: en\r\nAlert-Info: <http://www.example.com/sounds/moo.wav>\r\n",
+                     "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
+
+                     "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\nCall-Id: callid\r\nContact: Alice <sip:example.com>\r\n"
                      "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
                      "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
                      "X-Custom: value\r\n">>,
-                   format_headers([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
+                   format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
+                                   {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
+                                   {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
+
+                                   {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
                                    {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25},
@@ -850,6 +933,28 @@ parse_test_() ->
                           [alert_info(<<"http://www.example.com/sounds/moo.wav">>, []),
                            alert_info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])])),
 
+     % Allow
+     ?_assertEqual(['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'],
+                   parse('allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>)),
+     ?_assertEqual(<<"INVITE, ACK, CANCEL, OPTIONS, BYE">>,
+                   format('allow', ['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'])),
+
+     % Authentication-Info
+     %nextnonce / message-qop / response-auth / cnonce / nonce-count
+     ?_assertEqual([{nextnonce, <<"47364c23432">>},
+                    {qop, auth},
+                    {rspauth, <<"5f113a5432">>},
+                    {cnonce, <<"42a2187831a9e">>},
+                    {nc, 25}],
+                   parse('authentication-info', <<"nextnonce=\"47364c23432\", qop=auth, rspauth=\"5f113a5432\", cnonce=\"42a2187831a9e\", nc=00000019">>)),
+     ?_assertEqual(<<"nextnonce=\"47364c23432\", qop=auth, rspauth=\"5f113a5432\", cnonce=\"42a2187831a9e\", nc=00000019">>,
+                   format('authentication-info',
+                          [{nextnonce, <<"47364c23432">>},
+                           {qop, auth},
+                           {rspauth, <<"5f113a5432">>},
+                           {cnonce, <<"42a2187831a9e">>},
+                           {nc, 25}])),
+
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
 
@@ -900,6 +1005,9 @@ parse_test_() ->
                     address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
      ?_assertEqual('*', parse('contact', <<"*">>)),
+     ?_assertEqual([address(<<>>, <<"sip:bob@biloxi.com">>, []),
+                    address(<<>>, <<"sip:alice@atlanta.com">>, [])],
+                   parse('contact', <<"sip:bob@biloxi.com, sip:alice@atlanta.com">>)),
 
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
                    format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
@@ -911,6 +1019,9 @@ parse_test_() ->
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
                                       address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
      ?_assertEqual(<<"*">>, format('contact', '*')),
+     ?_assertEqual(<<"<sip:bob@biloxi.com>, <sip:alice@atlanta.com>">>,
+                   format('contact', [address(<<>>, <<"sip:bob@biloxi.com">>, []),
+                                      address(<<>>, <<"sip:alice@atlanta.com">>, [])])),
 
      % q-value
      ?_assertEqual(1.0, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), []))),
@@ -955,12 +1066,6 @@ parse_test_() ->
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=224.0.0.1;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
      ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
-
-     % Allow
-     ?_assertEqual(['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'],
-                   parse('allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>)),
-     ?_assertEqual(<<"INVITE, ACK, CANCEL, OPTIONS, BYE">>,
-                   format('allow', ['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'])),
 
      % Require, Proxy-Require, Supported, Unsupported
      ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
