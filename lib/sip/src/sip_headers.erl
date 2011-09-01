@@ -92,10 +92,8 @@ parse(_Name, Header) when not is_binary(Header) ->
 %% m-value          =  token / quoted-string
 %% '''
 parse('accept', Bin) ->
-    case parse_media_range(Bin) of
-        {Media, <<?COMMA, Rest/binary>>} -> [Media | parse('accept', Rest)];
-        {Media, <<>>} -> [Media]
-    end;
+    {Media, Rest} = parse_media_range(Bin),
+    parse_list('accept', Media, Rest);
 
 %% ```
 %% Accept-Encoding  =  "Accept-Encoding" HCOLON
@@ -105,10 +103,8 @@ parse('accept', Bin) ->
 %% content-coding   =  token
 %% '''
 parse('accept-encoding', Bin) ->
-    case parse_encoding(Bin) of
-        {Encoding, <<?COMMA, Rest/binary>>} -> [Encoding | parse('accept-encoding', Rest)];
-        {Encoding, <<>>} -> [Encoding]
-    end;
+    {Encoding, Rest} = parse_encoding(Bin),
+    parse_list('accept-encoding', Encoding, Rest);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -119,20 +115,14 @@ parse('via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
     % Parse parameters (which should start with semicolon)
     {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
-    {Params, Bin4} = parse_params(Bin3, fun parse_via_param/2),
+    {Params, Rest} = parse_params(Bin3, fun parse_via_param/2),
 
     Top = #sip_hdr_via{transport = Transport,
                        version = Version,
                        host = Host,
                        port = Port,
                        params = Params},
-    case Bin4 of
-        <<?COMMA, Bin5/binary>> ->
-            % Parse the rest of the Via
-            % *(COMMA via-parm)
-            [Top | parse('via', Bin5)];
-        <<>> -> [Top]
-    end;
+    parse_list('via', Top, Rest);
 
 %% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
 parse('content-length', Bin) ->
@@ -144,7 +134,7 @@ parse('cseq', Bin) ->
     {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
     Sequence = sip_binary:binary_to_integer(SeqBin),
     Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
-    #sip_hdr_cseq{sequence = Sequence, method = Method};
+    cseq(Sequence, Method);
 
 %% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
 parse('max-forwards', Bin) ->
@@ -196,16 +186,8 @@ parse(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
 %% display-name   =  *(token LWS)/ quoted-string
 parse('contact', <<"*">>) -> '*';
 parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-route' ->
-    case parse_address(Bin) of
-        {Top, <<?COMMA, Bin2/binary>>} ->
-            % Parse the rest of the Contact, Route or Record-Route headers
-            % *(COMMA contact-param / route-param / rec-route)
-            case parse(Name, Bin2) of
-                Value when is_list(Value) -> [Top | Value];
-                Value -> [Top | [Value]]
-            end;
-        {Top, <<>>} -> Top
-    end;
+    {Top, Rest} = parse_address(Bin),
+    parse_list(Name, Top, Rest);
 
 %% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
 %% Require = "Require" HCOLON option-tag *(COMMA option-tag)
@@ -213,7 +195,7 @@ parse(Name, Bin) when
   Name =:= 'allow'; Name =:= 'require'; Name =:= 'proxy-require';
   Name =:= 'supported'; Name =:= 'unsupported' ->
 
-    {MethodBin, Bin2} = sip_binary:parse_token(Bin),
+    {MethodBin, Rest} = sip_binary:parse_token(Bin),
     % by convention, method names are upper-case atoms
     % all other are in lower case
     MethodBin2 =
@@ -221,14 +203,7 @@ parse(Name, Bin) when
            Name =/= 'allow' -> sip_binary:to_lower(MethodBin)
         end,
     Method = sip_binary:binary_to_existing_atom(MethodBin2),
-    case Bin2 of
-        <<?COMMA, Bin3/binary>> ->
-            % Parse the rest of the Allow
-            % *(COMMA Method)
-            [Method | parse(Name, Bin3)];
-
-        <<>> -> [Method]
-    end;
+    parse_list(Name, Method, Rest);
 
 %% Any other header, just return value as is
 parse(_Name, Value) ->
@@ -574,6 +549,7 @@ need_quoting(<<C, Rest/binary>>)  ->
 %%-----------------------------------------------------------------
 %% Header-specific helpers
 %%-----------------------------------------------------------------
+
 %% @doc
 %% Construct Via header value.
 %% @end
@@ -640,6 +616,10 @@ add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+%% @doc Multi-headers parse helper
+%% @end
+parse_list(_Name, Top, <<>>) -> [Top];
+parse_list(Name, Top, <<?COMMA, Rest/binary>>) -> [Top | parse(Name, Rest)].
 
 % RFC 3261, 7.3.1
 % The line break and the whitespace at the beginning of the next
@@ -807,7 +787,7 @@ parse_test_() ->
                    format('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
      % Contact
-     ?_assertEqual(address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
                     address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
@@ -835,9 +815,9 @@ parse_test_() ->
      ?_assertEqual(0.5, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{q, 0.5}]))),
 
      % Route, Record-Route
-     ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),
+     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
                    parse('route', <<"<sip:p1.example.com;lr>">>)),
-     ?_assertEqual(address(<<>>, <<"sip:p1.example.com;lr">>, []),
+     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
                    parse('record-route', <<"<sip:p1.example.com;lr>">>)),
 
      ?_assertEqual(<<"<sip:p1.example.com;lr>">>,

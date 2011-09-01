@@ -28,7 +28,7 @@ request(Method, Transport) ->
                {'via', [sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, sip_idgen:generate_branch()}])]},
                {'via', [sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])]},
                {'from', sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [{'tag', <<"1928301774">>}])},
-               {'contact', sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [])},
+               {'contact', [sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [])]},
                {'to', sip_headers:address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{'tag', <<"839408234">>}])},
                {'call-id', list_to_binary(pid_to_list(self()))}, % encode PID in header for testing purposes
                {'max-forwards', 70},
