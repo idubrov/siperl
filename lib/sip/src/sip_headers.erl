@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, via/3, cseq/2, address/3]).
+-export([media/3, encoding/2, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -95,6 +95,19 @@ parse('accept', Bin) ->
     case parse_media_range(Bin) of
         {Media, <<?COMMA, Rest/binary>>} -> [Media | parse('accept', Rest)];
         {Media, <<>>} -> [Media]
+    end;
+
+%% ```
+%% Accept-Encoding  =  "Accept-Encoding" HCOLON
+%%                      [ encoding *(COMMA encoding) ]
+%% encoding         =  codings *(SEMI accept-param)
+%% codings          =  content-coding / "*"
+%% content-coding   =  token
+%% '''
+parse('accept-encoding', Bin) ->
+    case parse_encoding(Bin) of
+        {Encoding, <<?COMMA, Rest/binary>>} -> [Encoding | parse('accept-encoding', Rest)];
+        {Encoding, <<>>} -> [Encoding]
     end;
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
@@ -360,8 +373,27 @@ parse_media_range(Bin) ->
             end
     end,
     {Params, Rest} = parse_params(ParamsBin2, fun (_Name, Value) -> Value end),
-    {#sip_hdr_mediatype{type = Type2, subtype = SubType2, params = Params}, Rest}.
+    {media(Type2, SubType2, Params), Rest}.
 
+%% @doc Parse encoding grammar
+%% ```
+%% encoding         =  codings *(SEMI accept-param)
+%% codings          =  content-coding / "*"
+%% content-coding   =  token
+%% '''
+%% @end
+parse_encoding(Bin) ->
+    {Encoding2, ParamsBin2} =
+        case sip_binary:trim_leading(Bin) of
+            <<"*", ParamsBin/binary>> ->
+                {'*', ParamsBin};
+        _ ->
+            {EncodingBin, <<ParamsBin/binary>>} = sip_binary:parse_token(Bin),
+            Encoding = sip_binary:binary_to_existing_atom(EncodingBin),
+            {Encoding, ParamsBin}
+    end,
+    {Params, Rest} = parse_params(ParamsBin2, fun (_Name, Value) -> Value end),
+    {encoding(Encoding2, Params), Rest}.
 
 %% @doc Format header value into the binary.
 %% @end
@@ -409,6 +441,17 @@ format('accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
     Type = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.type),
     SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
     append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
+
+%% ```
+%% Accept-Encoding  =  "Accept-Encoding" HCOLON
+%%                      [ encoding *(COMMA encoding) ]
+%% encoding         =  codings *(SEMI accept-param)
+%% codings          =  content-coding / "*"
+%% content-coding   =  token
+%% '''
+format('accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
+    Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
+    append_params(Encoding, Accept#sip_hdr_encoding.params);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -547,6 +590,11 @@ via(Transport, Host, Params) when is_list(Host); is_tuple(Host) ->
 media(Type, SubType, Params) when is_list(Params) ->
     #sip_hdr_mediatype{type = Type, subtype = SubType, params = Params}.
 
+%% @doc Construct encoding type value.
+%% @end
+-spec encoding(atom() | binary(), [any()]) -> #sip_hdr_encoding{}.
+encoding(Encoding, Params) when is_list(Params) ->
+    #sip_hdr_encoding{encoding = Encoding, params = Params}.
 
 %% @doc
 %% Construct CSeq header value.
@@ -701,25 +749,24 @@ parse_test_() ->
 
      % Accept
      ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
+                    media('application', '*', [{q, <<"0.5">>}]),
                     media('*', '*', [{q, <<"0.3">>}])],
-                   parse('accept', <<"application/sdp;level=1, */*;q=0.3">>)),
-     ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
-                    media('application', '*', [])],
-                   parse('accept', <<"application/sdp;level=1, application/*">>)),
-     ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
-                    media('application', 'x-private', []),
-                    media('text', 'html', [])],
-                   parse('accept', <<"application/sdp;level=1, application/x-private, text/html">>)),
-     ?_assertEqual(<<"application/sdp;level=1, */*;q=0.3">>,
+                   parse('accept', <<"application/sdp;level=1, application/*;q=0.5, */*;q=0.3">>)),
+     ?_assertEqual(<<"application/sdp;level=1, application/*;q=0.5, */*;q=0.3">>,
                    format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
+                                     media('application', '*', [{q, <<"0.5">>}]),
                                      media('*', '*', [{q, <<"0.3">>}])])),
-     ?_assertEqual(<<"application/sdp;level=1, application/*">>,
-                   format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
-                                     media('application', '*', [])])),
-     ?_assertEqual(<<"application/sdp;level=1, application/x-private, text/html">>,
-                   format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
-                                     media('application', 'x-private', []),
-                                     media('text', 'html', [])])),
+
+     % Accept-Encoding
+     ?_assertEqual([encoding('gzip', []),
+                    encoding('identity', [{q, <<"0.3">>}]),
+                    encoding('*', [{q, <<"0.2">>}])],
+                   parse('accept-encoding', <<"gzip, identity;q=0.3, *;q=0.2">>)),
+     ?_assertEqual(<<"gzip, identity;q=0.3, *;q=0.2">>,
+                   format('accept-encoding',
+                          [encoding('gzip', []),
+                           encoding('identity', [{q, <<"0.3">>}]),
+                           encoding('*', [{q, <<"0.2">>}])])),
 
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
