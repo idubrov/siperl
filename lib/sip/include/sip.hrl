@@ -33,6 +33,14 @@
                       headers = [] :: [{Name :: atom() | binary(), Value :: binary() | term()}],
                       body = <<"">> :: binary()}).
 
+%% Headers
+
+%% Value for headers `Accept:', ...
+-record(sip_hdr_mediatype,
+        {type :: atom() | binary(),
+         subtype :: atom() | binary(),
+         params = []}).
+
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
                       transport :: 'udp' | 'tcp' | 'tls' | atom(),

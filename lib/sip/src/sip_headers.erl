@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([via/3, cseq/2, address/3]).
+-export([media/3, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -64,6 +64,39 @@ format_headers(Headers) ->
 parse(_Name, Header) when not is_binary(Header) ->
     % Already parsed
     Header;
+
+%% ```
+%% Accept         =  "Accept" HCOLON
+%%                    [ accept-range *(COMMA accept-range) ]
+%% accept-range   =  media-range *(SEMI accept-param)
+%% media-range    =  ( "*/*"
+%%                   / ( m-type SLASH "*" )
+%%                   / ( m-type SLASH m-subtype )
+%%                   ) *( SEMI m-parameter )
+%% accept-param   =  ("q" EQUAL qvalue) / generic-param
+%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
+%%                   / ( "1" [ "." 0*3("0") ] )
+%% generic-param  =  token [ EQUAL gen-value ]
+%% gen-value      =  token / host / quoted-string
+%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
+%% m-type           =  discrete-type / composite-type
+%% discrete-type    =  "text" / "image" / "audio" / "video"
+%%                     / "application" / extension-token
+%% composite-type   =  "message" / "multipart" / extension-token
+%% extension-token  =  ietf-token / x-token
+%% ietf-token       =  token
+%% x-token          =  "x-" token
+%% m-subtype        =  extension-token / iana-token
+%% m-parameter      =  m-attribute EQUAL m-value
+%% m-attribute      =  token
+%% m-value          =  token / quoted-string
+%% '''
+parse('accept', Bin) ->
+    case parse_media_range(Bin) of
+        {Media, <<?COMMA, Rest/binary>>} -> [Media | parse('accept', Rest)];
+        {Media, <<>>} -> [Media]
+    end;
+
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -282,6 +315,54 @@ parse_address(Bin) ->
     Value = address(sip_binary:trim(Display), URI, Params),
     {Value, Bin3}.
 
+
+%% @doc Parse accept-range or media-type grammar
+%% ```
+%%
+%% accept-range   =  media-range *(SEMI accept-param)
+%% media-range    =  ( "*/*"
+%%                   / ( m-type SLASH "*" )
+%%                   / ( m-type SLASH m-subtype )
+%%                   ) *( SEMI m-parameter )
+%% accept-param   =  ("q" EQUAL qvalue) / generic-param
+%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
+%%                   / ( "1" [ "." 0*3("0") ] )
+%% generic-param  =  token [ EQUAL gen-value ]
+%% gen-value      =  token / host / quoted-string
+%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
+%% m-type           =  discrete-type / composite-type
+%% discrete-type    =  "text" / "image" / "audio" / "video"
+%%                     / "application" / extension-token
+%% composite-type   =  "message" / "multipart" / extension-token
+%% extension-token  =  ietf-token / x-token
+%% ietf-token       =  token
+%% x-token          =  "x-" token
+%% m-subtype        =  extension-token / iana-token
+%% m-parameter      =  m-attribute EQUAL m-value
+%% m-attribute      =  token
+%% m-value          =  token / quoted-string
+%% '''
+%% @end
+parse_media_range(Bin) ->
+    {Type2, SubType2, ParamsBin2} =
+        case sip_binary:trim_leading(Bin) of
+            <<"*/*", ParamsBin/binary>> ->
+                {'*', '*', ParamsBin};
+        _ ->
+            {TypeBin, <<?SLASH, Bin2/binary>>} = sip_binary:parse_token(Bin),
+            Type = sip_binary:binary_to_existing_atom(TypeBin),
+            case sip_binary:trim_leading(Bin2) of
+                <<"*", ParamsBin/binary>> -> {Type, '*', ParamsBin};
+                Bin3 ->
+                    {SubTypeBin, ParamsBin} = sip_binary:parse_token(Bin3),
+                    SubType = sip_binary:binary_to_existing_atom(SubTypeBin),
+                    {Type, SubType, ParamsBin}
+            end
+    end,
+    {Params, Rest} = parse_params(ParamsBin2, fun (_Name, Value) -> Value end),
+    {#sip_hdr_mediatype{type = Type2, subtype = SubType2, params = Params}, Rest}.
+
+
 %% @doc Format header value into the binary.
 %% @end
 -spec format(atom() | binary(), binary() | term()) -> binary().
@@ -297,6 +378,38 @@ format(Name, [Top | Rest]) ->
              end,
     TopBin = format(Name, Top),
     lists:foldl(Joiner, TopBin, Rest);
+
+%% ```
+%% Accept         =  "Accept" HCOLON
+%%                    [ accept-range *(COMMA accept-range) ]
+%% accept-range   =  media-range *(SEMI accept-param)
+%% media-range    =  ( "*/*"
+%%                   / ( m-type SLASH "*" )
+%%                   / ( m-type SLASH m-subtype )
+%%                   ) *( SEMI m-parameter )
+%% accept-param   =  ("q" EQUAL qvalue) / generic-param
+%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
+%%                   / ( "1" [ "." 0*3("0") ] )
+%% generic-param  =  token [ EQUAL gen-value ]
+%% gen-value      =  token / host / quoted-string
+%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
+%% m-type           =  discrete-type / composite-type
+%% discrete-type    =  "text" / "image" / "audio" / "video"
+%%                     / "application" / extension-token
+%% composite-type   =  "message" / "multipart" / extension-token
+%% extension-token  =  ietf-token / x-token
+%% ietf-token       =  token
+%% x-token          =  "x-" token
+%% m-subtype        =  extension-token / iana-token
+%% m-parameter      =  m-attribute EQUAL m-value
+%% m-attribute      =  token
+%% m-value          =  token / quoted-string
+%% '''
+format('accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
+    Type = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.type),
+    SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
+    append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
+
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -427,6 +540,13 @@ via(Transport, {Host, Port}, Params) when
     #sip_hdr_via{transport = Transport, host = Host, port = Port, params = Params};
 via(Transport, Host, Params) when is_list(Host); is_tuple(Host) ->
     via(Transport, {Host, 5060}, Params).
+
+%% @doc Construct media type value.
+%% @end
+-spec media(atom() | binary(), atom() | binary(), [any()]) -> #sip_hdr_mediatype{}.
+media(Type, SubType, Params) when is_list(Params) ->
+    #sip_hdr_mediatype{type = Type, subtype = SubType, params = Params}.
+
 
 %% @doc
 %% Construct CSeq header value.
@@ -579,6 +699,28 @@ parse_test_() ->
      ?_assertEqual(<<"custom">>, parse('x-custom2', <<"custom">>)),
      ?_assertEqual(<<"25">>, format('x-custom2', 25)),
 
+     % Accept
+     ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
+                    media('*', '*', [{q, <<"0.3">>}])],
+                   parse('accept', <<"application/sdp;level=1, */*;q=0.3">>)),
+     ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
+                    media('application', '*', [])],
+                   parse('accept', <<"application/sdp;level=1, application/*">>)),
+     ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
+                    media('application', 'x-private', []),
+                    media('text', 'html', [])],
+                   parse('accept', <<"application/sdp;level=1, application/x-private, text/html">>)),
+     ?_assertEqual(<<"application/sdp;level=1, */*;q=0.3">>,
+                   format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
+                                     media('*', '*', [{q, <<"0.3">>}])])),
+     ?_assertEqual(<<"application/sdp;level=1, application/*">>,
+                   format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
+                                     media('application', '*', [])])),
+     ?_assertEqual(<<"application/sdp;level=1, application/x-private, text/html">>,
+                   format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
+                                     media('application', 'x-private', []),
+                                     media('text', 'html', [])])),
+
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
 
@@ -592,8 +734,7 @@ parse_test_() ->
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
-     ?_assertEqual(<<"70">>,
-                   format('max-forwards', 70)),
+     ?_assertEqual(<<"70">>, format('max-forwards', 70)),
 
      % From/To
      ?_assertEqual(address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),

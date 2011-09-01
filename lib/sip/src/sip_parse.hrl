@@ -14,3 +14,4 @@
 -define(DQUOTE, $").
 -define(LAQUOT, $<).
 -define(RAQUOT, $>).
+-define(SLASH, $/).
