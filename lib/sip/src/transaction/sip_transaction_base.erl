@@ -34,11 +34,15 @@ init(#tx_state{tx_key = Key, tx_user = TxUser, request = Msg} = TxState) ->
     % Add gproc: property for loop detection for server transactions, see 8.2.2.2
     case Key of
         #sip_tx_server{} ->
-            FromTag = sip_message:tag('from', Msg),
-            CallId = sip_message:top_header('call-id', Msg),
-            CSeq = sip_message:top_header('cseq', Msg),
-            gproc:add_local_property({tx_loop, FromTag, CallId, CSeq}, Key),
-            ok;
+            case sip_message:tag('from', Msg) of
+                {ok, FromTag} ->
+                    CallId = sip_message:top_header('call-id', Msg),
+                    CSeq = sip_message:top_header('cseq', Msg),
+                    gproc:add_local_property({tx_loop, FromTag, CallId, CSeq}, Key),
+                    ok;
+                false ->
+                    ok
+            end;
         #sip_tx_client{} ->
             ok
     end,

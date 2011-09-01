@@ -33,7 +33,7 @@ send_response(#sip_message{kind = #sip_response{}} = Response,
     {ok, State}.
 
 % @private
--spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+-spec handle_info(term(), #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 handle_info({request, Msg}, State) ->
     Mod = State#sip_ua_state.callback,
 

@@ -64,7 +64,7 @@ send_request(Request, UserData, State) ->
 
 
 %% @private
--spec handle_info(term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
+-spec handle_info(term(), #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
 handle_info({response, Msg}, State) ->

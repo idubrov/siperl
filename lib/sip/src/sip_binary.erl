@@ -366,7 +366,7 @@ binary_to_existing_atom(Bin) ->
 
 %% @doc Convert atoms, binaries, integers or strings to binary.
 %% @end
--spec any_to_binary(atom() | binary() | integer() | list() | inet:ip_address()) -> binary().
+-spec any_to_binary(atom() | binary() | integer() | float() | list() | inet:ip_address()) -> binary().
 any_to_binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
 any_to_binary(Bin) when is_binary(Bin) -> Bin;
 any_to_binary(Int) when is_integer(Int) -> integer_to_binary(Int);

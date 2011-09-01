@@ -115,9 +115,8 @@ send_response(Msg) ->
 %% @end
 -spec is_loop_detected(#sip_message{}) -> boolean().
 is_loop_detected(Msg) ->
-    ToTag = sip_message:tag('to', Msg),
-    case ToTag of
-        undefined ->
+    case sip_message:tag('to', Msg) of
+        false ->
             TxKey = sip_transaction:tx_key(server, Msg),
 
             FromTag = sip_message:tag('from', Msg),
@@ -134,7 +133,7 @@ is_loop_detected(Msg) ->
                 _Other -> true
             end;
         % tag present, no loop
-        _Tag -> false
+        {ok, _Tag} -> false
     end.
 
 %%-----------------------------------------------------------------
