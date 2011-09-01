@@ -15,7 +15,7 @@
 -export([parse_token/1, parse_quoted_string/1, quote_string/1]).
 -export([integer_to_binary/1, float_to_binary/1, any_to_binary/1, addr_to_binary/1]).
 -export([binary_to_integer/1, binary_to_float/1, binary_to_existing_atom/1]).
--export([is_digit_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
+-export([is_digit_char/1, is_alpha_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
 -export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
 
@@ -33,6 +33,15 @@
 is_digit_char(C) when C >= $0, C =< $9 -> true;
 is_digit_char(_C) -> false.
 
+%% @doc Check if character is alpha
+%%
+%% ```
+%% alphanum  =  ALPHA / DIGIT
+%% '''
+%% @end
+is_alpha_char(C) ->
+    (C >= $a andalso C =< $z) orelse (C >= $A andalso C =< $Z).
+
 %% @doc Check if character is alphanumeric
 %%
 %% ```
@@ -40,8 +49,7 @@ is_digit_char(_C) -> false.
 %% '''
 %% @end
 -spec is_alphanum_char(integer()) -> boolean().
-is_alphanum_char(C) when C >= $a, C =< $z; C >= $A, C =< $Z -> true;
-is_alphanum_char(C) -> is_digit_char(C).
+is_alphanum_char(C) -> is_alpha_char(C) orelse is_digit_char(C).
 
 
 %% @doc Check if character is `token' character (as specified in RFC 3261 25.1)
@@ -436,6 +444,8 @@ binary_test_() ->
      % "is" tests
      ?_assertEqual(true, is_digit_char($5)),
      ?_assertEqual(false, is_digit_char($a)),
+     ?_assertEqual(true, is_alpha_char($T)),
+     ?_assertEqual(false, is_alpha_char($5)),
      ?_assertEqual(true, is_alphanum_char($a)),
      ?_assertEqual(false, is_alphanum_char($:)),
      ?_assertEqual(true, is_unreserved_char($~)),

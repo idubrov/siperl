@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, encoding/2, via/3, cseq/2, address/3]).
+-export([media/3, language/2, encoding/2, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -103,8 +103,21 @@ parse('accept', Bin) ->
 %% content-coding   =  token
 %% '''
 parse('accept-encoding', Bin) ->
-    {Encoding, Rest} = parse_encoding(Bin),
+    {EncodingBin, Params, Rest} = parse_token_params(Bin),
+    Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
+
+%% ```
+%% Accept-Language  =  "Accept-Language" HCOLON
+%%                      [ language *(COMMA language) ]
+%% language         =  language-range *(SEMI accept-param)
+%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
+%% '''
+parse('accept-language', Bin) ->
+    {LanguageBin, Params, Rest} = parse_token_params(Bin),
+    Language = language(parse_language(LanguageBin), Params),
+    parse_list('accept-language', Language, Rest);
+
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -355,20 +368,18 @@ parse_media_range(Bin) ->
 %% encoding         =  codings *(SEMI accept-param)
 %% codings          =  content-coding / "*"
 %% content-coding   =  token
+%% language         =  language-range *(SEMI accept-param)
+%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
 %% '''
 %% @end
-parse_encoding(Bin) ->
-    {Encoding2, ParamsBin2} =
+parse_token_params(Bin) ->
+    {TokenBin, ParamsBin} =
         case sip_binary:trim_leading(Bin) of
-            <<"*", ParamsBin/binary>> ->
-                {'*', ParamsBin};
-        _ ->
-            {EncodingBin, <<ParamsBin/binary>>} = sip_binary:parse_token(Bin),
-            Encoding = sip_binary:binary_to_existing_atom(EncodingBin),
-            {Encoding, ParamsBin}
+            <<"*", P/binary>> -> {'*', P};
+            Bin2 -> sip_binary:parse_token(Bin2)
     end,
-    {Params, Rest} = parse_params(ParamsBin2, fun (_Name, Value) -> Value end),
-    {encoding(Encoding2, Params), Rest}.
+    {Params, Rest} = parse_params(ParamsBin, fun (_Name, Value) -> Value end),
+    {TokenBin, Params, Rest}.
 
 %% @doc Format header value into the binary.
 %% @end
@@ -427,6 +438,24 @@ format('accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
 format('accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
     Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
     append_params(Encoding, Accept#sip_hdr_encoding.params);
+
+%% ```
+%% Accept-Language  =  "Accept-Language" HCOLON
+%%                      [ language *(COMMA language) ]
+%% language         =  language-range *(SEMI accept-param)
+%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
+%% '''
+format('accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
+    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.lang),
+    Bin =
+        case Accept#sip_hdr_language.sublang of
+            undefined ->
+                LangBin;
+            SubLang ->
+                SublangBin = sip_binary:any_to_binary(SubLang),
+                <<LangBin/binary, $-, SublangBin/binary>>
+        end,
+    append_params(Bin, Accept#sip_hdr_language.params);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -572,6 +601,14 @@ media(Type, SubType, Params) when is_list(Params) ->
 encoding(Encoding, Params) when is_list(Params) ->
     #sip_hdr_encoding{encoding = Encoding, params = Params}.
 
+%% @doc Construct language type value.
+%% @end
+-spec language(atom() | binary(), [any()]) -> #sip_hdr_language{}.
+language({Lang, Sublang}, Params) when is_list(Params) ->
+    #sip_hdr_language{lang = Lang, sublang = Sublang, params = Params};
+language(Language, Params) when is_list(Params) ->
+    #sip_hdr_language{lang = Language, params = Params}.
+
 %% @doc
 %% Construct CSeq header value.
 %% @end
@@ -620,6 +657,20 @@ add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
 %% @end
 parse_list(_Name, Top, <<>>) -> [Top];
 parse_list(Name, Top, <<?COMMA, Rest/binary>>) -> [Top | parse(Name, Rest)].
+
+%% @doc Parse language range
+%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
+%% @end
+parse_language('*') -> '*';
+parse_language(Bin) ->
+    {LangBin, Rest} = sip_binary:parse_while(Bin, fun sip_binary:is_alpha_char/1),
+    Lang = sip_binary:binary_to_existing_atom(LangBin),
+    case Rest of
+        <<>> -> Lang;
+        <<$-, Rest2/binary>> ->
+            {SublangBin, <<>>} = sip_binary:parse_while(Rest2, fun sip_binary:is_alpha_char/1),
+            {Lang, sip_binary:binary_to_existing_atom(SublangBin)}
+    end.
 
 % RFC 3261, 7.3.1
 % The line break and the whitespace at the beginning of the next
@@ -748,12 +799,26 @@ parse_test_() ->
                            encoding('identity', [{q, <<"0.3">>}]),
                            encoding('*', [{q, <<"0.2">>}])])),
 
+     % Accept-Language
+     ?_assertEqual([language('da', []),
+                    language({'en', 'gb'}, [{q, <<"0.8">>}]),
+                    language('en', [{q, <<"0.7">>}]),
+                    language('*', [{q, <<"0.6">>}])],
+                   parse('accept-language', <<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>)),
+     ?_assertEqual(<<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>,
+                   format('accept-language',
+                          [language('da', []),
+                           language({'en', 'gb'}, [{q, <<"0.8">>}]),
+                           language('en', [{q, <<"0.7">>}]),
+                           language('*', [{q, <<"0.6">>}])])),
+
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
 
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
      ?_assertEqual(<<"98083">>, format('content-length', 98083)),
+
      % CSeq
      ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
      ?_assertEqual(<<"123453 INVITE">>, format('cseq', cseq(123453, 'INVITE'))),
