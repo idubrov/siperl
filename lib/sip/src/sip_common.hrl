@@ -25,6 +25,6 @@
 -define(SPEC(Name, Module, Type, Args), {Name, {Module, start_link, Args},
                                          permanent, ?DEF_SHUTDOWN, Type, [Module]}).
 -define(SPEC(Module, Type, Args),     ?SPEC(Module, Module, Type, Args)).
--define(SPEC(Module, Type),         ?SPEC(Module, Type, [])).
--define(WORKER(Module),             ?SPEC(Module, worker, [])).
+-define(SPEC(Module, Type),           ?SPEC(Module, Type, [])).
+-define(WORKER(Module),               ?SPEC(Module, worker, [])).
 -define(WORKER(Module, Args),         ?SPEC(Module, worker, Args)).
