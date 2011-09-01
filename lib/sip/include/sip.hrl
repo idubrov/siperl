@@ -52,6 +52,11 @@
          sublang :: atom() | binary(),
          params = []}).
 
+%% Value for header `Alert-Info:'
+-record(sip_hdr_alertinfo,
+        {uri :: #sip_uri{} | binary(),
+         params = []}).
+
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
                       transport :: 'udp' | 'tcp' | 'tls' | atom(),

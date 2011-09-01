@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, language/2, encoding/2, via/3, cseq/2, address/3]).
+-export([media/3, language/2, encoding/2, alert_info/2, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -65,6 +65,7 @@ parse(_Name, Header) when not is_binary(Header) ->
     % Already parsed
     Header;
 
+%% 20.1 Accept
 %% ```
 %% Accept         =  "Accept" HCOLON
 %%                    [ accept-range *(COMMA accept-range) ]
@@ -95,6 +96,7 @@ parse('accept', Bin) ->
     {Media, Rest} = parse_media_range(Bin),
     parse_list('accept', Media, Rest);
 
+%% 20.2 Accept Encoding
 %% ```
 %% Accept-Encoding  =  "Accept-Encoding" HCOLON
 %%                      [ encoding *(COMMA encoding) ]
@@ -107,6 +109,7 @@ parse('accept-encoding', Bin) ->
     Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
 
+%% 20.3 Accept-Language
 %% ```
 %% Accept-Language  =  "Accept-Language" HCOLON
 %%                      [ language *(COMMA language) ]
@@ -118,6 +121,17 @@ parse('accept-language', Bin) ->
     Language = language(parse_language(LanguageBin), Params),
     parse_list('accept-language', Language, Rest);
 
+%% 20.4 Alert-Info
+%% ```
+%% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
+%% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%% '''
+parse('alert-info', Bin) ->
+    <<?LAQUOT, Bin2/binary>> = sip_binary:trim_leading(Bin),
+    {URI, <<?RAQUOT, Bin3/binary>>} = sip_binary:parse_until(Bin2, ?RAQUOT),
+    {Params, Rest} = parse_params(Bin3, fun (_Name, Value) -> Value end),
+    Info = alert_info(URI, Params),
+    parse_list('alert-info', Info, Rest);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -457,6 +471,15 @@ format('accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
         end,
     append_params(Bin, Accept#sip_hdr_language.params);
 
+%% ```
+%% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
+%% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%% '''
+format('alert-info', Info) when is_record(Info, sip_hdr_alertinfo) ->
+    URI = sip_uri:format(Info#sip_hdr_alertinfo.uri),
+    Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
+    append_params(Bin, Info#sip_hdr_alertinfo.params);
+
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -608,6 +631,12 @@ language({Lang, Sublang}, Params) when is_list(Params) ->
     #sip_hdr_language{lang = Lang, sublang = Sublang, params = Params};
 language(Language, Params) when is_list(Params) ->
     #sip_hdr_language{lang = Language, params = Params}.
+
+%% @doc Construct Alert-Info header value
+%% @end
+-spec alert_info(#sip_uri{} | binary(), [any()]) -> #sip_hdr_alertinfo{}.
+alert_info(URI, Params) ->
+    #sip_hdr_alertinfo{uri = URI, params = Params}.
 
 %% @doc
 %% Construct CSeq header value.
@@ -811,6 +840,15 @@ parse_test_() ->
                            language({'en', 'gb'}, [{q, <<"0.8">>}]),
                            language('en', [{q, <<"0.7">>}]),
                            language('*', [{q, <<"0.6">>}])])),
+
+     % Alert-Info
+     ?_assertEqual([alert_info(<<"http://www.example.com/sounds/moo.wav">>, []),
+                    alert_info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])],
+                   parse('alert-info', <<"<http://www.example.com/sounds/moo.wav>, <http://www.example.com/sounds/boo.wav>;foo=value">>)),
+     ?_assertEqual(<<"<http://www.example.com/sounds/moo.wav>, <http://www.example.com/sounds/boo.wav>;foo=value">>,
+                   format('alert-info',
+                          [alert_info(<<"http://www.example.com/sounds/moo.wav">>, []),
+                           alert_info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])])),
 
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
