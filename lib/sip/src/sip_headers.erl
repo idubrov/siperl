@@ -254,7 +254,12 @@ parse_address_uri(Bin) ->
     case sip_binary:parse_until(Bin, ?LAQUOT) of
         {_Any, <<>>} ->
             % addr-spec
-            {URI, Params} = sip_binary:parse_until(Bin, fun sip_binary:is_space_char/1),
+            % Section 20
+            % If the URI is not enclosed in angle brackets, any semicolon-delimited
+            % parameters are header-parameters, not URI parameters.
+            Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?SEMI end,
+
+            {URI, Params} = sip_binary:parse_until(Bin, Fun),
             {<<>>, URI, Params};
 
         {Display, <<?LAQUOT, Rest/binary>>} ->
@@ -274,9 +279,7 @@ parse_address_uri(Bin) ->
 parse_address(Bin) ->
     {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
     {Params, Bin3} = parse_params(Bin2, fun (_Name, Value) -> Value end),
-    Value = #sip_hdr_address{display_name = sip_binary:trim(Display),
-                             uri = sip_uri:parse(URI),
-                             params = Params},
+    Value = address(sip_binary:trim(Display), URI, Params),
     {Value, Bin3}.
 
 %% @doc Format header value into the binary.
@@ -700,6 +703,14 @@ parse_test_() ->
 
      ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
+
+     % If the URI is not enclosed in angle brackets, any semicolon-delimited
+     % parameters are header-parameters, not URI parameters, Section 20.
+     ?_assertEqual({address(<<>>,
+                            sip_uri:parse(<<"sip:alice@atlanta.com">>),
+                            [{param, <<"value">>}]),
+                    <<>>},
+                   parse_address(<<"sip:alice@atlanta.com;param=value">>)),
 
      % Subject (FIXME: implement proper tests)
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,

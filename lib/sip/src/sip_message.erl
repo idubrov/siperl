@@ -410,6 +410,7 @@ create_ack(Request, Response) when is_record(Request, sip_message),
 
 
 %% @doc Create response for given request
+%% FIXME: Copy all needed headers!!!! See Section 20.
 %% @end
 -spec create_response(#sip_message{}, integer(), binary()) -> #sip_message{}.
 create_response(Request, Status, Reason) ->
