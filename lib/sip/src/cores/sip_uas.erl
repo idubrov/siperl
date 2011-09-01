@@ -94,7 +94,7 @@ validate_required(Request, State) ->
     IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,
 
     %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
-    Require = sip_message:header('require', Request),
+    Require = sip_message:header_values('require', Request),
     case lists:filter(IsNotSupported, Require) of
         [] ->
             pipeline_m:next(State);

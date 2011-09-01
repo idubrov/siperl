@@ -99,7 +99,7 @@ handle_info(_Info, State) ->
 %% Validate message according to the 8.1.3.3
 -spec validate_vias(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 validate_vias(Msg, State) ->
-    Count = length(sip_message:header('via', Msg)),
+    Count = length(sip_message:header_values('via', Msg)),
     case Count of
         1 ->
             pipeline_m:next(State);
