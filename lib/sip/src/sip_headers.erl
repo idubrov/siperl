@@ -14,7 +14,7 @@
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
 -export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3]).
--export([add_tag/3, qvalue/1]).
+-export([add_tag/3]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -92,7 +92,7 @@ parse(_Name, Header) when not is_binary(Header) ->
 %% m-value          =  token / quoted-string
 %% '''
 parse('accept', Bin) ->
-    {Media, Rest} = parse_media_range(Bin),
+    {Media, Rest} = parse_media_range(Bin, fun parse_q_param/2),
     parse_list('accept', Media, Rest);
 
 %% ```
@@ -100,10 +100,11 @@ parse('accept', Bin) ->
 %%                      [ encoding *(COMMA encoding) ]
 %% encoding         =  codings *(SEMI accept-param)
 %% codings          =  content-coding / "*"
+%% accept-param     =  ("q" EQUAL qvalue) / generic-param
 %% content-coding   =  token
 %% '''
 parse('accept-encoding', Bin) ->
-    {EncodingBin, Params, Rest} = parse_token_params(Bin),
+    {EncodingBin, Params, Rest} = parse_accept(Bin),
     Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
 
@@ -114,29 +115,16 @@ parse('accept-encoding', Bin) ->
 %% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
 %% '''
 parse('accept-language', Bin) ->
-    {LanguageBin, Params, Rest} = parse_token_params(Bin),
+    {LanguageBin, Params, Rest} = parse_accept(Bin),
     Language = language(parse_language(LanguageBin), Params),
     parse_list('accept-language', Language, Rest);
 
 %% ```
 %% Alert-Info  =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
 %% alert-param =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
-%%
-%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
-%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
-%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
-%%                / "card" / token ) ) / generic-param
 %% '''
-parse(Name, Bin) when Name =:= 'alert-info'; Name =:= 'call-info' ->
-    <<?LAQUOT, Bin2/binary>> = sip_binary:trim_leading(Bin),
-    {URI, <<?RAQUOT, Bin3/binary>>} = sip_binary:parse_until(Bin2, ?RAQUOT),
-    ValueParseFun = 
-        fun(purpose, Value) when Name =:= 'call-info' -> sip_binary:binary_to_existing_atom(Value);
-           (_Name, Value) -> Value
-        end,
-    {Params, Rest} = parse_params(Bin3, ValueParseFun),
-    Info = info(URI, Params),
-    parse_list(Name, Info, Rest);
+parse('alert-info', Bin) ->
+    parse_info('alert-info', Bin, fun parse_generic_param/2);
 
 %% ```
 %% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
@@ -195,6 +183,18 @@ parse('authorization', Bin) ->
 %% '''
 parse('call-id', Bin) -> Bin;
 
+%% ```
+%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
+%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
+%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
+%%                / "card" / token ) ) / generic-param
+%% '''
+parse('call-info', Bin) ->
+    ParamFun =
+        fun(purpose, Value) -> sip_binary:binary_to_existing_atom(Value);
+           (_Name, Value) -> Value
+        end,
+    parse_info('call-info', Bin, ParamFun);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -241,9 +241,10 @@ parse('max-forwards', Bin) ->
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
 parse(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
-    {Top, <<>>} = parse_address(Bin),
+    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
     Top;
 
+%% ```
 %% Contact        =  ("Contact" / "m" ) HCOLON
 %%                  ( STAR / (contact-param *(COMMA contact-param)))
 %% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
@@ -264,10 +265,17 @@ parse(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
+%% '''
 parse('contact', <<"*">>) -> '*';
-parse(Name, Bin) when Name =:= 'contact'; Name =:= 'route'; Name =:= 'record-route' ->
-    {Top, Rest} = parse_address(Bin),
+parse('contact', Bin) ->
+    {Top, Rest} = parse_address(Bin, fun parse_contact_param/2),
+    parse_list('contact', Top, Rest);
+
+% FIXME: move...
+parse(Name, Bin) when Name =:= 'route'; Name =:= 'record-route' ->
+    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
     parse_list(Name, Top, Rest);
+
 
 %% ```
 %% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
@@ -380,9 +388,9 @@ parse_address_uri(Bin) ->
 %% param       =  tag-param / generic-param
 %% '''
 %% @end
-parse_address(Bin) ->
+parse_address(Bin, ParamFun) ->
     {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
-    {Params, Bin3} = parse_params(Bin2, fun (_Name, Value) -> Value end),
+    {Params, Bin3} = parse_params(Bin2, ParamFun),
     Value = address(sip_binary:trim(Display), URI, Params),
     {Value, Bin3}.
 
@@ -400,6 +408,7 @@ parse_address(Bin) ->
 %%                   / ( "1" [ "." 0*3("0") ] )
 %% generic-param  =  token [ EQUAL gen-value ]
 %% gen-value      =  token / host / quoted-string
+%%
 %% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
 %% m-type           =  discrete-type / composite-type
 %% discrete-type    =  "text" / "image" / "audio" / "video"
@@ -414,7 +423,7 @@ parse_address(Bin) ->
 %% m-value          =  token / quoted-string
 %% '''
 %% @end
-parse_media_range(Bin) ->
+parse_media_range(Bin, ParamFun) ->
     {Type2, SubType2, ParamsBin2} =
         case sip_binary:trim_leading(Bin) of
             <<"*/*", ParamsBin/binary>> ->
@@ -430,25 +439,39 @@ parse_media_range(Bin) ->
                     {Type, SubType, ParamsBin}
             end
     end,
-    {Params, Rest} = parse_params(ParamsBin2, fun (_Name, Value) -> Value end),
+    {Params, Rest} = parse_params(ParamsBin2, ParamFun),
     {media(Type2, SubType2, Params), Rest}.
 
-%% @doc Parse encoding grammar
+
+%% Parse Alert-Info or Call-Info
+%% ```
+%% Alert-Info  =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
+%% alert-param =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%% '''
+parse_info(Name, Bin, ParamFun) ->
+    <<?LAQUOT, Bin2/binary>> = sip_binary:trim_leading(Bin),
+    {URI, <<?RAQUOT, Bin3/binary>>} = sip_binary:parse_until(Bin2, ?RAQUOT),
+    {Params, Rest} = parse_params(Bin3, ParamFun),
+    Info = info(URI, Params),
+    parse_list(Name, Info, Rest).
+
+%% @doc Parse Accept-Encoding/Accept-Language grammar
 %% ```
 %% encoding         =  codings *(SEMI accept-param)
 %% codings          =  content-coding / "*"
 %% content-coding   =  token
+%%
 %% language         =  language-range *(SEMI accept-param)
 %% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
 %% '''
 %% @end
-parse_token_params(Bin) ->
+parse_accept(Bin) ->
     {TokenBin, ParamsBin} =
         case sip_binary:trim_leading(Bin) of
             <<"*", P/binary>> -> {'*', P};
             Bin2 -> sip_binary:parse_token(Bin2)
     end,
-    {Params, Rest} = parse_params(ParamsBin, fun (_Name, Value) -> Value end),
+    {Params, Rest} = parse_params(ParamsBin, fun parse_q_param/2),
     {TokenBin, Params, Rest}.
 
 %% @doc Format header value into the binary.
@@ -626,6 +649,7 @@ format('max-forwards', Hops) when is_integer(Hops) ->
 %% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
 %% Call id is always a binary, so handled by first case
 
+%% ```
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
 %%
@@ -653,6 +677,7 @@ format('max-forwards', Hops) when is_integer(Hops) ->
 %% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
 %% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
 %% display-name   =  *(token LWS)/ quoted-string
+%% '''
 format('contact', '*') -> <<"*">>;
 format(Name, #sip_hdr_address{} = Addr) when
   Name =:= 'from';
@@ -772,19 +797,6 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), 
     #sip_hdr_address{display_name = DisplayName, uri = sip_uri:parse(URI), params = Params};
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
-
-%%% @doc Return value of the `q' parameter of the address as floating point number.
-%%% @end
--spec qvalue(#sip_hdr_address{}) -> float().
-qvalue(Address) when is_record(Address, sip_hdr_address) ->
-    case lists:keyfind('q', 1, Address#sip_hdr_address.params) of
-        false ->
-            1.0; % default q-value
-        {'q', Value} when is_float(Value) ->
-            Value;
-        {'q', Bin} when is_binary(Bin) ->
-            sip_binary:binary_to_float(Bin)
-    end.
 
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
@@ -942,6 +954,18 @@ parse_via_param('received', Received) ->
     Addr;
 parse_via_param(_Name, Value) -> Value.
 
+%% Parse q parameter (used mostly in accept headers)
+parse_q_param(q, Value) -> sip_binary:binary_to_float(Value);
+parse_q_param(_Name, Value) -> Value.
+
+%% Parse contact header parameters
+parse_contact_param(q, Value) -> sip_binary:binary_to_float(Value);
+parse_contact_param(expires, Value) -> sip_binary:binary_to_integer(Value);
+parse_contact_param(_Name, Value) -> Value.
+
+%% Parse generic parameters
+parse_generic_param(_Name, Value) -> Value.
+
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -1000,37 +1024,37 @@ parse_test_() ->
 
      % Accept
      ?_assertEqual([media('application', 'sdp', [{level, <<"1">>}]),
-                    media('application', '*', [{q, <<"0.5">>}]),
-                    media('*', '*', [{q, <<"0.3">>}])],
+                    media('application', '*', [{q, 0.5}]),
+                    media('*', '*', [{q, 0.3}])],
                    parse('accept', <<"application/sdp;level=1, application/*;q=0.5, */*;q=0.3">>)),
      ?_assertEqual(<<"application/sdp;level=1, application/*;q=0.5, */*;q=0.3">>,
                    format('accept', [media('application', 'sdp', [{level, <<"1">>}]),
-                                     media('application', '*', [{q, <<"0.5">>}]),
-                                     media('*', '*', [{q, <<"0.3">>}])])),
+                                     media('application', '*', [{q, 0.5}]),
+                                     media('*', '*', [{q, 0.3}])])),
 
      % Accept-Encoding
      ?_assertEqual([encoding('gzip', []),
-                    encoding('identity', [{q, <<"0.3">>}]),
-                    encoding('*', [{q, <<"0.2">>}])],
+                    encoding('identity', [{q, 0.3}]),
+                    encoding('*', [{q, 0.2}])],
                    parse('accept-encoding', <<"gzip, identity;q=0.3, *;q=0.2">>)),
      ?_assertEqual(<<"gzip, identity;q=0.3, *;q=0.2">>,
                    format('accept-encoding',
                           [encoding('gzip', []),
-                           encoding('identity', [{q, <<"0.3">>}]),
-                           encoding('*', [{q, <<"0.2">>}])])),
+                           encoding('identity', [{q, 0.3}]),
+                           encoding('*', [{q, 0.2}])])),
 
      % Accept-Language
      ?_assertEqual([language('da', []),
-                    language({'en', 'gb'}, [{q, <<"0.8">>}]),
-                    language('en', [{q, <<"0.7">>}]),
-                    language('*', [{q, <<"0.6">>}])],
+                    language({'en', 'gb'}, [{q, 0.8}]),
+                    language('en', [{q, 0.7}]),
+                    language('*', [{q, 0.6}])],
                    parse('accept-language', <<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>)),
      ?_assertEqual(<<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>,
                    format('accept-language',
                           [language('da', []),
-                           language({'en', 'gb'}, [{q, <<"0.8">>}]),
-                           language('en', [{q, <<"0.7">>}]),
-                           language('*', [{q, <<"0.6">>}])])),
+                           language({'en', 'gb'}, [{q, 0.8}]),
+                           language('en', [{q, 0.7}]),
+                           language('*', [{q, 0.6}])])),
 
      % Alert-Info
      ?_assertEqual([info(<<"http://www.example.com/sounds/moo.wav">>, []),
@@ -1092,15 +1116,15 @@ parse_test_() ->
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
      ?_assertEqual(<<"somecallid">>, format('call-id', <<"somecallid">>)),
-     
+
      % Call-Info
      ?_assertEqual([info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
-                    info(<<"http://www.example.com/alice/">>, [{purpose, info}])],
-                   parse('call-info', <<"<http://wwww.example.com/alice/photo.jpg> ;purpose=icon, <http://www.example.com/alice/> ;purpose=info">>)),
-     ?_assertEqual(<<"<http://wwww.example.com/alice/photo.jpg>;purpose=icon, <http://www.example.com/alice/>;purpose=info">>,
+                    info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])],
+                   parse('call-info', <<"<http://wwww.example.com/alice/photo.jpg> ;purpose=icon, <http://www.example.com/alice/> ;purpose=info;param=\"value\"">>)),
+     ?_assertEqual(<<"<http://wwww.example.com/alice/photo.jpg>;purpose=icon, <http://www.example.com/alice/>;purpose=info;param=value">>,
                    format('alert-info',
                           [info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
-                           info(<<"http://www.example.com/alice/">>, [{purpose, info}])])),
+                           info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])])),
 
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
@@ -1139,38 +1163,41 @@ parse_test_() ->
                    format('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
      % Contact
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}])],
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
-                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])],
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>)),
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
-                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}]),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
                     address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
      ?_assertEqual('*', parse('contact', <<"*">>)),
      ?_assertEqual([address(<<>>, <<"sip:bob@biloxi.com">>, []),
                     address(<<>>, <<"sip:alice@atlanta.com">>, [])],
                    parse('contact', <<"sip:bob@biloxi.com, sip:alice@atlanta.com">>)),
+     ?_assertEqual([address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
+                    address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])],
+                   parse('contact', <<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7; expires=3600, ",
+                                      "\"Mr. Watson\" <mailto:watson@bell-telephone.com> ;q=0.1">>)),
 
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
-                   format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]))),
+                   format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]))),
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
-                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
-                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, <<"0.2">>}])])),
+                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])])),
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>,
-                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, <<"0.1">>}]),
+                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
                                       address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
                                       address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
      ?_assertEqual(<<"*">>, format('contact', '*')),
      ?_assertEqual(<<"<sip:bob@biloxi.com>, <sip:alice@atlanta.com>">>,
                    format('contact', [address(<<>>, <<"sip:bob@biloxi.com">>, []),
                                       address(<<>>, <<"sip:alice@atlanta.com">>, [])])),
-
-     % q-value
-     ?_assertEqual(1.0, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), []))),
-     ?_assertEqual(0.2, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{q, <<"0.2">>}]))),
-     ?_assertEqual(0.5, qvalue(address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{q, 0.5}]))),
+     ?_assertEqual(<<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7;expires=3600, ",
+                     "\"Mr. Watson\" <mailto:watson@bell-telephone.com>;q=0.1">>,
+                   format('contact', [address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
+                                      address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])])),
 
      % Route, Record-Route
      ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
@@ -1230,7 +1257,7 @@ parse_test_() ->
                             sip_uri:parse(<<"sip:alice@atlanta.com">>),
                             [{param, <<"value">>}]),
                     <<>>},
-                   parse_address(<<"sip:alice@atlanta.com;param=value">>)),
+                   parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2)),
 
      % Subject (FIXME: implement proper tests)
      ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
