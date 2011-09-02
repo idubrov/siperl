@@ -15,6 +15,7 @@
 -export([parse_token/1, parse_quoted_string/1, quote_string/1]).
 -export([integer_to_binary/1, float_to_binary/1, any_to_binary/1, addr_to_binary/1]).
 -export([binary_to_integer/1, binary_to_float/1, binary_to_existing_atom/1]).
+-export([hexstr_to_binary/1, binary_to_hexstr/1]).
 -export([is_digit_char/1, is_alpha_char/1, is_alphanum_char/1, is_unreserved_char/1, is_space_char/1]).
 -export([is_token_char/1, is_reserved_char/1, is_user_unreserved_char/1]).
 -export([parse_number/1, parse_ip_address/1, parse_host_port/1]).
@@ -344,6 +345,39 @@ integer_to_binary(Int) when is_integer(Int) ->
 binary_to_float(Bin) when is_binary(Bin) ->
     list_to_float(binary_to_list(Bin)).
 
+%% @doc Convert binary hex string to binary
+%%
+%% Convert binary hex string to binary. For example, binary hex string
+%% `<<"68656c6c6f">>' will be converted to `<<"hello">>'.
+%% <em>Note: binary hex string must have even number of digits</em>
+%% @end
+-spec hexstr_to_binary(binary()) -> binary().
+hexstr_to_binary(<<L, Bin/binary>>) when size(Bin) rem 2 =:= 0 ->
+    Byte = int(L),
+    hexstr_to_binary(Bin, <<Byte>>);
+hexstr_to_binary(Bin) ->
+    hexstr_to_binary(Bin, <<>>).
+
+hexstr_to_binary(<<>>, Res) -> Res;
+hexstr_to_binary(<<H, L, Rest/binary>>, Res) ->
+    Byte = int(H) * 16 + int(L),
+    hexstr_to_binary(Rest, <<Res/binary, Byte>>).
+
+%% @doc Convert binary to hex string
+%%
+%% Convert binary to the hex string. For example, binary string
+%% `<<"hello">>' will be converted to hex binary string `<<"68656c6c6f">>'.
+%% @end
+-spec binary_to_hexstr(binary()) -> binary().
+binary_to_hexstr(Bin) ->
+    binary_to_hexstr(Bin, <<>>).
+
+binary_to_hexstr(<<>>, Res) -> Res;
+binary_to_hexstr(<<Byte, Rest/binary>>, Res) ->
+    H = hex(Byte div 16),
+    L = hex(Byte rem 16),
+    binary_to_hexstr(Rest, <<Res/binary, H, L>>).
+
 %% @doc Convert floating point number to ASCII binary.
 %%
 %% <em>Note that at most three digits after floating point are returned</em>
@@ -417,6 +451,10 @@ hex4(N, Bin) ->
 hex(N) when N >= 0, N =< 9 -> N + $0;
 hex(N) when N >= 10, N =< 15 -> N - 10 + $a.
 
+int(C) when C >= $0, C =< $9 -> C - $0;
+int(C) when C >= $a, C =< $z -> C - $a + 10;
+int(C) when C >= $A, C =< $Z -> C - $A + 10.
+
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -485,6 +523,10 @@ binary_test_() ->
      ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, addr_to_binary({8193,3512,4515,2519,7988,35374,1952,30301})),
      ?_assertEqual(<<"neverexistingatom">>, binary_to_existing_atom(<<"neverexistingatom">>)),
      ?_assertEqual('existingatom', binary_to_existing_atom(<<"existingatom">>)),
+     ?_assertEqual(<<"hello">>, hexstr_to_binary(<<"68656c6C6F">>)),
+     ?_assertEqual(<<"68656c6c6f">>, binary_to_hexstr(<<"hello">>)),
+     ?_assertEqual(<<"\n">>, hexstr_to_binary(<<"a">>)),
+     ?_assertEqual(<<"0a">>, binary_to_hexstr(<<"\n">>)),
 
      % parse
      ?_assertEqual({<<"some">>, <<"! rest  ">>}, parse_while(<<"some! rest  ">>, fun (C) -> C =/= $! end)),

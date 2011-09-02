@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, language/2, encoding/2, alert_info/2, via/3, cseq/2, address/3]).
+-export([media/3, language/2, encoding/2, auth/2, alert_info/2, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -107,7 +107,6 @@ parse('accept-encoding', Bin) ->
     Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
 
-%% 20.3 Accept-Language
 %% ```
 %% Accept-Language  =  "Accept-Language" HCOLON
 %%                      [ language *(COMMA language) ]
@@ -147,24 +146,32 @@ parse('alert-info', Bin) ->
 %% cnonce-value         =  nonce-value
 %% '''
 parse('authentication-info', Bin) ->
-    {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_binary:parse_token(Bin),
-    Name = sip_binary:binary_to_existing_atom(NameBin),
-    {Value, Rest} =
-        case Name of
-            nextnonce -> sip_binary:parse_quoted_string(ValueBin);
-            qop ->
-                {QOP, R} = sip_binary:parse_token(ValueBin),
-                {sip_binary:binary_to_existing_atom(QOP), R};
-            rspauth ->
-                sip_binary:parse_quoted_string(ValueBin);
-            cnonce ->
-                sip_binary:parse_quoted_string(ValueBin);
-            nc ->
-                {NC, R} = sip_binary:parse_while(ValueBin, fun sip_binary:is_alphanum_char/1),
-                {list_to_integer(binary_to_list(NC), 16), R}
-        end,
-    Info = {Name, Value},
-    parse_list('authentication-info', Info, Rest);
+    parse_auths(Bin);
+
+%% ```
+%% Authorization     =  "Authorization" HCOLON credentials
+%% credentials       =  ("Digest" LWS digest-response)
+%%                     / other-response
+%% digest-response   =  dig-resp *(COMMA dig-resp)
+%% dig-resp          =  username / realm / nonce / digest-uri
+%%                       / dresponse / algorithm / cnonce
+%%                       / opaque / message-qop
+%%                       / nonce-count / auth-param
+%% username          =  "username" EQUAL username-value
+%% username-value    =  quoted-string
+%% digest-uri        =  "uri" EQUAL LDQUOT digest-uri-value RDQUOT
+%% digest-uri-value  =  rquest-uri ; Equal to request-uri as specified by HTTP/1.1
+%% other-response    =  auth-scheme LWS auth-param
+%%                     *(COMMA auth-param)
+%% auth-scheme       =  token
+%% auth-param        =  auth-param-name EQUAL
+%%                      ( token / quoted-string )
+%% auth-param-name   =  token
+%% '''
+parse('authorization', Bin) ->
+    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
+    auth(Scheme, parse_auths(Bin2));
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -533,17 +540,35 @@ format('alert-info', Info) when is_record(Info, sip_hdr_alertinfo) ->
 %% cnonce               =  "cnonce" EQUAL cnonce-value
 %% cnonce-value         =  nonce-value
 %% '''
-format('authentication-info', {nextnonce, NextNonce}) ->
-    <<"nextnonce=", (sip_binary:quote_string(NextNonce))/binary>>;
-format('authentication-info', {qop, Qop}) ->
-    <<"qop=", (sip_binary:any_to_binary(Qop))/binary>>;
-format('authentication-info', {rspauth, RspAuth}) ->
-    <<"rspauth=", (sip_binary:quote_string(RspAuth))/binary>>;
-format('authentication-info', {cnonce, CNonce}) ->
-    <<"cnonce=", (sip_binary:quote_string(CNonce))/binary>>;
-format('authentication-info', {nc, NonceCount}) ->
-    [NCBin] = io_lib:format("~8.16.0b", [NonceCount]),
-    <<"nc=", (list_to_binary(NCBin))/binary>>;
+format('authentication-info', Pair) ->
+    format_auth(Pair);
+
+%% ```
+%% Authorization     =  "Authorization" HCOLON credentials
+%% credentials       =  ("Digest" LWS digest-response)
+%%                     / other-response
+%% digest-response   =  dig-resp *(COMMA dig-resp)
+%% dig-resp          =  username / realm / nonce / digest-uri
+%%                       / dresponse / algorithm / cnonce
+%%                       / opaque / message-qop
+%%                       / nonce-count / auth-param
+%% username          =  "username" EQUAL username-value
+%% username-value    =  quoted-string
+%% digest-uri        =  "uri" EQUAL LDQUOT digest-uri-value RDQUOT
+%% digest-uri-value  =  rquest-uri ; Equal to request-uri as specified by HTTP/1.1
+%% other-response    =  auth-scheme LWS auth-param
+%%                     *(COMMA auth-param)
+%% auth-scheme       =  token
+%% auth-param        =  auth-param-name EQUAL
+%%                      ( token / quoted-string )
+%% auth-param-name   =  token
+%% '''
+format('authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
+    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    [First | Rest] = Auth#sip_hdr_auth.params,
+    FirstBin = format_auth(First),
+    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
+    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
 
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
@@ -697,11 +722,17 @@ language({Lang, Sublang}, Params) when is_list(Params) ->
 language(Language, Params) when is_list(Params) ->
     #sip_hdr_language{lang = Language, params = Params}.
 
-%% @doc Construct Alert-Info header value
+%% @doc Construct `Alert-Info' header value
 %% @end
 -spec alert_info(#sip_uri{} | binary(), [any()]) -> #sip_hdr_alertinfo{}.
 alert_info(URI, Params) ->
     #sip_hdr_alertinfo{uri = URI, params = Params}.
+
+%% @doc Construct `Authorization:' header value
+%% @end
+-spec auth(binary() | atom(), [any()]) -> #sip_hdr_auth{}.
+auth(Scheme, Params) ->
+    #sip_hdr_auth{scheme = Scheme, params = Params}.
 
 %% @doc
 %% Construct CSeq header value.
@@ -747,6 +778,63 @@ add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+
+%% Parsing/formatting authentication/authorization parameters
+parse_auths(Bin) ->
+    {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_binary:parse_token(Bin),
+    Name = sip_binary:binary_to_existing_atom(NameBin),
+    {Value, Rest} =
+        case Name of
+            _ when Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
+                   Name =:= username; Name =:= realm; Name =:= uri;
+                   Name =:= opaque ->
+                sip_binary:parse_quoted_string(ValueBin);
+            _ when Name =:= qop; Name =:= algorithm ->
+                {Val, R} = sip_binary:parse_token(ValueBin),
+                {sip_binary:binary_to_existing_atom(Val), R};
+            _ when Name =:= rspauth; Name =:= response ->
+                {Digest, R} = sip_binary:parse_quoted_string(ValueBin),
+                {sip_binary:hexstr_to_binary(Digest), R};
+            nc ->
+                {NC, R} = sip_binary:parse_while(ValueBin, fun sip_binary:is_alphanum_char/1),
+                {list_to_integer(binary_to_list(NC), 16), sip_binary:trim_leading(R)};
+            % arbitrary auth-param
+            _Other ->
+                parse_token_or_quoted(ValueBin)
+        end,
+    Info = {Name, Value},
+    case Rest of
+        <<>> -> [Info];
+        <<?COMMA, Rest2/binary>> ->
+            [Info | parse_auths(Rest2)]
+    end.
+
+format_auth({Name, Value}) ->
+    NameBin = sip_binary:any_to_binary(Name),
+    ValBin = format_auth(Name, Value),
+    <<NameBin/binary, ?EQUAL, ValBin/binary>>.
+
+format_auth(Name, Value) when
+  Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
+  Name =:= username; Name =:= realm; Name =:= uri;
+  Name =:= opaque ->
+    sip_binary:quote_string(Value);
+format_auth(Name, Qop)
+  when Name =:= qop; Name =:= algorithm ->
+    sip_binary:any_to_binary(Qop);
+format_auth(Name, Bin) when Name =:= rspauth; Name =:= response ->
+    HexStr = sip_binary:binary_to_hexstr(Bin),
+    sip_binary:quote_string(HexStr);
+format_auth(nc, NonceCount) ->
+    [NCBin] = io_lib:format("~8.16.0b", [NonceCount]),
+    list_to_binary(NCBin);
+format_auth(_Name, Value) when is_binary(Value) ->
+    % arbitrary auth-param
+    case need_quoting(Value) of
+        true -> sip_binary:quote_string(Value);
+        false -> Value
+    end.
+
 %% @doc Multi-headers parse helper
 %% @end
 parse_list(_Name, Top, <<>>) -> [Top];
@@ -834,6 +922,7 @@ parse_via_param('received', Received) ->
     {ok, Addr} = sip_binary:parse_ip_address(Received),
     Addr;
 parse_via_param(_Name, Value) -> Value.
+
 
 %%-----------------------------------------------------------------
 %% Tests
@@ -940,10 +1029,9 @@ parse_test_() ->
                    format('allow', ['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'])),
 
      % Authentication-Info
-     %nextnonce / message-qop / response-auth / cnonce / nonce-count
      ?_assertEqual([{nextnonce, <<"47364c23432">>},
                     {qop, auth},
-                    {rspauth, <<"5f113a5432">>},
+                    {rspauth, <<95, 17, 58, 84, 50>>},
                     {cnonce, <<"42a2187831a9e">>},
                     {nc, 25}],
                    parse('authentication-info', <<"nextnonce=\"47364c23432\", qop=auth, rspauth=\"5f113a5432\", cnonce=\"42a2187831a9e\", nc=00000019">>)),
@@ -951,9 +1039,36 @@ parse_test_() ->
                    format('authentication-info',
                           [{nextnonce, <<"47364c23432">>},
                            {qop, auth},
-                           {rspauth, <<"5f113a5432">>},
+                           {rspauth, <<95, 17, 58, 84, 50>>},
                            {cnonce, <<"42a2187831a9e">>},
                            {nc, 25}])),
+
+     % Authorization
+     ?_assertEqual(auth('Digest',
+                        [{username, <<"Alice">>}, {realm, <<"atlanta.com">>},
+                         {nonce, <<"84a4cc6f3082121f32b42a2187831a9e">>}, {uri, <<"sip:alice@atlanta.com">>},
+                         {response, <<117,135,36,82,52,179,67,76,195,65,34,19,229,241,19,165>>}, {algorithm, 'MD5'},
+                         {cnonce, <<"0a4f113b">>}, {opaque, <<"5ccc069c403ebaf9f0171e9517f40e41">>},
+                         {qop, auth}, {nc, 1}, {param, <<"value">>}, {param2, <<"va lue">>}]),
+                   parse('authorization',
+                         <<"Digest username=\"Alice\", realm=\"atlanta.com\", ",
+                           "nonce=\"84a4cc6f3082121f32b42a2187831a9e\", uri=\"sip:alice@atlanta.com\", ",
+                           "response=\"7587245234b3434cc3412213e5f113a5\", algorithm=MD5, ",
+                           "cnonce=\"0a4f113b\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\", ",
+                           "qop=auth, nc=00000001, param=\"value\", param2=\"va lue\"">>)),
+     ?_assertEqual(<<"Digest username=\"Alice\", realm=\"atlanta.com\", ",
+                     "nonce=\"84a4cc6f3082121f32b42a2187831a9e\", uri=\"sip:alice@atlanta.com\", ",
+                     "response=\"7587245234b3434cc3412213e5f113a5\", algorithm=MD5, ",
+                     "cnonce=\"0a4f113b\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\", ",
+                     "qop=auth, nc=00000001, param=value, param2=\"va lue\"">>,
+                   format('authorization',
+                          auth('Digest',
+                               [{username, <<"Alice">>}, {realm, <<"atlanta.com">>},
+                                {nonce, <<"84a4cc6f3082121f32b42a2187831a9e">>}, {uri, <<"sip:alice@atlanta.com">>},
+                                {response, <<117,135,36,82,52,179,67,76,195,65,34,19,229,241,19,165>>}, {algorithm, 'MD5'},
+                                {cnonce, <<"0a4f113b">>}, {opaque, <<"5ccc069c403ebaf9f0171e9517f40e41">>},
+                                {qop, auth}, {nc, 1}, {param, <<"value">>}, {param2, <<"va lue">>}]))),
+
 
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
