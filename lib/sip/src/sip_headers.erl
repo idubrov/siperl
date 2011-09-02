@@ -13,7 +13,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, language/2, encoding/2, auth/2, alert_info/2, via/3, cseq/2, address/3]).
+-export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3]).
 -export([add_tag/3, qvalue/1]).
 
 %%-----------------------------------------------------------------
@@ -119,15 +119,24 @@ parse('accept-language', Bin) ->
     parse_list('accept-language', Language, Rest);
 
 %% ```
-%% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
-%% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%% Alert-Info  =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
+%% alert-param =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%%
+%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
+%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
+%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
+%%                / "card" / token ) ) / generic-param
 %% '''
-parse('alert-info', Bin) ->
+parse(Name, Bin) when Name =:= 'alert-info'; Name =:= 'call-info' ->
     <<?LAQUOT, Bin2/binary>> = sip_binary:trim_leading(Bin),
     {URI, <<?RAQUOT, Bin3/binary>>} = sip_binary:parse_until(Bin2, ?RAQUOT),
-    {Params, Rest} = parse_params(Bin3, fun (_Name, Value) -> Value end),
-    Info = alert_info(URI, Params),
-    parse_list('alert-info', Info, Rest);
+    ValueParseFun = 
+        fun(purpose, Value) when Name =:= 'call-info' -> sip_binary:binary_to_existing_atom(Value);
+           (_Name, Value) -> Value
+        end,
+    {Params, Rest} = parse_params(Bin3, ValueParseFun),
+    Info = info(URI, Params),
+    parse_list(Name, Info, Rest);
 
 %% ```
 %% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
@@ -173,6 +182,20 @@ parse('authorization', Bin) ->
     Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
     auth(Scheme, parse_auths(Bin2));
 
+
+%% ```
+%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
+%% callid   =  word [ "@" word ]
+%% word     =  1*(alphanum / "-" / "." / "!" / "%" / "*" /
+%%             "_" / "+" / "`" / "'" / "~" /
+%%             "(" / ")" / "<" / ">" /
+%%             ":" / "\" / DQUOTE /
+%%             "/" / "[" / "]" / "?" /
+%%             "{" / "}" )
+%% '''
+parse('call-id', Bin) -> Bin;
+
+
 %% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
 %% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
 %% via-params        =  via-ttl / via-maddr
@@ -206,16 +229,6 @@ parse('cseq', Bin) ->
 %% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
 parse('max-forwards', Bin) ->
     sip_binary:binary_to_integer(Bin);
-
-%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
-%% callid   =  word [ "@" word ]
-%% word     =  1*(alphanum / "-" / "." / "!" / "%" / "*" /
-%%             "_" / "+" / "`" / "'" / "~" /
-%%             "(" / ")" / "<" / ">" /
-%%             ":" / "\" / DQUOTE /
-%%             "/" / "[" / "]" / "?" /
-%%             "{" / "}" )
-parse('call-id', Bin) -> Bin;
 
 %% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
 %% to-param       =  tag-param / generic-param
@@ -517,11 +530,17 @@ format('accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
 %% ```
 %% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
 %% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
+%%
+%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
+%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
+%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
+%%                / "card" / token ) ) / generic-param
 %% '''
-format('alert-info', Info) when is_record(Info, sip_hdr_alertinfo) ->
-    URI = sip_uri:format(Info#sip_hdr_alertinfo.uri),
+format(Name, Info) when (Name =:= 'alert-info' orelse Name =:= 'call-info'),
+  is_record(Info, sip_hdr_info) ->
+    URI = sip_uri:format(Info#sip_hdr_info.uri),
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
-    append_params(Bin, Info#sip_hdr_alertinfo.params);
+    append_params(Bin, Info#sip_hdr_info.params);
 
 %% ```
 %% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
@@ -722,11 +741,11 @@ language({Lang, Sublang}, Params) when is_list(Params) ->
 language(Language, Params) when is_list(Params) ->
     #sip_hdr_language{lang = Language, params = Params}.
 
-%% @doc Construct `Alert-Info' header value
+%% @doc Construct `Alert-Info', `Call-Info' headers value
 %% @end
--spec alert_info(#sip_uri{} | binary(), [any()]) -> #sip_hdr_alertinfo{}.
-alert_info(URI, Params) ->
-    #sip_hdr_alertinfo{uri = URI, params = Params}.
+-spec info(#sip_uri{} | binary(), [any()]) -> #sip_hdr_info{}.
+info(URI, Params) ->
+    #sip_hdr_info{uri = URI, params = Params}.
 
 %% @doc Construct `Authorization:' header value
 %% @end
@@ -1014,13 +1033,13 @@ parse_test_() ->
                            language('*', [{q, <<"0.6">>}])])),
 
      % Alert-Info
-     ?_assertEqual([alert_info(<<"http://www.example.com/sounds/moo.wav">>, []),
-                    alert_info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])],
+     ?_assertEqual([info(<<"http://www.example.com/sounds/moo.wav">>, []),
+                    info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])],
                    parse('alert-info', <<"<http://www.example.com/sounds/moo.wav>, <http://www.example.com/sounds/boo.wav>;foo=value">>)),
      ?_assertEqual(<<"<http://www.example.com/sounds/moo.wav>, <http://www.example.com/sounds/boo.wav>;foo=value">>,
                    format('alert-info',
-                          [alert_info(<<"http://www.example.com/sounds/moo.wav">>, []),
-                           alert_info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])])),
+                          [info(<<"http://www.example.com/sounds/moo.wav">>, []),
+                           info(<<"http://www.example.com/sounds/boo.wav">>, [{foo, <<"value">>}])])),
 
      % Allow
      ?_assertEqual(['INVITE', 'ACK', 'CANCEL', 'OPTIONS', 'BYE'],
@@ -1072,6 +1091,16 @@ parse_test_() ->
 
      % Call-Id
      ?_assertEqual(<<"somecallid">>, parse('call-id', <<"somecallid">>)),
+     ?_assertEqual(<<"somecallid">>, format('call-id', <<"somecallid">>)),
+     
+     % Call-Info
+     ?_assertEqual([info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
+                    info(<<"http://www.example.com/alice/">>, [{purpose, info}])],
+                   parse('call-info', <<"<http://wwww.example.com/alice/photo.jpg> ;purpose=icon, <http://www.example.com/alice/> ;purpose=info">>)),
+     ?_assertEqual(<<"<http://wwww.example.com/alice/photo.jpg>;purpose=icon, <http://www.example.com/alice/>;purpose=info">>,
+                   format('alert-info',
+                          [info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
+                           info(<<"http://www.example.com/alice/">>, [{purpose, info}])])),
 
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),

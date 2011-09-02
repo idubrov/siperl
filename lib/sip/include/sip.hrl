@@ -52,8 +52,8 @@
          sublang :: atom() | binary(),
          params = []}).
 
-%% Value for header `Alert-Info:'
--record(sip_hdr_alertinfo,
+%% Value for headers `Alert-Info:', `Call-Info'
+-record(sip_hdr_info,
         {uri :: #sip_uri{} | binary(),
          params = []}).
 %% Value for header `Authorization:'
