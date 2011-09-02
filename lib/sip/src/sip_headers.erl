@@ -202,6 +202,7 @@ process(f, 'contact', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
 
 %% 20.11 Content-Disposition
+%% http://tools.ietf.org/html/rfc3261#section-20.11
 process(fn, 'content-disposition', _Ignore) -> <<"Content-Disposition">>;
 process(p, 'content-disposition', Bin) ->
     {TypeBin, Rest} = sip_binary:parse_token(Bin),
@@ -217,6 +218,7 @@ process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition
     append_params(TypeBin, Disp#sip_hdr_disposition.params);
 
 %% 20.12 Content-Encoding
+%% http://tools.ietf.org/html/rfc3261#section-20.12
 process(pn, <<"e">>, _Ignore) -> 'content-encoding';
 process(fn, 'content-encoding', _Ignore) -> <<"Content-Encoding">>;
 process(p, 'content-encoding', Bin) ->
@@ -228,6 +230,7 @@ process(f, 'content-encoding', Allow) ->
     sip_binary:any_to_binary(Allow);
 
 %% 20.13 Content-Language
+%% http://tools.ietf.org/html/rfc3261#section-20.13
 process(fn, 'content-language', _Ignore) -> <<"Content-Language">>;
 process(p, 'content-language', Bin) ->
     {LangBin, Rest} = sip_binary:parse_token(Bin),
@@ -236,6 +239,17 @@ process(p, 'content-language', Bin) ->
 
 process(f, 'content-language', Lang) ->
     sip_binary:any_to_binary(Lang);
+
+%% 20.14 Content-Length
+%% http://tools.ietf.org/html/rfc3261#section-20.14
+process(pn, <<"l">>, _Ignore) -> 'content-length';
+process(fn, 'content-length', _Ignore) -> <<"Content-Length">>;
+process(p, 'content-length', Bin) ->
+    sip_binary:binary_to_integer(Bin);
+
+process(f, 'content-length', Length) when is_integer(Length) ->
+    sip_binary:integer_to_binary(Length);
+
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -264,15 +278,6 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
             Port -> <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
         end,
     append_params(Bin2, Via#sip_hdr_via.params);
-
-%% ...
-process(pn, <<"l">>, _Ignore) -> 'content-length';
-process(fn, 'content-length', _Ignore) -> <<"Content-Length">>;
-process(p, 'content-length', Bin) ->
-    sip_binary:binary_to_integer(Bin);
-
-process(f, 'content-length', Length) when is_integer(Length) ->
-    sip_binary:integer_to_binary(Length);
 
 
 %% ....
@@ -769,7 +774,7 @@ parse_test_() ->
                      "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
                      "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
-                     "Content-Language: en\r\n"
+                     "Content-Language: en\r\nContent-Length: 5\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -782,7 +787,7 @@ parse_test_() ->
                                    {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
                                    {'content-disposition', <<"session">>}, {'content-encoding', gzip},
-                                   {'content-language', 'en'},
+                                   {'content-language', 'en'}, {'content-length', 5},
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
@@ -957,14 +962,16 @@ parse_test_() ->
      ?_assertEqual(<<"en, en-us-some">>,
                    format('content-language', [en, 'en-us-some'])),
 
-
-
-
-
-
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
      ?_assertEqual(<<"98083">>, format('content-length', 98083)),
+
+
+
+
+
+
+
 
      % CSeq
      ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
