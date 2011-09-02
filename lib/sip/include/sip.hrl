@@ -48,8 +48,7 @@
 
 %% Value for headers `Accept-Language:', ...
 -record(sip_hdr_language,
-        {lang :: atom() | binary(),
-         sublang :: atom() | binary(),
+        {language :: atom() | binary(),
          params = []}).
 
 %% Value for headers `Alert-Info:', `Call-Info'

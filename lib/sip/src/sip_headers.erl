@@ -112,21 +112,13 @@ process(f, 'accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) -
 %% http://tools.ietf.org/html/rfc3261#section-20.3
 process(fn, 'accept-language', _Ignore) -> <<"Accept-Language">>;
 process(p, 'accept-language', Bin) ->
-    {LanguageBin, Params, Rest} = parse_accept(Bin),
-    Language = language(parse_language(LanguageBin), Params),
-    parse_list('accept-language', Language, Rest);
+    {Language, Rest} = parse_language(sip_binary:trim_leading(Bin)),
+    {Params, Rest2} = parse_params(Rest, fun parse_q_param/2),
+    parse_list('accept-language', language(Language, Params), Rest2);
 
 process(f, 'accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
-    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.lang),
-    Bin =
-        case Accept#sip_hdr_language.sublang of
-            undefined ->
-                LangBin;
-            SubLang ->
-                SublangBin = sip_binary:any_to_binary(SubLang),
-                <<LangBin/binary, $-, SublangBin/binary>>
-        end,
-    append_params(Bin, Accept#sip_hdr_language.params);
+    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.language),
+    append_params(LangBin, Accept#sip_hdr_language.params);
 
 %% 20.4 Alert-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.4
@@ -234,6 +226,16 @@ process(p, 'content-encoding', Bin) ->
 
 process(f, 'content-encoding', Allow) ->
     sip_binary:any_to_binary(Allow);
+
+%% 20.13 Content-Language
+process(fn, 'content-language', _Ignore) -> <<"Content-Language">>;
+process(p, 'content-language', Bin) ->
+    {LangBin, Rest} = sip_binary:parse_token(Bin),
+    {Language, <<>>} = parse_language(LangBin),
+    parse_list('content-language', Language, Rest);
+
+process(f, 'content-language', Lang) ->
+    sip_binary:any_to_binary(Lang);
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -505,7 +507,7 @@ parse_info(Name, Bin, ParamFun) ->
     Info = info(URI, Params),
     parse_list(Name, Info, Rest).
 
-%% Parse Accept-Encoding/Accept-Language grammar
+%% Parse Accept-Encoding grammar
 parse_accept(Bin) ->
     {TokenBin, ParamsBin} =
         case sip_binary:trim_leading(Bin) of
@@ -577,10 +579,8 @@ encoding(Encoding, Params) when is_list(Params) ->
 %% @doc Construct language type value.
 %% @end
 -spec language(atom() | binary(), [any()]) -> #sip_hdr_language{}.
-language({Lang, Sublang}, Params) when is_list(Params) ->
-    #sip_hdr_language{lang = Lang, sublang = Sublang, params = Params};
 language(Language, Params) when is_list(Params) ->
-    #sip_hdr_language{lang = Language, params = Params}.
+    #sip_hdr_language{language = Language, params = Params}.
 
 %% @doc Construct `Alert-Info', `Call-Info' headers value
 %% @end
@@ -690,16 +690,12 @@ parse_list(Name, Top, <<?COMMA, Rest/binary>>) -> [Top | parse(Name, Rest)].
 %% @doc Parse language range
 %% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
 %% @end
-parse_language('*') -> '*';
+parse_language(<<$*, Rest/binary>>) -> {'*', Rest};
 parse_language(Bin) ->
-    {LangBin, Rest} = sip_binary:parse_while(Bin, fun sip_binary:is_alpha_char/1),
-    Lang = sip_binary:binary_to_existing_atom(LangBin),
-    case Rest of
-        <<>> -> Lang;
-        <<$-, Rest2/binary>> ->
-            {SublangBin, <<>>} = sip_binary:parse_while(Rest2, fun sip_binary:is_alpha_char/1),
-            {Lang, sip_binary:binary_to_existing_atom(SublangBin)}
-    end.
+    IsLangChar = fun(C) -> sip_binary:is_alpha_char(C) orelse C =:= $- end,
+    {LangBin, Rest} = sip_binary:parse_while(Bin, IsLangChar),
+    {sip_binary:binary_to_existing_atom(LangBin), Rest}.
+
 
 % RFC 3261, 7.3.1
 % The line break and the whitespace at the beginning of the next
@@ -772,7 +768,8 @@ parse_test_() ->
                      "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
                      "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
-                     "Content-Disposition: session\r\nContent-Encoding: gzip\r\n"
+                     "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
+                     "Content-Language: en\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -785,6 +782,7 @@ parse_test_() ->
                                    {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
                                    {'content-disposition', <<"session">>}, {'content-encoding', gzip},
+                                   {'content-language', 'en'},
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
@@ -824,14 +822,14 @@ parse_test_() ->
 
      % Accept-Language
      ?_assertEqual([language('da', []),
-                    language({'en', 'gb'}, [{q, 0.8}]),
+                    language('en-gb', [{q, 0.8}]),
                     language('en', [{q, 0.7}]),
                     language('*', [{q, 0.6}])],
                    parse('accept-language', <<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>)),
      ?_assertEqual(<<"da, en-gb;q=0.8, en;q=0.7, *;q=0.6">>,
                    format('accept-language',
                           [language('da', []),
-                           language({'en', 'gb'}, [{q, 0.8}]),
+                           language('en-gb', [{q, 0.8}]),
                            language('en', [{q, 0.7}]),
                            language('*', [{q, 0.6}])])),
 
@@ -953,7 +951,11 @@ parse_test_() ->
      ?_assertEqual([gzip, tar], parse('content-encoding', <<"gzip, tar">>)),
      ?_assertEqual(<<"gzip, tar">>, format('content-encoding', [gzip, tar])),
 
-
+     % Content-Language
+     ?_assertEqual([en, 'en-us-some'],
+                   parse('content-language', <<"en, en-us-some">>)),
+     ?_assertEqual(<<"en, en-us-some">>,
+                   format('content-language', [en, 'en-us-some'])),
 
 
 
