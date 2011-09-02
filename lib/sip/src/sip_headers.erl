@@ -925,16 +925,18 @@ header_name_to_binary(Name) when is_atom(Name) ->
         'alert-info' -> <<"Alert-Info">>;
         'allow' -> <<"Allow">>;
         'authentication-info' -> <<"Authentication-Info">>;
+        'authorization' -> <<"Authorization">>;
+        'call-id' -> <<"Call-Id">>;
+        'call-info' -> <<"Call-Info">>;
+        'contact' -> <<"Contact">>;
 
 
         'via' -> <<"Via">>;
         'content-length' -> <<"Content-Length">>;
         'cseq' -> <<"CSeq">>;
         'max-forwards' -> <<"Max-Forwards">>;
-        'call-id' -> <<"Call-Id">>;
         'from' -> <<"From">>;
         'to' -> <<"To">>;
-        'contact' -> <<"Contact">>;
         'require' -> <<"Require">>;
         'proxy-require' -> <<"Proxy-Require">>;
         'supported' -> <<"Supported">>;
@@ -996,19 +998,22 @@ parse_test_() ->
      ?_assertEqual(<<"Accept: */*\r\nAccept-Encoding: identity\r\n",
                      "Accept-Language: en\r\nAlert-Info: <http://www.example.com/sounds/moo.wav>\r\n",
                      "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
+                     "Authorization: Digest username=\"Alice\"\r\nCall-Id: callid\r\n",
+                     "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
-                     "To: sip:bob@localhost\r\nCall-Id: callid\r\nContact: Alice <sip:example.com>\r\n"
+                     "To: sip:bob@localhost\r\n"
                      "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
                      "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
                                    {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
+                                   {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
+                                   {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                                   {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
                                    {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
