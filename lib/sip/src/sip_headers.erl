@@ -4,6 +4,7 @@
 %%%
 %%% FIXME: need to verify that all binary generation properly unescapes/escapes characters!
 %%% @end
+%%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-20">RFC 3261</a> for details.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_headers).
@@ -50,7 +51,7 @@ parse_headers(Headers) when is_binary(Headers) ->
 %% @end
 -spec format_headers([{atom() | binary(), binary() | term()}]) -> binary().
 format_headers(Headers) ->
-    << <<(header_name_to_binary(Name))/binary, ": ",
+    << <<(process(fn, Name, ignore))/binary, ": ",
          (format(Name, Value))/binary, "\r\n">> ||
        {Name, Value} <- Headers>>.
 
@@ -58,150 +59,155 @@ format_headers(Headers) ->
 %% Header parsing/format functions
 %%-----------------------------------------------------------------
 
-%% @doc Parse header binary value into term representation
-%% @end
--spec parse(Name :: atom() | binary(), Value :: any()) -> term().
-parse(_Name, Header) when not is_binary(Header) ->
-    % Already parsed
-    Header;
+parse(Name, Bin) -> process(p, Name, Bin).
 
-%% ```
-%% Accept         =  "Accept" HCOLON
-%%                    [ accept-range *(COMMA accept-range) ]
-%% accept-range   =  media-range *(SEMI accept-param)
-%% media-range    =  ( "*/*"
-%%                   / ( m-type SLASH "*" )
-%%                   / ( m-type SLASH m-subtype )
-%%                   ) *( SEMI m-parameter )
-%% accept-param   =  ("q" EQUAL qvalue) / generic-param
-%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
-%%                   / ( "1" [ "." 0*3("0") ] )
-%% generic-param  =  token [ EQUAL gen-value ]
-%% gen-value      =  token / host / quoted-string
-%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
-%% m-type           =  discrete-type / composite-type
-%% discrete-type    =  "text" / "image" / "audio" / "video"
-%%                     / "application" / extension-token
-%% composite-type   =  "message" / "multipart" / extension-token
-%% extension-token  =  ietf-token / x-token
-%% ietf-token       =  token
-%% x-token          =  "x-" token
-%% m-subtype        =  extension-token / iana-token
-%% m-parameter      =  m-attribute EQUAL m-value
-%% m-attribute      =  token
-%% m-value          =  token / quoted-string
-%% '''
-parse('accept', Bin) ->
+%% @doc Format header value into the binary.
+%% @end
+format(Name, [Value]) -> process(f, Name, Value);
+format(Name, [Top | Rest]) ->
+    Joiner =
+        fun (Elem, Bin) ->
+                 ElemBin = process(f, Name, Elem),
+                 <<Bin/binary, ?COMMA, ?SP, ElemBin/binary>>
+        end,
+    TopBin = process(f, Name, Top),
+    lists:foldl(Joiner, TopBin, Rest);
+format(Name, Value) -> process(f, Name, Value).
+
+%% @doc Parse/format header name/value
+%%
+%% Parsing/formatting merged into single function for better locality of changes.
+%% @end
+-spec process(p | f | pn | fn, Name :: atom() | binary(), Value :: any()) -> term().
+
+% Default header processing
+process(p, _Name, Header) when not is_binary(Header) -> Header; % already parsed
+process(f, _Name, Value) when is_binary(Value) -> Value; % already formatted
+
+%% Accept
+%% http://tools.ietf.org/html/rfc3261#section-20.1
+process(fn, 'accept', _Ignore) -> <<"Accept">>;
+process(p, 'accept', Bin) ->
     {Media, Rest} = parse_media_range(Bin, fun parse_q_param/2),
     parse_list('accept', Media, Rest);
 
-%% ```
-%% Accept-Encoding  =  "Accept-Encoding" HCOLON
-%%                      [ encoding *(COMMA encoding) ]
-%% encoding         =  codings *(SEMI accept-param)
-%% codings          =  content-coding / "*"
-%% accept-param     =  ("q" EQUAL qvalue) / generic-param
-%% content-coding   =  token
-%% '''
-parse('accept-encoding', Bin) ->
+process(f, 'accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
+    Type = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.type),
+    SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
+    append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
+
+%% Accept-Encoding
+%% http://tools.ietf.org/html/rfc3261#section-20.2
+process(fn, 'accept-encoding', _Ignore) -> <<"Accept-Encoding">>;
+process(p, 'accept-encoding', Bin) ->
     {EncodingBin, Params, Rest} = parse_accept(Bin),
     Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
 
-%% ```
-%% Accept-Language  =  "Accept-Language" HCOLON
-%%                      [ language *(COMMA language) ]
-%% language         =  language-range *(SEMI accept-param)
-%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
-%% '''
-parse('accept-language', Bin) ->
+process(f, 'accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
+    Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
+    append_params(Encoding, Accept#sip_hdr_encoding.params);
+
+%% Accept-Language
+%% http://tools.ietf.org/html/rfc3261#section-20.3
+process(fn, 'accept-language', _Ignore) -> <<"Accept-Language">>;
+process(p, 'accept-language', Bin) ->
     {LanguageBin, Params, Rest} = parse_accept(Bin),
     Language = language(parse_language(LanguageBin), Params),
     parse_list('accept-language', Language, Rest);
 
-%% ```
-%% Alert-Info  =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
-%% alert-param =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
-%% '''
-parse('alert-info', Bin) ->
+process(f, 'accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
+    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.lang),
+    Bin =
+        case Accept#sip_hdr_language.sublang of
+            undefined ->
+                LangBin;
+            SubLang ->
+                SublangBin = sip_binary:any_to_binary(SubLang),
+                <<LangBin/binary, $-, SublangBin/binary>>
+        end,
+    append_params(Bin, Accept#sip_hdr_language.params);
+
+%% http://tools.ietf.org/html/rfc3261#section-20.4
+process(fn, 'alert-info', _Ignore) -> <<"Alert-Info">>;
+process(p, 'alert-info', Bin) ->
     parse_info('alert-info', Bin, fun parse_generic_param/2);
 
-%% ```
-%% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
-%%                         *(COMMA ainfo)
-%% ainfo                =  nextnonce / message-qop
-%%                          / response-auth / cnonce
-%%                          / nonce-count
-%% nextnonce            =  "nextnonce" EQUAL nonce-value
-%% response-auth        =  "rspauth" EQUAL response-digest
-%% response-digest      =  LDQUOT *LHEX RDQUOT
-%% message-qop          =  "qop" EQUAL qop-value
-%% qop-value           =  "auth" / "auth-int" / token
-%% nonce-count          =  "nc" EQUAL nc-value
-%% nc-value             =  8LHEX
-%% cnonce               =  "cnonce" EQUAL cnonce-value
-%% cnonce-value         =  nonce-value
-%% '''
-parse('authentication-info', Bin) ->
+process(f, 'alert-info', Info) when is_record(Info, sip_hdr_info) ->
+    URI = sip_uri:format(Info#sip_hdr_info.uri),
+    Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
+    append_params(Bin, Info#sip_hdr_info.params);
+
+%% http://tools.ietf.org/html/rfc3261#section-20.5
+process(fn, 'allow', _Ignore) -> <<"Allow">>;
+process(p, 'allow', Bin) ->
+    {MethodBin, Rest} = sip_binary:parse_token(Bin),
+    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    parse_list('allow', Method, Rest);
+
+process(f, 'allow', Allow) ->
+    sip_binary:any_to_binary(Allow);
+
+%% http://tools.ietf.org/html/rfc3261#section-20.6
+process(fn, 'authentication-info', _Ignore) -> <<"Authentication-Info">>;
+process(p, 'authentication-info', Bin) ->
     parse_auths(Bin);
 
-%% ```
-%% Authorization     =  "Authorization" HCOLON credentials
-%% credentials       =  ("Digest" LWS digest-response)
-%%                     / other-response
-%% digest-response   =  dig-resp *(COMMA dig-resp)
-%% dig-resp          =  username / realm / nonce / digest-uri
-%%                       / dresponse / algorithm / cnonce
-%%                       / opaque / message-qop
-%%                       / nonce-count / auth-param
-%% username          =  "username" EQUAL username-value
-%% username-value    =  quoted-string
-%% digest-uri        =  "uri" EQUAL LDQUOT digest-uri-value RDQUOT
-%% digest-uri-value  =  rquest-uri ; Equal to request-uri as specified by HTTP/1.1
-%% other-response    =  auth-scheme LWS auth-param
-%%                     *(COMMA auth-param)
-%% auth-scheme       =  token
-%% auth-param        =  auth-param-name EQUAL
-%%                      ( token / quoted-string )
-%% auth-param-name   =  token
-%% '''
-parse('authorization', Bin) ->
+process(f, 'authentication-info', {_Key, _Value} = Pair) ->
+    format_auth(Pair);
+
+%% http://tools.ietf.org/html/rfc3261#section-20.7
+process(fn, 'authorization', _Ignore) -> <<"Authorization">>;
+process(p, 'authorization', Bin) ->
     {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    % parse scheme, the rest is list of paris param=value
     Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
     auth(Scheme, parse_auths(Bin2));
 
+process(f, 'authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
+    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    [First | Rest] = Auth#sip_hdr_auth.params,
+    FirstBin = format_auth(First),
+    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
+    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
 
-%% ```
-%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
-%% callid   =  word [ "@" word ]
-%% word     =  1*(alphanum / "-" / "." / "!" / "%" / "*" /
-%%             "_" / "+" / "`" / "'" / "~" /
-%%             "(" / ")" / "<" / ">" /
-%%             ":" / "\" / DQUOTE /
-%%             "/" / "[" / "]" / "?" /
-%%             "{" / "}" )
-%% '''
-parse('call-id', Bin) -> Bin;
 
-%% ```
-%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
-%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
-%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
-%%                / "card" / token ) ) / generic-param
-%% '''
-parse('call-info', Bin) ->
+%% http://tools.ietf.org/html/rfc3261#section-20.8
+process(pn, <<"i">>, _Ignore) -> 'call-id';
+process(fn, 'call-id', _Ignore) -> <<"Call-ID">>;
+process(p, 'call-id', Bin) -> Bin;
+%process(f, 'call-id', Bin) -> Bin;
+
+%% http://tools.ietf.org/html/rfc3261#section-20.9
+process(fn, 'call-info', _Ignore) -> <<"Call-Info">>;
+process(p, 'call-info', Bin) ->
     ParamFun =
         fun(purpose, Value) -> sip_binary:binary_to_existing_atom(Value);
            (_Name, Value) -> Value
         end,
     parse_info('call-info', Bin, ParamFun);
 
-%% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
-%% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
-%% via-params        =  via-ttl / via-maddr
-%%                      / via-received / via-branch
-%%                      / via-extension
-parse('via', Bin) ->
+process(f, 'call-info', Info) when is_record(Info, sip_hdr_info) ->
+    URI = sip_uri:format(Info#sip_hdr_info.uri),
+    Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
+    append_params(Bin, Info#sip_hdr_info.params);
+
+%% http://tools.ietf.org/html/rfc3261#section-20.10
+process(pn, <<"m">>, _Ignore) -> 'contact';
+process(fn, 'contact', _Ignore) -> <<"Contact">>;
+process(p, 'contact', <<"*">>) -> '*';
+process(p, 'contact', Bin) ->
+    {Top, Rest} = parse_address(Bin, fun parse_contact_param/2),
+    parse_list('contact', Top, Rest);
+
+process(f, 'contact', '*') -> <<"*">>;
+process(f, 'contact', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
+
+%% .....
+process(pn, <<"v">>, _Ignore) -> 'via';
+process(fn, 'via', _Ignore) -> <<"Via">>;
+process(p, 'via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
     % Parse parameters (which should start with semicolon)
     {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
@@ -214,90 +220,138 @@ parse('via', Bin) ->
                        params = Params},
     parse_list('via', Top, Rest);
 
-%% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
-parse('content-length', Bin) ->
+process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
+    Version = Via#sip_hdr_via.version,
+    Transport = sip_binary:to_upper(atom_to_binary(Via#sip_hdr_via.transport, latin1)),
+    Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
+    Host = sip_binary:addr_to_binary(Via#sip_hdr_via.host),
+    Bin2 =
+        case Via#sip_hdr_via.port of
+            undefined -> <<Bin/binary, ?SP, Host/binary>>;
+            Port -> <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
+        end,
+    append_params(Bin2, Via#sip_hdr_via.params);
+
+%% ...
+process(pn, <<"l">>, _Ignore) -> 'content-length';
+process(fn, 'content-length', _Ignore) -> <<"Content-Length">>;
+process(p, 'content-length', Bin) ->
     sip_binary:binary_to_integer(Bin);
 
-%% CSeq  =  "CSeq" HCOLON 1*DIGIT LWS Method
-parse('cseq', Bin) ->
+process(f, 'content-length', Length) when is_integer(Length) ->
+    sip_binary:integer_to_binary(Length);
+
+
+%% ....
+process(fn, 'cseq', _Ignore) -> <<"CSeq">>;
+process(p, 'cseq', Bin) ->
     {SeqBin, Bin2} = sip_binary:parse_token(Bin),
     {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
     Sequence = sip_binary:binary_to_integer(SeqBin),
     Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
     cseq(Sequence, Method);
 
-%% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
-parse('max-forwards', Bin) ->
+process(f, 'cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
+    SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
+    MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
+    <<SequenceBin/binary, " ", MethodBin/binary>>;
+
+%% ....
+process(fn, 'max-forwards', _Ignore) -> <<"Max-Forwards">>;
+process(p, 'max-forwards', Bin) ->
     sip_binary:binary_to_integer(Bin);
 
-%% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
-%% to-param       =  tag-param / generic-param
-%%
-%% From           =  ( "From" / "f" ) HCOLON from-spec
-%% from-spec      =  ( name-addr / addr-spec ) *( SEMI from-param )
-%% from-param     =  tag-param / generic-param
-%%
-%% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
-%% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
-%% display-name   =  *(token LWS)/ quoted-string
-parse(Name, Bin) when Name =:= 'from'; Name =:= 'to' ->
+process(f, 'max-forwards', Hops) when is_integer(Hops) ->
+    sip_binary:integer_to_binary(Hops);
+
+%% ....
+process(pn, <<"f">>, _Ignore) -> 'from';
+process(fn, 'from', _Ignore) -> <<"From">>;
+process(p, 'from', Bin) ->
     {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
     Top;
 
-%% ```
-%% Contact        =  ("Contact" / "m" ) HCOLON
-%%                  ( STAR / (contact-param *(COMMA contact-param)))
-%% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
-%% contact-params     =  c-p-q / c-p-expires
-%%                      / contact-extension
-%% c-p-q              =  "q" EQUAL qvalue
-%% c-p-expires        =  "expires" EQUAL delta-seconds
-%% contact-extension  =  generic-param
-%% delta-seconds      =  1*DIGIT
-%%
-%% Route              =  "Route" HCOLON route-param *(COMMA route-param)
-%% route-param        =  name-addr *( SEMI rr-param )
-%% rr-param           =  generic-param
-%%
-%% Record-Route       =  "Record-Route" HCOLON rec-route *(COMMA rec-route)
-%% rec-route          =  name-addr *( SEMI rr-param )
-%%
-%% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
-%% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
-%% display-name   =  *(token LWS)/ quoted-string
-%% '''
-parse('contact', <<"*">>) -> '*';
-parse('contact', Bin) ->
-    {Top, Rest} = parse_address(Bin, fun parse_contact_param/2),
-    parse_list('contact', Top, Rest);
+process(f, 'from', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
 
-% FIXME: move...
-parse(Name, Bin) when Name =:= 'route'; Name =:= 'record-route' ->
+%% ....
+process(pn, <<"t">>, _Ignore) -> 'to';
+process(fn, 'to', _Ignore) -> <<"To">>;
+process(p, 'to', Bin) ->
+    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
+    Top;
+
+process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
+
+%% ...
+process(fn, 'route', _Ignore) -> <<"Route">>;
+process(p, 'route', Bin) ->
     {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
-    parse_list(Name, Top, Rest);
+    parse_list('route', Top, Rest);
+
+process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
+    format_address(Route);
+
+%% ...
+process(fn, 'record-route', _Ignore) -> <<"Record-Route">>;
+process(p, 'record-route', Bin) ->
+    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
+    parse_list('record-route', Top, Rest);
+
+process(f, 'record-route', RecordRoute) when is_record(RecordRoute, sip_hdr_address) ->
+    format_address(RecordRoute);
+
+%% ...
+process(fn, 'require', _Ignore) -> <<"Require">>;
+process(p, 'require', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('require', Ext, Rest);
+
+process(f, 'require', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+%% ...
+process(fn, 'proxy-require', _Ignore) -> <<"Proxy-Require">>;
+process(p, 'proxy-require', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('proxy-require', Ext, Rest);
+
+process(f, 'proxy-require', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+%% ...
+process(pn, <<"k">>, _Ignore) -> 'supported';
+process(fn, 'supported', _Ignore) -> <<"Supported">>;
+process(p, 'supported', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('supported', Ext, Rest);
+
+process(f, 'supported', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+%% ...
+process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
+process(p, 'unsupported', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('require', Ext, Rest);
+
+process(f, 'unsupported', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+% Default header processing
+process(p, _Name, Header) -> Header; % cannot parse, leave as is
+process(f, _Name, Value) -> sip_binary:any_to_binary(Value);
+process(pn, Name, _Ignore) when is_binary(Name) -> sip_binary:binary_to_existing_atom(Name);
+process(fn, Name, _Ignore) when is_binary(Name) -> Name;
+process(fn, Name, _Ignore) when is_atom(Name) -> atom_to_binary(Name, utf8).
 
 
-%% ```
-%% Allow   = "Allow" HCOLON [Method *(COMMA Method)]
-%% Require = "Require" HCOLON option-tag *(COMMA option-tag)
-%% '''
-parse(Name, Bin) when
-  Name =:= 'allow'; Name =:= 'require'; Name =:= 'proxy-require';
-  Name =:= 'supported'; Name =:= 'unsupported' ->
-
-    {MethodBin, Rest} = sip_binary:parse_token(Bin),
-    % by convention, method names are upper-case atoms
-    % all other are in lower case
-    MethodBin2 =
-        if Name =:= 'allow' -> sip_binary:to_upper(MethodBin);
-           Name =/= 'allow' -> sip_binary:to_lower(MethodBin)
-        end,
-    Method = sip_binary:binary_to_existing_atom(MethodBin2),
-    parse_list(Name, Method, Rest);
-
-%% Any other header, just return value as is
-parse(_Name, Value) ->
-    Value.
+%% Internal helpers to parse header parts
 
 %% sent-protocol     =  protocol-name SLASH protocol-version
 %%                      SLASH transport
@@ -344,13 +398,13 @@ parse_token_or_quoted(Bin) ->
         _Token -> sip_binary:parse_token(Bin)
     end.
 
-%% @doc Parse address-like header into display name, URI and binary with the parameters
-%%
-%% Parses values like
-%% ```
-%% value       = ( name-addr / addr-spec )
-%% '''
-%% @end
+%% Parse address-like headers (`Contact:', `To:', `From:')
+parse_address(Bin, ParamFun) ->
+    {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
+    {Params, Bin3} = parse_params(Bin2, ParamFun),
+    Value = address(sip_binary:trim(Display), URI, Params),
+    {Value, Bin3}.
+
 parse_address_uri(<<?DQUOTE, _/binary>> = Bin) ->
     % name-addr with quoted-string display-name
     {Display, <<?LAQUOT, Rest/binary>>} = sip_binary:parse_quoted_string(Bin),
@@ -380,49 +434,18 @@ parse_address_uri(Bin) ->
             {Display, URI, Params}
     end.
 
-%% @doc Parse address-like header together with all parameters
-%%
-%% Parses values like
-%% ```
-%% value       = ( name-addr / addr-spec ) *( SEMI param )
-%% param       =  tag-param / generic-param
-%% '''
-%% @end
-parse_address(Bin, ParamFun) ->
-    {Display, URI, Bin2} = parse_address_uri(sip_binary:trim_leading(Bin)),
-    {Params, Bin3} = parse_params(Bin2, ParamFun),
-    Value = address(sip_binary:trim(Display), URI, Params),
-    {Value, Bin3}.
+format_address(Addr) ->
+    URIBin = sip_uri:format(Addr#sip_hdr_address.uri),
+    Bin = case Addr#sip_hdr_address.display_name of
+              <<>> -> <<?LAQUOT, URIBin/binary, ?RAQUOT>>;
+              DisplayName ->
+                  Quoted = sip_binary:quote_string(DisplayName),
+                  <<Quoted/binary, " ", ?LAQUOT, URIBin/binary, ?RAQUOT>>
+          end,
+    append_params(Bin, Addr#sip_hdr_address.params).
 
 
-%% @doc Parse accept-range or media-type grammar
-%% ```
-%%
-%% accept-range   =  media-range *(SEMI accept-param)
-%% media-range    =  ( "*/*"
-%%                   / ( m-type SLASH "*" )
-%%                   / ( m-type SLASH m-subtype )
-%%                   ) *( SEMI m-parameter )
-%% accept-param   =  ("q" EQUAL qvalue) / generic-param
-%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
-%%                   / ( "1" [ "." 0*3("0") ] )
-%% generic-param  =  token [ EQUAL gen-value ]
-%% gen-value      =  token / host / quoted-string
-%%
-%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
-%% m-type           =  discrete-type / composite-type
-%% discrete-type    =  "text" / "image" / "audio" / "video"
-%%                     / "application" / extension-token
-%% composite-type   =  "message" / "multipart" / extension-token
-%% extension-token  =  ietf-token / x-token
-%% ietf-token       =  token
-%% x-token          =  "x-" token
-%% m-subtype        =  extension-token / iana-token
-%% m-parameter      =  m-attribute EQUAL m-value
-%% m-attribute      =  token
-%% m-value          =  token / quoted-string
-%% '''
-%% @end
+%% Parse accept-range or media-type grammar
 parse_media_range(Bin, ParamFun) ->
     {Type2, SubType2, ParamsBin2} =
         case sip_binary:trim_leading(Bin) of
@@ -443,11 +466,7 @@ parse_media_range(Bin, ParamFun) ->
     {media(Type2, SubType2, Params), Rest}.
 
 
-%% Parse Alert-Info or Call-Info
-%% ```
-%% Alert-Info  =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
-%% alert-param =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
-%% '''
+%% Parse `Alert-Info' or `Call-Info' like headers
 parse_info(Name, Bin, ParamFun) ->
     <<?LAQUOT, Bin2/binary>> = sip_binary:trim_leading(Bin),
     {URI, <<?RAQUOT, Bin3/binary>>} = sip_binary:parse_until(Bin2, ?RAQUOT),
@@ -455,16 +474,7 @@ parse_info(Name, Bin, ParamFun) ->
     Info = info(URI, Params),
     parse_list(Name, Info, Rest).
 
-%% @doc Parse Accept-Encoding/Accept-Language grammar
-%% ```
-%% encoding         =  codings *(SEMI accept-param)
-%% codings          =  content-coding / "*"
-%% content-coding   =  token
-%%
-%% language         =  language-range *(SEMI accept-param)
-%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
-%% '''
-%% @end
+%% Parse Accept-Encoding/Accept-Language grammar
 parse_accept(Bin) ->
     {TokenBin, ParamsBin} =
         case sip_binary:trim_leading(Bin) of
@@ -473,231 +483,6 @@ parse_accept(Bin) ->
     end,
     {Params, Rest} = parse_params(ParamsBin, fun parse_q_param/2),
     {TokenBin, Params, Rest}.
-
-%% @doc Format header value into the binary.
-%% @end
--spec format(atom() | binary(), binary() | term()) -> binary().
-format(_Name, Value) when is_binary(Value) ->
-    % already formatted to binary
-    Value;
-% generalized multi-value headers handling
-format(Name, [Value]) -> format(Name, Value);
-format(Name, [Top | Rest]) ->
-    Joiner = fun (Elem, Bin) ->
-                      ElemBin = format(Name, Elem),
-                      <<Bin/binary, ?COMMA, ?SP, ElemBin/binary>>
-             end,
-    TopBin = format(Name, Top),
-    lists:foldl(Joiner, TopBin, Rest);
-
-%% ```
-%% Accept         =  "Accept" HCOLON
-%%                    [ accept-range *(COMMA accept-range) ]
-%% accept-range   =  media-range *(SEMI accept-param)
-%% media-range    =  ( "*/*"
-%%                   / ( m-type SLASH "*" )
-%%                   / ( m-type SLASH m-subtype )
-%%                   ) *( SEMI m-parameter )
-%% accept-param   =  ("q" EQUAL qvalue) / generic-param
-%% qvalue         =  ( "0" [ "." 0*3DIGIT ] )
-%%                   / ( "1" [ "." 0*3("0") ] )
-%% generic-param  =  token [ EQUAL gen-value ]
-%% gen-value      =  token / host / quoted-string
-%% media-type       =  m-type SLASH m-subtype *(SEMI m-parameter)
-%% m-type           =  discrete-type / composite-type
-%% discrete-type    =  "text" / "image" / "audio" / "video"
-%%                     / "application" / extension-token
-%% composite-type   =  "message" / "multipart" / extension-token
-%% extension-token  =  ietf-token / x-token
-%% ietf-token       =  token
-%% x-token          =  "x-" token
-%% m-subtype        =  extension-token / iana-token
-%% m-parameter      =  m-attribute EQUAL m-value
-%% m-attribute      =  token
-%% m-value          =  token / quoted-string
-%% '''
-format('accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
-    Type = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.type),
-    SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
-    append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
-
-%% ```
-%% Accept-Encoding  =  "Accept-Encoding" HCOLON
-%%                      [ encoding *(COMMA encoding) ]
-%% encoding         =  codings *(SEMI accept-param)
-%% codings          =  content-coding / "*"
-%% content-coding   =  token
-%% '''
-format('accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
-    Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
-    append_params(Encoding, Accept#sip_hdr_encoding.params);
-
-%% ```
-%% Accept-Language  =  "Accept-Language" HCOLON
-%%                      [ language *(COMMA language) ]
-%% language         =  language-range *(SEMI accept-param)
-%% language-range   =  ( ( 1*8ALPHA *( "-" 1*8ALPHA ) ) / "*" )
-%% '''
-format('accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
-    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.lang),
-    Bin =
-        case Accept#sip_hdr_language.sublang of
-            undefined ->
-                LangBin;
-            SubLang ->
-                SublangBin = sip_binary:any_to_binary(SubLang),
-                <<LangBin/binary, $-, SublangBin/binary>>
-        end,
-    append_params(Bin, Accept#sip_hdr_language.params);
-
-%% ```
-%% Alert-Info   =  "Alert-Info" HCOLON alert-param *(COMMA alert-param)
-%% alert-param  =  LAQUOT absoluteURI RAQUOT *( SEMI generic-param )
-%%
-%% Call-Info   =  "Call-Info" HCOLON info *(COMMA info)
-%% info        =  LAQUOT absoluteURI RAQUOT *( SEMI info-param)
-%% info-param  =  ( "purpose" EQUAL ( "icon" / "info"
-%%                / "card" / token ) ) / generic-param
-%% '''
-format(Name, Info) when (Name =:= 'alert-info' orelse Name =:= 'call-info'),
-  is_record(Info, sip_hdr_info) ->
-    URI = sip_uri:format(Info#sip_hdr_info.uri),
-    Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
-    append_params(Bin, Info#sip_hdr_info.params);
-
-%% ```
-%% Authentication-Info  =  "Authentication-Info" HCOLON ainfo
-%%                         *(COMMA ainfo)
-%% ainfo                =  nextnonce / message-qop
-%%                          / response-auth / cnonce
-%%                          / nonce-count
-%% nextnonce            =  "nextnonce" EQUAL nonce-value
-%% nonce-value          =  quoted-string
-%% response-auth        =  "rspauth" EQUAL response-digest
-%% response-digest      =  LDQUOT *LHEX RDQUOT
-%% message-qop          =  "qop" EQUAL qop-value
-%% qop-value            =  "auth" / "auth-int" / token
-%% nonce-count          =  "nc" EQUAL nc-value
-%% nc-value             =  8LHEX
-%% cnonce               =  "cnonce" EQUAL cnonce-value
-%% cnonce-value         =  nonce-value
-%% '''
-format('authentication-info', Pair) ->
-    format_auth(Pair);
-
-%% ```
-%% Authorization     =  "Authorization" HCOLON credentials
-%% credentials       =  ("Digest" LWS digest-response)
-%%                     / other-response
-%% digest-response   =  dig-resp *(COMMA dig-resp)
-%% dig-resp          =  username / realm / nonce / digest-uri
-%%                       / dresponse / algorithm / cnonce
-%%                       / opaque / message-qop
-%%                       / nonce-count / auth-param
-%% username          =  "username" EQUAL username-value
-%% username-value    =  quoted-string
-%% digest-uri        =  "uri" EQUAL LDQUOT digest-uri-value RDQUOT
-%% digest-uri-value  =  rquest-uri ; Equal to request-uri as specified by HTTP/1.1
-%% other-response    =  auth-scheme LWS auth-param
-%%                     *(COMMA auth-param)
-%% auth-scheme       =  token
-%% auth-param        =  auth-param-name EQUAL
-%%                      ( token / quoted-string )
-%% auth-param-name   =  token
-%% '''
-format('authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
-    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
-    [First | Rest] = Auth#sip_hdr_auth.params,
-    FirstBin = format_auth(First),
-    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
-    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
-
-%% Via               =  ( "Via" / "v" ) HCOLON via-parm *(COMMA via-parm)
-%% via-parm          =  sent-protocol LWS sent-by *( SEMI via-params )
-%% via-params        =  via-ttl / via-maddr
-%%                      / via-received / via-branch
-%%                      / via-extension
-%% sent-protocol     =  protocol-name SLASH protocol-version
-%%                      SLASH transport
-format('via', Via) when is_record(Via, sip_hdr_via) ->
-    Version = Via#sip_hdr_via.version,
-    Transport = sip_binary:to_upper(atom_to_binary(Via#sip_hdr_via.transport, latin1)),
-    Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
-    Host = sip_binary:addr_to_binary(Via#sip_hdr_via.host),
-    Bin2 = case Via#sip_hdr_via.port of
-        undefined ->
-            <<Bin/binary, ?SP, Host/binary>>;
-        Port ->
-            <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
-    end,
-    append_params(Bin2, Via#sip_hdr_via.params);
-
-%% Content-Length  =  ( "Content-Length" / "l" ) HCOLON 1*DIGIT
-format('content-length', Length) when is_integer(Length) ->
-    sip_binary:integer_to_binary(Length);
-
-%% CSeq  =  "CSeq" HCOLON 1*DIGIT LWS Method
-format('cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
-    SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
-    MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
-    <<SequenceBin/binary, " ", MethodBin/binary>>;
-
-%% Max-Forwards  =  "Max-Forwards" HCOLON 1*DIGIT
-format('max-forwards', Hops) when is_integer(Hops) ->
-    sip_binary:integer_to_binary(Hops);
-
-%% Call-ID  =  ( "Call-ID" / "i" ) HCOLON callid
-%% Call id is always a binary, so handled by first case
-
-%% ```
-%% To             =  ( "To" / "t" ) HCOLON ( name-addr / addr-spec ) *( SEMI to-param )
-%% to-param       =  tag-param / generic-param
-%%
-%% From           =  ( "From" / "f" ) HCOLON from-spec
-%% from-spec      =  ( name-addr / addr-spec ) *( SEMI from-param )
-%% from-param     =  tag-param / generic-param
-%%
-%% Contact        =  ("Contact" / "m" ) HCOLON
-%%                  ( STAR / (contact-param *(COMMA contact-param)))
-%% contact-param  =  (name-addr / addr-spec) *(SEMI contact-params)
-%% contact-params     =  c-p-q / c-p-expires
-%%                      / contact-extension
-%% c-p-q              =  "q" EQUAL qvalue
-%% c-p-expires        =  "expires" EQUAL delta-seconds
-%% contact-extension  =  generic-param
-%% delta-seconds      =  1*DIGIT
-%%
-%% Route              =  "Route" HCOLON route-param *(COMMA route-param)
-%% route-param        =  name-addr *( SEMI rr-param )
-%% rr-param           =  generic-param
-%%
-%% Record-Route       =  "Record-Route" HCOLON rec-route *(COMMA rec-route)
-%% rec-route          =  name-addr *( SEMI rr-param )
-%%
-%% name-addr      =  [ display-name ] LAQUOT addr-spec RAQUOT
-%% addr-spec      =  SIP-URI / SIPS-URI / absoluteURI
-%% display-name   =  *(token LWS)/ quoted-string
-%% '''
-format('contact', '*') -> <<"*">>;
-format(Name, #sip_hdr_address{} = Addr) when
-  Name =:= 'from';
-  Name =:= 'to';
-  Name =:= 'contact';
-  Name =:= 'route';
-  Name =:= 'record-route' ->
-
-    URIBin = sip_uri:format(Addr#sip_hdr_address.uri),
-    Bin = case Addr#sip_hdr_address.display_name of
-              <<>> -> <<?LAQUOT, URIBin/binary, ?RAQUOT>>;
-              DisplayName ->
-                  Quoted = sip_binary:quote_string(DisplayName),
-                  <<Quoted/binary, " ", ?LAQUOT, URIBin/binary, ?RAQUOT>>
-          end,
-    append_params(Bin, Addr#sip_hdr_address.params);
-
-%% Any other header
-format(_Name, Value) ->
-    sip_binary:any_to_binary(Value).
 
 %% @doc Append parameters to the binary
 %% @end
@@ -897,52 +682,8 @@ fold_header(<<C/utf8, _/binary>> = Line, [{Name, Value} | Tail]) when
 fold_header(HeaderLine, List) ->
     [Name, Value] = binary:split(HeaderLine, <<?HCOLON>>),
     Name2 = sip_binary:to_lower(sip_binary:trim_trailing(Name)),
-    Name3 = binary_to_header_name(Name2),
+    Name3 = process(pn, Name2, ignored),
     [{Name3, sip_binary:trim_leading(Value)} | List].
-
-%% @doc Converting short binary name to header name atom
-%% @end
-binary_to_header_name(Name) ->
-    case Name of
-        <<"v">> -> 'via';
-        <<"l">> -> 'content-length';
-        <<"f">> -> 'from';
-        <<"t">> -> 'to';
-        <<"i">> -> 'call-id';
-        <<"m">> -> 'contact';
-        <<"k">> -> 'supported';
-        Bin -> sip_binary:binary_to_existing_atom(Bin)
-    end.
-
-%% @doc Converting header name atom back to binary
-%% @end
-header_name_to_binary(Name) when is_binary(Name) -> Name;
-header_name_to_binary(Name) when is_atom(Name) ->
-    case Name of
-        'accept' -> <<"Accept">>;
-        'accept-encoding' -> <<"Accept-Encoding">>;
-        'accept-language' -> <<"Accept-Language">>;
-        'alert-info' -> <<"Alert-Info">>;
-        'allow' -> <<"Allow">>;
-        'authentication-info' -> <<"Authentication-Info">>;
-        'authorization' -> <<"Authorization">>;
-        'call-id' -> <<"Call-Id">>;
-        'call-info' -> <<"Call-Info">>;
-        'contact' -> <<"Contact">>;
-
-
-        'via' -> <<"Via">>;
-        'content-length' -> <<"Content-Length">>;
-        'cseq' -> <<"CSeq">>;
-        'max-forwards' -> <<"Max-Forwards">>;
-        'from' -> <<"From">>;
-        'to' -> <<"To">>;
-        'require' -> <<"Require">>;
-        'proxy-require' -> <<"Proxy-Require">>;
-        'supported' -> <<"Supported">>;
-        'unsupported' -> <<"Unsupported">>;
-        Name -> atom_to_binary(Name, utf8)
-    end.
 
 %% Parse standard Via: parameters
 parse_via_param('ttl', TTL) -> sip_binary:binary_to_integer(TTL);
@@ -998,7 +739,7 @@ parse_test_() ->
      ?_assertEqual(<<"Accept: */*\r\nAccept-Encoding: identity\r\n",
                      "Accept-Language: en\r\nAlert-Info: <http://www.example.com/sounds/moo.wav>\r\n",
                      "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
-                     "Authorization: Digest username=\"Alice\"\r\nCall-Id: callid\r\n",
+                     "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
@@ -1014,7 +755,7 @@ parse_test_() ->
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                                   {'cseq', cseq(123, 'INVITE')}, {'max-forwards', 70}, {'x-custom-atom', 25},
+                                   {'cseq', <<"123 INVITE">>}, {'max-forwards', 70}, {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
                                    {'require', <<"foo">>}, {'proxy-require', <<"some">>},
@@ -1127,7 +868,7 @@ parse_test_() ->
                     info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])],
                    parse('call-info', <<"<http://wwww.example.com/alice/photo.jpg> ;purpose=icon, <http://www.example.com/alice/> ;purpose=info;param=\"value\"">>)),
      ?_assertEqual(<<"<http://wwww.example.com/alice/photo.jpg>;purpose=icon, <http://www.example.com/alice/>;purpose=info;param=value">>,
-                   format('alert-info',
+                   format('call-info',
                           [info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
                            info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])])),
 
@@ -1153,6 +894,10 @@ parse_test_() ->
                    parse('from', <<"<sip:bob@biloxi.com>;tag=1928301774">>)),
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse('from', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
+     ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
+                   parse('to', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
+     ?_assertEqual(address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
+                   parse('to', <<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
 
      ?_assertEqual(<<"\"Bob  Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('from', address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
