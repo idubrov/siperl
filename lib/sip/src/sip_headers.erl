@@ -224,6 +224,17 @@ process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition
     TypeBin = sip_binary:any_to_binary(Disp#sip_hdr_disposition.type),
     append_params(TypeBin, Disp#sip_hdr_disposition.params);
 
+%% 20.12 Content-Encoding
+process(pn, <<"e">>, _Ignore) -> 'content-encoding';
+process(fn, 'content-encoding', _Ignore) -> <<"Content-Encoding">>;
+process(p, 'content-encoding', Bin) ->
+    {MethodBin, Rest} = sip_binary:parse_token(Bin),
+    Method = sip_binary:binary_to_existing_atom(sip_binary:to_lower(MethodBin)),
+    parse_list('content-encoding', Method, Rest);
+
+process(f, 'content-encoding', Allow) ->
+    sip_binary:any_to_binary(Allow);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -745,10 +756,10 @@ parse_test_() ->
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                     {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
-                    {'supported', <<"100rel">>}],
+                    {'supported', <<"100rel">>}, {'content-encoding', <<"gzip">>}],
                    parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\n",
                                    "t: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n",
-                                   "k: 100rel\r\n">>)),
+                                   "k: 100rel\r\ne: gzip\r\n">>)),
      % multi-line headers
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
@@ -761,7 +772,7 @@ parse_test_() ->
                      "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
                      "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
-                     "Content-Disposition: session\r\n"
+                     "Content-Disposition: session\r\nContent-Encoding: gzip\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -773,7 +784,7 @@ parse_test_() ->
                                    {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
                                    {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
-                                   {'content-disposition', <<"session">>},
+                                   {'content-disposition', <<"session">>}, {'content-encoding', gzip},
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
@@ -938,7 +949,9 @@ parse_test_() ->
                    format('content-disposition', #sip_hdr_disposition{type = 'icon', params = [{handling, optional}, {param, value}]})),
 
 
-
+     % Content-Encoding
+     ?_assertEqual([gzip, tar], parse('content-encoding', <<"gzip, tar">>)),
+     ?_assertEqual(<<"gzip, tar">>, format('content-encoding', [gzip, tar])),
 
 
 
