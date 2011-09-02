@@ -250,6 +250,35 @@ process(p, 'content-length', Bin) ->
 process(f, 'content-length', Length) when is_integer(Length) ->
     sip_binary:integer_to_binary(Length);
 
+%% 20.15 Content-Type
+%% http://tools.ietf.org/html/rfc3261#section-20.15
+process(pn, <<"c">>, _Ignore) -> 'content-type';
+process(fn, 'content-type', _Ignore) -> <<"Content-Type">>;
+process(p, 'content-type', Bin) ->
+    {Media, <<>>} = parse_media_range(Bin, fun parse_generic_param/2),
+    Media;
+
+process(f, 'content-type', CType) when is_record(CType, sip_hdr_mediatype) ->
+    Type = sip_binary:any_to_binary(CType#sip_hdr_mediatype.type),
+    SubType = sip_binary:any_to_binary(CType#sip_hdr_mediatype.subtype),
+    append_params(<<Type/binary, ?SLASH, SubType/binary>>, CType#sip_hdr_mediatype.params);
+
+%% 20.16 CSeq
+%% http://tools.ietf.org/html/rfc3261#section-20.16
+process(fn, 'cseq', _Ignore) -> <<"CSeq">>;
+process(p, 'cseq', Bin) ->
+    {SeqBin, Bin2} = sip_binary:parse_token(Bin),
+    {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
+    Sequence = sip_binary:binary_to_integer(SeqBin),
+    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    cseq(Sequence, Method);
+
+process(f, 'cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
+    SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
+    MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
+    <<SequenceBin/binary, " ", MethodBin/binary>>;
+
+
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -278,21 +307,6 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
             Port -> <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
         end,
     append_params(Bin2, Via#sip_hdr_via.params);
-
-
-%% ....
-process(fn, 'cseq', _Ignore) -> <<"CSeq">>;
-process(p, 'cseq', Bin) ->
-    {SeqBin, Bin2} = sip_binary:parse_token(Bin),
-    {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
-    Sequence = sip_binary:binary_to_integer(SeqBin),
-    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
-    cseq(Sequence, Method);
-
-process(f, 'cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
-    SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
-    MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
-    <<SequenceBin/binary, " ", MethodBin/binary>>;
 
 %% ....
 process(fn, 'max-forwards', _Ignore) -> <<"Max-Forwards">>;
@@ -757,10 +771,13 @@ parse_test_() ->
      ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                     {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
-                    {'supported', <<"100rel">>}, {'content-encoding', <<"gzip">>}],
-                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\nf: sip:alice@localhost\r\n",
-                                   "t: sip:bob@localhost\r\ni: callid\r\nm: Alice <sip:example.com>\r\n",
-                                   "k: 100rel\r\ne: gzip\r\n">>)),
+                    {'supported', <<"100rel">>}, {'content-encoding', <<"gzip">>},
+                    {'content-type', <<"application/sdp">>}],
+                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\n",
+                                   "f: sip:alice@localhost\r\nt: sip:bob@localhost\r\n",
+                                   "i: callid\r\nm: Alice <sip:example.com>\r\n",
+                                   "k: 100rel\r\ne: gzip\r\n",
+                                   "c: application/sdp\r\n">>)),
      % multi-line headers
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
@@ -774,7 +791,8 @@ parse_test_() ->
                      "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
                      "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
-                     "Content-Language: en\r\nContent-Length: 5\r\n"
+                     "Content-Language: en\r\nContent-Length: 5\r\n",
+                     "Content-Type: application/sdp\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -787,7 +805,9 @@ parse_test_() ->
                                    {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
                                    {'content-disposition', <<"session">>}, {'content-encoding', gzip},
-                                   {'content-language', 'en'}, {'content-length', 5},
+                                   {'content-language', <<"en">>}, {'content-length', <<"5">>},
+                                   {'content-type', <<"application/sdp">>},
+
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
@@ -966,17 +986,18 @@ parse_test_() ->
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
      ?_assertEqual(<<"98083">>, format('content-length', 98083)),
 
-
-
-
-
-
-
+     % Content-Type
+     ?_assertEqual(media('application', 'sdp', [{param, <<"value">>}]),
+                   parse('content-type', <<"application/sdp;param=value">>)),
+     ?_assertEqual(<<"application/sdp;param=value">>,
+                   format('content-type', media('application', 'sdp', [{param, <<"value">>}]))),
 
      % CSeq
      ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
      ?_assertEqual(<<"123453 INVITE">>, format('cseq', cseq(123453, 'INVITE'))),
-     ?_assertEqual(<<"123453 INVITE">>, format('cseq', <<"123453 INVITE">>)),
+
+
+
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
