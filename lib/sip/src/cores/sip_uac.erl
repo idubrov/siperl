@@ -123,7 +123,11 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
     % FIXME: handle expires
     CollectFun =
         fun (Contact, TargetSet) ->
-                 QValue = sip_headers:qvalue(Contact),
+                 QValue =
+                     case lists:keyfind(q, 1, Contact#sip_hdr_address.params) of
+                         false -> 1.0;
+                         Value when is_float(Value) -> Value
+                     end,
                  sip_priority_set:put(Contact#sip_hdr_address.uri, QValue, TargetSet)
         end,
     % go through Contact: headers and add URIs to our current redirect set
