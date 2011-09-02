@@ -56,9 +56,15 @@
 -record(sip_hdr_info,
         {uri :: #sip_uri{} | binary(),
          params = []}).
+
 %% Value for header `Authorization:'
 -record(sip_hdr_auth,
         {scheme :: binary() | atom(),
+         params = []}).
+
+%% Value for header `Content-Disposition:'
+-record(sip_hdr_disposition,
+        {type :: binary() | atom(),
          params = []}).
 
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),

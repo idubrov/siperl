@@ -84,7 +84,7 @@ format(Name, Value) -> process(f, Name, Value).
 process(p, _Name, Header) when not is_binary(Header) -> Header; % already parsed
 process(f, _Name, Value) when is_binary(Value) -> Value; % already formatted
 
-%% Accept
+%% 20.1 Accept
 %% http://tools.ietf.org/html/rfc3261#section-20.1
 process(fn, 'accept', _Ignore) -> <<"Accept">>;
 process(p, 'accept', Bin) ->
@@ -96,7 +96,7 @@ process(f, 'accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
     SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
     append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
 
-%% Accept-Encoding
+%% 20.2 Accept-Encoding
 %% http://tools.ietf.org/html/rfc3261#section-20.2
 process(fn, 'accept-encoding', _Ignore) -> <<"Accept-Encoding">>;
 process(p, 'accept-encoding', Bin) ->
@@ -108,7 +108,7 @@ process(f, 'accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) -
     Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
     append_params(Encoding, Accept#sip_hdr_encoding.params);
 
-%% Accept-Language
+%% 20.3 Accept-Language
 %% http://tools.ietf.org/html/rfc3261#section-20.3
 process(fn, 'accept-language', _Ignore) -> <<"Accept-Language">>;
 process(p, 'accept-language', Bin) ->
@@ -128,6 +128,7 @@ process(f, 'accept-language', Accept) when is_record(Accept, sip_hdr_language) -
         end,
     append_params(Bin, Accept#sip_hdr_language.params);
 
+%% 20.4 Alert-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.4
 process(fn, 'alert-info', _Ignore) -> <<"Alert-Info">>;
 process(p, 'alert-info', Bin) ->
@@ -138,6 +139,7 @@ process(f, 'alert-info', Info) when is_record(Info, sip_hdr_info) ->
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
     append_params(Bin, Info#sip_hdr_info.params);
 
+%% 20.5 Allow
 %% http://tools.ietf.org/html/rfc3261#section-20.5
 process(fn, 'allow', _Ignore) -> <<"Allow">>;
 process(p, 'allow', Bin) ->
@@ -148,6 +150,7 @@ process(p, 'allow', Bin) ->
 process(f, 'allow', Allow) ->
     sip_binary:any_to_binary(Allow);
 
+%% 20.6 Authentication-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.6
 process(fn, 'authentication-info', _Ignore) -> <<"Authentication-Info">>;
 process(p, 'authentication-info', Bin) ->
@@ -156,6 +159,7 @@ process(p, 'authentication-info', Bin) ->
 process(f, 'authentication-info', {_Key, _Value} = Pair) ->
     format_auth(Pair);
 
+%% 20.7 Authorization
 %% http://tools.ietf.org/html/rfc3261#section-20.7
 process(fn, 'authorization', _Ignore) -> <<"Authorization">>;
 process(p, 'authorization', Bin) ->
@@ -171,13 +175,13 @@ process(f, 'authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
     Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
     lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
 
-
+%% 20.8 Call-ID
 %% http://tools.ietf.org/html/rfc3261#section-20.8
 process(pn, <<"i">>, _Ignore) -> 'call-id';
 process(fn, 'call-id', _Ignore) -> <<"Call-ID">>;
 process(p, 'call-id', Bin) -> Bin;
-%process(f, 'call-id', Bin) -> Bin;
 
+%% 20.9 Call-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.9
 process(fn, 'call-info', _Ignore) -> <<"Call-Info">>;
 process(p, 'call-info', Bin) ->
@@ -192,6 +196,7 @@ process(f, 'call-info', Info) when is_record(Info, sip_hdr_info) ->
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
     append_params(Bin, Info#sip_hdr_info.params);
 
+%% 20.10 Contact
 %% http://tools.ietf.org/html/rfc3261#section-20.10
 process(pn, <<"m">>, _Ignore) -> 'contact';
 process(fn, 'contact', _Ignore) -> <<"Contact">>;
@@ -203,6 +208,21 @@ process(p, 'contact', Bin) ->
 process(f, 'contact', '*') -> <<"*">>;
 process(f, 'contact', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
+
+%% 20.11 Content-Disposition
+process(fn, 'content-disposition', _Ignore) -> <<"Content-Disposition">>;
+process(p, 'content-disposition', Bin) ->
+    {TypeBin, Rest} = sip_binary:parse_token(Bin),
+    ParamFun = fun(handling, Value) -> sip_binary:binary_to_existing_atom(Value);
+                  (_Name, Value) -> Value
+               end,
+    {Params, <<>>} = parse_params(Rest, ParamFun),
+    Type = sip_binary:binary_to_existing_atom(TypeBin),
+    #sip_hdr_disposition{type = Type, params = Params};
+
+process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition) ->
+    TypeBin = sip_binary:any_to_binary(Disp#sip_hdr_disposition.type),
+    append_params(TypeBin, Disp#sip_hdr_disposition.params);
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -741,6 +761,7 @@ parse_test_() ->
                      "Allow: INVITE\r\nAuthentication-Info: nextnonce=\"47364c23432d2e131a5fb210812c\"\r\n",
                      "Authorization: Digest username=\"Alice\"\r\nCall-ID: callid\r\n",
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
+                     "Content-Disposition: session\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -752,6 +773,7 @@ parse_test_() ->
                                    {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
                                    {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
+                                   {'content-disposition', <<"session">>},
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
@@ -872,6 +894,59 @@ parse_test_() ->
                           [info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
                            info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])])),
 
+      % Contact
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}])],
+                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])],
+                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>)),
+     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
+                    address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
+                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
+     ?_assertEqual('*', parse('contact', <<"*">>)),
+     ?_assertEqual([address(<<>>, <<"sip:bob@biloxi.com">>, []),
+                    address(<<>>, <<"sip:alice@atlanta.com">>, [])],
+                   parse('contact', <<"sip:bob@biloxi.com, sip:alice@atlanta.com">>)),
+     ?_assertEqual([address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
+                    address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])],
+                   parse('contact', <<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7; expires=3600, ",
+                                      "\"Mr. Watson\" <mailto:watson@bell-telephone.com> ;q=0.1">>)),
+
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
+                   format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]))),
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
+                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])])),
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>,
+                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
+                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
+                                      address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
+     ?_assertEqual(<<"*">>, format('contact', '*')),
+     ?_assertEqual(<<"<sip:bob@biloxi.com>, <sip:alice@atlanta.com>">>,
+                   format('contact', [address(<<>>, <<"sip:bob@biloxi.com">>, []),
+                                      address(<<>>, <<"sip:alice@atlanta.com">>, [])])),
+     ?_assertEqual(<<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7;expires=3600, ",
+                     "\"Mr. Watson\" <mailto:watson@bell-telephone.com>;q=0.1">>,
+                   format('contact', [address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
+                                      address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])])),
+
+     % Content-Disposition
+     ?_assertEqual(#sip_hdr_disposition{type = 'icon', params = [{handling, optional}, {param, <<"value">>}]},
+                   parse('content-disposition', <<"icon;handling=optional;param=value">>)),
+     ?_assertEqual(<<"icon;handling=optional;param=value">>,
+                   format('content-disposition', #sip_hdr_disposition{type = 'icon', params = [{handling, optional}, {param, value}]})),
+
+
+
+
+
+
+
+
+
+
+
      % Content-Length
      ?_assertEqual(32543523, parse('content-length', <<"32543523">>)),
      ?_assertEqual(<<"98083">>, format('content-length', 98083)),
@@ -912,42 +987,7 @@ parse_test_() ->
      ?_assertEqual(<<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
-     % Contact
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}])],
-                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
-                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])],
-                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1,\"Alice\" <sip:alice@atlanta.com>;q=0.2">>)),
-     ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
-                    address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
-                    address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
-                   parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
-     ?_assertEqual('*', parse('contact', <<"*">>)),
-     ?_assertEqual([address(<<>>, <<"sip:bob@biloxi.com">>, []),
-                    address(<<>>, <<"sip:alice@atlanta.com">>, [])],
-                   parse('contact', <<"sip:bob@biloxi.com, sip:alice@atlanta.com">>)),
-     ?_assertEqual([address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
-                    address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])],
-                   parse('contact', <<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7; expires=3600, ",
-                                      "\"Mr. Watson\" <mailto:watson@bell-telephone.com> ;q=0.1">>)),
 
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1">>,
-                   format('contact', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]))),
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2">>,
-                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
-                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}])])),
-     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>,
-                   format('contact', [address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
-                                      address(<<"Alice">>, <<"sip:alice@atlanta.com">>, [{q, 0.2}]),
-                                      address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])])),
-     ?_assertEqual(<<"*">>, format('contact', '*')),
-     ?_assertEqual(<<"<sip:bob@biloxi.com>, <sip:alice@atlanta.com>">>,
-                   format('contact', [address(<<>>, <<"sip:bob@biloxi.com">>, []),
-                                      address(<<>>, <<"sip:alice@atlanta.com">>, [])])),
-     ?_assertEqual(<<"\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.7;expires=3600, ",
-                     "\"Mr. Watson\" <mailto:watson@bell-telephone.com>;q=0.1">>,
-                   format('contact', [address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
-                                      address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])])),
 
      % Route, Record-Route
      ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
