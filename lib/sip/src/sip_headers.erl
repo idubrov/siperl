@@ -328,6 +328,15 @@ process(p, 'in-reply-to', Bin) ->
     {InReplyTo, Rest} = sip_binary:parse_until(Bin2, Fun),
     parse_list('in-reply-to', InReplyTo, Rest);
 
+%% 20.22 Max-Forwards
+%% http://tools.ietf.org/html/rfc3261#section-20.22
+process(fn, 'max-forwards', _Ignore) -> <<"Max-Forwards">>;
+process(p, 'max-forwards', Bin) ->
+    sip_binary:binary_to_integer(Bin);
+
+process(f, 'max-forwards', Hops) when is_integer(Hops) ->
+    sip_binary:integer_to_binary(Hops);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -357,12 +366,7 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
     append_params(Bin2, Via#sip_hdr_via.params);
 
 %% ....
-process(fn, 'max-forwards', _Ignore) -> <<"Max-Forwards">>;
-process(p, 'max-forwards', Bin) ->
-    sip_binary:binary_to_integer(Bin);
 
-process(f, 'max-forwards', Hops) when is_integer(Hops) ->
-    sip_binary:integer_to_binary(Hops);
 
 %% ....
 process(pn, <<"t">>, _Ignore) -> 'to';
@@ -833,11 +837,11 @@ parse_test_() ->
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
                      "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
-                     "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\n"
+                     "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
-                     "Max-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
+                     "x-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
                      "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
@@ -850,12 +854,12 @@ parse_test_() ->
                                    {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
-                                   {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>},
+                                   {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'to', <<"sip:bob@localhost">>},
-                                   {'max-forwards', 70}, {'x-custom-atom', 25},
+                                   {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
                                    {'require', <<"foo">>}, {'proxy-require', <<"some">>},
@@ -1081,10 +1085,12 @@ parse_test_() ->
      ?_assertEqual(<<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>,
                    format('in-reply-to', [<<"70710@saturn.bell-tel.com">>, <<"17320@saturn.bell-tel.com">>])),
 
-
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
      ?_assertEqual(<<"70">>, format('max-forwards', 70)),
+
+
+
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
