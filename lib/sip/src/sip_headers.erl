@@ -467,6 +467,16 @@ process(f, 'retry-after', Retry) when is_record(Retry, sip_hdr_retry) ->
            end,
     append_params(Bin2, Retry#sip_hdr_retry.params);
 
+%% 20.34 Route
+%% http://tools.ietf.org/html/rfc3261#section-20.34
+process(fn, 'route', _Ignore) -> <<"Route">>;
+process(p, 'route', Bin) ->
+    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
+    parse_list('route', Top, Rest);
+
+process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
+    format_address(Route);
+
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -510,13 +520,6 @@ process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
 
 %% ...
-process(fn, 'route', _Ignore) -> <<"Route">>;
-process(p, 'route', Bin) ->
-    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
-    parse_list('route', Top, Rest);
-
-process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
-    format_address(Route);
 
 
 %% ...
@@ -972,7 +975,7 @@ parse_test_() ->
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
-                     "Retry-After: 120\r\n",
+                     "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -995,7 +998,7 @@ parse_test_() ->
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
-                                   {'retry-after', <<"120">>},
+                                   {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1329,6 +1332,12 @@ parse_test_() ->
      ?_assertEqual(<<"120 (I'm in a meeting)">>,
                    format('retry-after', retry(120, <<"(I'm in a meeting)">>, []))),
 
+     % Route
+     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
+                   parse('route', <<"<sip:p1.example.com;lr>">>)),
+     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
+                   format('route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
+
 
 
      % To
@@ -1342,18 +1351,6 @@ parse_test_() ->
      ?_assertEqual(<<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
 
-
-
-     % Route, Record-Route
-     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
-                   parse('route', <<"<sip:p1.example.com;lr>">>)),
-     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
-                   parse('record-route', <<"<sip:p1.example.com;lr>">>)),
-
-     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
-                   format('route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
-     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
-                   format('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
      % Via
      ?_assertEqual([via(udp, {{8193,3512,0,0,0,0,44577,44306}, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
