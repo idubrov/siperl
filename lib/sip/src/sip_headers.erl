@@ -319,7 +319,14 @@ process(p, 'from', Bin) ->
 process(f, 'from', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
 
-
+%% 20.21 In-Reply-To
+%% http://tools.ietf.org/html/rfc3261#section-20.21
+process(fn, 'in-reply-to', _Ignore) -> <<"In-Reply-To">>;
+process(p, 'in-reply-to', Bin) ->
+    Bin2 = sip_binary:trim_leading(Bin),
+    Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?COMMA end,
+    {InReplyTo, Rest} = sip_binary:parse_until(Bin2, Fun),
+    parse_list('in-reply-to', InReplyTo, Rest);
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -826,6 +833,7 @@ parse_test_() ->
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
                      "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
+                     "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -842,6 +850,7 @@ parse_test_() ->
                                    {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
+                                   {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1065,6 +1074,12 @@ parse_test_() ->
                    format('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('from', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+
+     % In-Reply-To
+     ?_assertEqual([<<"70710@saturn.bell-tel.com">>, <<"17320@saturn.bell-tel.com">>],
+                   parse('in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>)),
+     ?_assertEqual(<<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>,
+                   format('in-reply-to', [<<"70710@saturn.bell-tel.com">>, <<"17320@saturn.bell-tel.com">>])),
 
 
      % Max-Forwards
