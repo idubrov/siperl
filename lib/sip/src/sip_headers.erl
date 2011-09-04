@@ -308,6 +308,18 @@ process(p, 'expires', Bin) ->
 process(f, 'expires', Length) when is_integer(Length) ->
     sip_binary:integer_to_binary(Length);
 
+%% 20.20 From
+%% http://tools.ietf.org/html/rfc3261#section-20.20
+process(pn, <<"f">>, _Ignore) -> 'from';
+process(fn, 'from', _Ignore) -> <<"From">>;
+process(p, 'from', Bin) ->
+    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
+    Top;
+
+process(f, 'from', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
+
+
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -344,16 +356,6 @@ process(p, 'max-forwards', Bin) ->
 
 process(f, 'max-forwards', Hops) when is_integer(Hops) ->
     sip_binary:integer_to_binary(Hops);
-
-%% ....
-process(pn, <<"f">>, _Ignore) -> 'from';
-process(fn, 'from', _Ignore) -> <<"From">>;
-process(p, 'from', Bin) ->
-    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
-    Top;
-
-process(f, 'from', Addr) when is_record(Addr, sip_hdr_address) ->
-    format_address(Addr);
 
 %% ....
 process(pn, <<"t">>, _Ignore) -> 'to';
@@ -823,9 +825,9 @@ parse_test_() ->
                      "Content-Language: en\r\nContent-Length: 5\r\n",
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
                      "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
-                     "Expires: 213\r\n",
+                     "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
 
-                     "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
+                     "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
                      "Max-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
                      "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
@@ -839,11 +841,11 @@ parse_test_() ->
                                    {'content-language', <<"en">>}, {'content-length', <<"5">>},
                                    {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
-                                   {'expires', <<"213">>},
+                                   {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-                                   {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
+                                   {'to', <<"sip:bob@localhost">>},
                                    {'max-forwards', 70}, {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
@@ -961,7 +963,7 @@ parse_test_() ->
                           [info(<<"http://wwww.example.com/alice/photo.jpg">>, [{purpose, icon}]),
                            info(<<"http://www.example.com/alice/">>, [{purpose, info}, {param, <<"value">>}])])),
 
-      % Contact
+     % Contact
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1">>)),
      ?_assertEqual([address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{q, 0.1}]),
@@ -1045,13 +1047,7 @@ parse_test_() ->
      ?_assertEqual(213, parse('expires', <<"213">>)),
      ?_assertEqual(<<"213">>, format('expires', 213)),
 
-
-
-     % Max-Forwards
-     ?_assertEqual(70, parse('max-forwards', <<"70">>)),
-     ?_assertEqual(<<"70">>, format('max-forwards', 70)),
-
-     % From/To
+     % From
      ?_assertEqual(address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse('from', <<"Bob  Zert <sip:bob@biloxi.com>;tag=1928301774">>)),
      ?_assertEqual(address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
@@ -1060,10 +1056,6 @@ parse_test_() ->
                    parse('from', <<"<sip:bob@biloxi.com>;tag=1928301774">>)),
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse('from', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
-     ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
-                   parse('to', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
-     ?_assertEqual(address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
-                   parse('to', <<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
 
      ?_assertEqual(<<"\"Bob  Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('from', address(<<"Bob  Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
@@ -1073,6 +1065,18 @@ parse_test_() ->
                    format('from', address(<<>>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('from', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+
+
+     % Max-Forwards
+     ?_assertEqual(70, parse('max-forwards', <<"70">>)),
+     ?_assertEqual(<<"70">>, format('max-forwards', 70)),
+
+     % To
+     ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
+                   parse('to', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
+     ?_assertEqual(address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
+                   parse('to', <<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
+
      ?_assertEqual(<<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('to', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
