@@ -391,17 +391,12 @@ process(f, 'proxy-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.28
 process(fn, 'proxy-authorization', _Ignore) -> <<"Proxy-Authorization">>;
 process(p, 'proxy-authorization', Bin) ->
-    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
-    % parse scheme, the rest is list of paris param=value
-    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
-    auth(Scheme, parse_auths(Bin2));
+    % same as Authorization header
+    process(p, 'authorization', Bin);
 
 process(f, 'proxy-authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
-    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
-    [First | Rest] = Auth#sip_hdr_auth.params,
-    FirstBin = format_auth(First),
-    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
-    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
+    % same as Authorization header
+    process(f, 'authorization', Auth);
 
 
 %% .....
