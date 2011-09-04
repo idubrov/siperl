@@ -15,3 +15,5 @@
 -define(LAQUOT, $<).
 -define(RAQUOT, $>).
 -define(SLASH, $/).
+-define(LPAREN, $().
+-define(RPAREN, $)).

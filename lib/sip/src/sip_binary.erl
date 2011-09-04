@@ -12,7 +12,7 @@
 %% API
 -export([trim_leading/1, trim_trailing/1, trim/1, to_lower/1, to_upper/1]).
 -export([parse_until/2, parse_while/2]).
--export([parse_token/1, parse_quoted_string/1, quote_string/1]).
+-export([parse_token/1, parse_quoted_string/1, quote_string/1, parse_comment_string/1]).
 -export([integer_to_binary/1, float_to_binary/1, any_to_binary/1, addr_to_binary/1]).
 -export([binary_to_integer/1, binary_to_float/1, binary_to_existing_atom/1]).
 -export([hexstr_to_binary/1, binary_to_hexstr/1]).
@@ -40,6 +40,7 @@ is_digit_char(_C) -> false.
 %% alphanum  =  ALPHA / DIGIT
 %% '''
 %% @end
+-spec is_alpha_char(integer()) -> boolean().
 is_alpha_char(C) ->
     (C >= $a andalso C =< $z) orelse (C >= $A andalso C =< $Z).
 
@@ -219,6 +220,38 @@ parse_until(Bin, Fun) when is_function(Fun) ->
 parse_token(Bin) ->
     {Token, Rest} = parse_while(trim_leading(Bin), fun is_token_char/1, 0),
     {Token, trim_leading(Rest)}.
+
+%%
+%% comment        =  LPAREN *(ctext / quoted-pair / comment) RPAREN
+%% ctext          =  %x21-27 / %x2A-5B / %x5D-7E / UTF8-NONASCII
+%%                   / LWS
+%% quoted-pair    =  "\" (%x00-09 / %x0B-0C
+%%                   / %x0E-7F)
+
+
+%% @doc Parse `comment' from the UTF-8 binary string
+%%
+%% Extract <code>comment</code> from the UTF-8 binary and return it "as is".
+%% @end
+-spec parse_comment_string(binary()) -> {CommentStr :: binary(), Rest :: binary()}.
+parse_comment_string(Bin) ->
+    parse_comment_loop(trim_leading(Bin), <<>>, 0).
+
+parse_comment_loop(<<?RPAREN, Rest/binary>>, Acc, 1) ->
+    {<<Acc/binary, ?RPAREN>>, sip_binary:trim_leading(Rest)};
+parse_comment_loop(<<?LPAREN, Rest/binary>>, Acc, Depth) ->
+    parse_comment_loop(Rest, <<Acc/binary, ?LPAREN>>, Depth + 1);
+parse_comment_loop(<<?RPAREN, Rest/binary>>, Acc, Depth) ->
+    parse_comment_loop(Rest, <<Acc/binary, ?RPAREN>>, Depth - 1);
+
+
+parse_comment_loop(<<$\\, C, Rest/binary>>, Acc, Depth) when
+  C >= 16#00, C =< 16#09;
+  C >= 16#0B, C =< 16#0C;
+  C >= 16#0E, C =< 16#7F ->
+    parse_comment_loop(Rest, <<Acc/binary, C>>, Depth);
+parse_comment_loop(<<C, Rest/binary>>, Acc, Depth) when C =/= $\\ ->
+    parse_comment_loop(Rest, <<Acc/binary, C>>, Depth).
 
 %%
 %% quoted-pair    =  "\" (%x00-09 / %x0B-0C
@@ -497,12 +530,15 @@ binary_test_() ->
      ?_assertEqual(true, is_user_unreserved_char($&)),
      ?_assertEqual(false, is_user_unreserved_char($~)),
 
-     % parse token and quoted strings
+     % parse token, quoted strings and comments
      ?_assertEqual({<<"some">>, <<"data ">>}, parse_token(<<"   some data ">>)),
      ?_assertEqual({<<"some">>, <<>>}, parse_token(<<"   some">>)),
      ?_assertEqual({<<"some">>, <<"=value">>}, parse_token(<<"some=value">>)),
      ?_assertEqual({<<"some">>, <<"data ">>}, parse_quoted_string(<<"   \"some\" data ">>)),
      ?_assertEqual({<<"so\"me">>, <<"data ">>}, parse_quoted_string(<<"   \"so\\\"me\" data ">>)),
+     ?_assertEqual({<<"(some)">>, <<"data ">>}, parse_comment_string(<<"   (some) data ">>)),
+     ?_assertEqual({<<"(so\"me)">>, <<"data ">>}, parse_comment_string(<<"   (so\\\"me) data ">>)),
+     ?_assertEqual({<<"(some (nested) comment)">>, <<"data ">>}, parse_comment_string(<<"   (some (nested) comment) data ">>)),
 
      % conversions to and from binary
      ?_assertEqual(123, binary_to_integer(<<"123">>)),
