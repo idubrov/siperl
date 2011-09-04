@@ -66,6 +66,12 @@
         {type :: binary() | atom(),
          params = []}).
 
+%% Value for header `Retry-After:'
+-record(sip_hdr_retry,
+        {delay :: integer(),
+         comment = <<>> :: binary(),
+         params = []}).
+
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
                       transport :: 'udp' | 'tcp' | 'tls' | atom(),

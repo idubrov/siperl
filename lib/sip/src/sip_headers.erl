@@ -14,7 +14,7 @@
 %%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3]).
+-export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3, retry/3]).
 -export([add_tag/3]).
 
 %%-----------------------------------------------------------------
@@ -440,6 +440,34 @@ process(p, 'require', Bin) ->
 process(f, 'require', Ext) ->
     sip_binary:any_to_binary(Ext);
 
+%% 20.33 Retry-After
+%% http://tools.ietf.org/html/rfc3261#section-20.33
+process(fn, 'retry-after', _Ignore) -> <<"Retry-After">>;
+process(p, 'retry-after', Bin) ->
+    {Delay, CommentParams} = sip_binary:parse_while(Bin, fun sip_binary:is_digit_char/1),
+    {Comment, ParamsBin} =
+        case sip_binary:trim_leading(CommentParams) of
+            <<?LPAREN, _/binary>> = CommentBin ->
+                sip_binary:parse_comment_string(CommentBin);
+            Rest ->
+                {<<>>, Rest}
+        end,
+    ParamFun = fun(duration, Value) -> sip_binary:binary_to_integer(Value);
+                  (_Name, Value) -> Value
+               end,
+    {Params, <<>>} = parse_params(ParamsBin, ParamFun),
+    retry(sip_binary:binary_to_integer(Delay), Comment, Params);
+
+process(f, 'retry-after', Retry) when is_record(Retry, sip_hdr_retry) ->
+    Bin = sip_binary:integer_to_binary(Retry#sip_hdr_retry.delay),
+    Bin2 = case Retry#sip_hdr_retry.comment of
+               <<>> -> Bin;
+               Comment ->
+                   <<Bin/binary, ?SP, Comment/binary>>
+           end,
+    append_params(Bin2, Retry#sip_hdr_retry.params);
+
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -730,14 +758,19 @@ info(URI, Params) ->
 auth(Scheme, Params) ->
     #sip_hdr_auth{scheme = Scheme, params = Params}.
 
-%% @doc
-%% Construct CSeq header value.
+%% @doc Construct `CSeq:' header value.
 %% @end
 -spec cseq(integer(), atom() | binary()) -> #sip_hdr_cseq{}.
 cseq(Sequence, Method) when
   is_integer(Sequence),
   (is_atom(Method) orelse is_binary(Method)) ->
     #sip_hdr_cseq{method = Method, sequence = Sequence}.
+
+%% @doc Construct `Retry-After:' header value.
+%% @end
+-spec retry(integer(), binary(), [any()]) -> #sip_hdr_retry{}.
+retry(Delay, Comment, Params) ->
+    #sip_hdr_retry{delay = Delay, comment = Comment, params = Params}.
 
 
 %% @doc Construct address (value of From/To headers).
@@ -939,6 +972,7 @@ parse_test_() ->
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
+                     "Retry-After: 120\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -961,6 +995,7 @@ parse_test_() ->
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
+                                   {'retry-after', <<"120">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1284,7 +1319,15 @@ parse_test_() ->
      ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
 
-
+     % Retry-After
+     ?_assertEqual(retry(18000, <<>>, [{duration, 3600}, {param, <<"value">>}]),
+                   parse('retry-after', <<"18000;duration=3600;param=value">>)),
+     ?_assertEqual(retry(120, <<"(I'm in a meeting)">>, []),
+                   parse('retry-after', <<"120 (I'm in a meeting)">>)),
+     ?_assertEqual(<<"18000;duration=3600;param=value">>,
+                   format('retry-after', retry(18000, <<>>, [{duration, 3600}, {param, <<"value">>}]))),
+     ?_assertEqual(<<"120 (I'm in a meeting)">>,
+                   format('retry-after', retry(120, <<"(I'm in a meeting)">>, []))),
 
 
 
