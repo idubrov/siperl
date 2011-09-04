@@ -299,6 +299,16 @@ process(f, 'error-info', Info) when is_record(Info, sip_hdr_info) ->
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
     append_params(Bin, Info#sip_hdr_info.params);
 
+%% 20.19 Expires
+%% http://tools.ietf.org/html/rfc3261#section-20.19
+process(fn, 'expires', _Ignore) -> <<"Expires">>;
+process(p, 'expires', Bin) ->
+    sip_binary:binary_to_integer(Bin);
+
+process(f, 'expires', Length) when is_integer(Length) ->
+    sip_binary:integer_to_binary(Length);
+
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -812,7 +822,8 @@ parse_test_() ->
                      "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
                      "Content-Language: en\r\nContent-Length: 5\r\n",
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
-                     "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n"
+                     "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
+                     "Expires: 213\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -828,6 +839,7 @@ parse_test_() ->
                                    {'content-language', <<"en">>}, {'content-length', <<"5">>},
                                    {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
+                                   {'expires', <<"213">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1028,6 +1040,12 @@ parse_test_() ->
                    parse('error-info', <<"<sip:not-in-service-recording@atlanta.com>;param=\"value\"">>)),
      ?_assertEqual(<<"<sip:not-in-service-recording@atlanta.com>;param=value">>,
                    format('error-info', [info(<<"sip:not-in-service-recording@atlanta.com">>, [{param, <<"value">>}])])),
+
+     % Expires
+     ?_assertEqual(213, parse('expires', <<"213">>)),
+     ?_assertEqual(<<"213">>, format('expires', 213)),
+
+
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
