@@ -337,6 +337,16 @@ process(p, 'max-forwards', Bin) ->
 process(f, 'max-forwards', Hops) when is_integer(Hops) ->
     sip_binary:integer_to_binary(Hops);
 
+%% 20.23 Min-Expires
+%% http://tools.ietf.org/html/rfc3261#section-20.23
+process(fn, 'min-expires', _Ignore) -> <<"Min-Expires">>;
+process(p, 'min-expires', Bin) ->
+    sip_binary:binary_to_integer(Bin);
+
+process(f, 'min-expires', Length) when is_integer(Length) ->
+    sip_binary:integer_to_binary(Length);
+
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -837,7 +847,8 @@ parse_test_() ->
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
                      "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
-                     "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n"
+                     "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
+                     "Min-Expires: 213\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -855,6 +866,7 @@ parse_test_() ->
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
+                                   {'min-expires', <<"213">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1089,6 +1101,9 @@ parse_test_() ->
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
      ?_assertEqual(<<"70">>, format('max-forwards', 70)),
 
+     % Min-Expires
+     ?_assertEqual(213, parse('min-expires', <<"213">>)),
+     ?_assertEqual(<<"213">>, format('min-expires', 213)),
 
 
 
