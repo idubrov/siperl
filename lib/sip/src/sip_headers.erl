@@ -387,6 +387,23 @@ process(f, 'proxy-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
     Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
     lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
 
+%% 20.28 Proxy-Authorization
+%% http://tools.ietf.org/html/rfc3261#section-20.28
+process(fn, 'proxy-authorization', _Ignore) -> <<"Proxy-Authorization">>;
+process(p, 'proxy-authorization', Bin) ->
+    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    % parse scheme, the rest is list of paris param=value
+    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
+    auth(Scheme, parse_auths(Bin2));
+
+process(f, 'proxy-authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
+    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    [First | Rest] = Auth#sip_hdr_auth.params,
+    FirstBin = format_auth(First),
+    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
+    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
+
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -911,7 +928,7 @@ parse_test_() ->
                      "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
-                     "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\n"
+                     "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -931,7 +948,7 @@ parse_test_() ->
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
-                                   {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>},
+                                   {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1203,6 +1220,41 @@ parse_test_() ->
                                 {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
                                 {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
                                 {param, <<"value">>}]))),
+
+     ?_assertEqual(auth('Digest', [{realm, <<"atlanta.com">>}, {stale, true}]),
+                   parse('proxy-authenticate', <<"Digest realm=\"atlanta.com\", stale=true">>)),
+     ?_assertEqual(<<"Digest realm=\"atlanta.com\", stale=true">>,
+                   format('proxy-authenticate', auth('Digest', [{realm, <<"atlanta.com">>}, {stale, true}]))),
+
+     % Proxy-Authorization
+     % XXX: copy-pasted from Authorization header tests.
+     ?_assertEqual(auth('Digest',
+                        [{username, <<"Alice">>}, {realm, <<"atlanta.com">>},
+                         {nonce, <<"84a4cc6f3082121f32b42a2187831a9e">>}, {uri, <<"sip:alice@atlanta.com">>},
+                         {response, <<117,135,36,82,52,179,67,76,195,65,34,19,229,241,19,165>>}, {algorithm, 'MD5'},
+                         {cnonce, <<"0a4f113b">>}, {opaque, <<"5ccc069c403ebaf9f0171e9517f40e41">>},
+                         {qop, auth}, {nc, 1}, {param, <<"value">>}, {param2, <<"va lue">>}]),
+                   parse('proxy-authorization',
+                         <<"Digest username=\"Alice\", realm=\"atlanta.com\", ",
+                           "nonce=\"84a4cc6f3082121f32b42a2187831a9e\", uri=\"sip:alice@atlanta.com\", ",
+                           "response=\"7587245234b3434cc3412213e5f113a5\", algorithm=MD5, ",
+                           "cnonce=\"0a4f113b\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\", ",
+                           "qop=auth, nc=00000001, param=\"value\", param2=\"va lue\"">>)),
+     ?_assertEqual(<<"Digest username=\"Alice\", realm=\"atlanta.com\", ",
+                     "nonce=\"84a4cc6f3082121f32b42a2187831a9e\", uri=\"sip:alice@atlanta.com\", ",
+                     "response=\"7587245234b3434cc3412213e5f113a5\", algorithm=MD5, ",
+                     "cnonce=\"0a4f113b\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\", ",
+                     "qop=auth, nc=00000001, param=value, param2=\"va lue\"">>,
+                   format('proxy-authorization',
+                          auth('Digest',
+                               [{username, <<"Alice">>}, {realm, <<"atlanta.com">>},
+                                {nonce, <<"84a4cc6f3082121f32b42a2187831a9e">>}, {uri, <<"sip:alice@atlanta.com">>},
+                                {response, <<117,135,36,82,52,179,67,76,195,65,34,19,229,241,19,165>>}, {algorithm, 'MD5'},
+                                {cnonce, <<"0a4f113b">>}, {opaque, <<"5ccc069c403ebaf9f0171e9517f40e41">>},
+                                {qop, auth}, {nc, 1}, {param, <<"value">>}, {param2, <<"va lue">>}]))),
+
+
+
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
