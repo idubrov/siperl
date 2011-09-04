@@ -51,7 +51,7 @@
         {language :: atom() | binary(),
          params = []}).
 
-%% Value for headers `Alert-Info:', `Call-Info'
+%% Value for headers `Alert-Info:', `Call-Info', `Error-Info', ...
 -record(sip_hdr_info,
         {uri :: #sip_uri{} | binary(),
          params = []}).

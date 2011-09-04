@@ -288,6 +288,17 @@ process(f, 'date', Date) ->
     Local = calendar:universal_time_to_local_time(Date),
     list_to_binary(httpd_util:rfc1123_date(Local));
 
+%% 20.18 Error-Info
+%% http://tools.ietf.org/html/rfc3261#section-20.18
+process(fn, 'error-info', _Ignore) -> <<"Error-Info">>;
+process(p, 'error-info', Bin) ->
+    parse_info('call-info', Bin, fun parse_generic_param/2);
+
+process(f, 'error-info', Info) when is_record(Info, sip_hdr_info) ->
+    URI = sip_uri:format(Info#sip_hdr_info.uri),
+    Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
+    append_params(Bin, Info#sip_hdr_info.params);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -801,7 +812,7 @@ parse_test_() ->
                      "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
                      "Content-Language: en\r\nContent-Length: 5\r\n",
                      "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
-                     "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\n"
+                     "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -816,7 +827,7 @@ parse_test_() ->
                                    {'content-disposition', <<"session">>}, {'content-encoding', gzip},
                                    {'content-language', <<"en">>}, {'content-length', <<"5">>},
                                    {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
-                                   {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>},
+                                   {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1011,6 +1022,12 @@ parse_test_() ->
                     parse('date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>)),
      ?_assertEqual(<<"Sat, 13 Nov 2010 23:29:00 GMT">>,
                     format('date', {{2010, 11, 13}, {23, 29, 00}})),
+
+     % Error-Info
+     ?_assertEqual([info(<<"sip:not-in-service-recording@atlanta.com">>, [{param, <<"value">>}])],
+                   parse('error-info', <<"<sip:not-in-service-recording@atlanta.com>;param=\"value\"">>)),
+     ?_assertEqual(<<"<sip:not-in-service-recording@atlanta.com>;param=value">>,
+                   format('error-info', [info(<<"sip:not-in-service-recording@atlanta.com">>, [{param, <<"value">>}])])),
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
