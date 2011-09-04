@@ -346,6 +346,17 @@ process(p, 'min-expires', Bin) ->
 process(f, 'min-expires', Length) when is_integer(Length) ->
     sip_binary:integer_to_binary(Length);
 
+%% 20.24 MIME-Version
+%% http://tools.ietf.org/html/rfc3261#section-20.24
+process(fn, 'mime-version', _Ignore) -> <<"MIME-Version">>;
+process(p, 'mime-version', Bin) ->
+    {Major, <<$., Minor/binary>>} = sip_binary:parse_until(Bin, $.),
+    {sip_binary:binary_to_integer(Major), sip_binary:binary_to_integer(Minor)};
+
+process(f, 'mime-version', {Major, Minor}) ->
+    MajorBin = sip_binary:integer_to_binary(Major),
+    MinorBin = sip_binary:integer_to_binary(Minor),
+    <<MajorBin/binary, $., MinorBin/binary>>;
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -848,7 +859,7 @@ parse_test_() ->
                      "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\nError-Info: <sip:not-in-service-recording@atlanta.com>\r\n",
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
                      "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
-                     "Min-Expires: 213\r\n",
+                     "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -866,7 +877,7 @@ parse_test_() ->
                                    {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
-                                   {'min-expires', <<"213">>},
+                                   {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1104,6 +1115,10 @@ parse_test_() ->
      % Min-Expires
      ?_assertEqual(213, parse('min-expires', <<"213">>)),
      ?_assertEqual(<<"213">>, format('min-expires', 213)),
+
+     % MIME-Version
+     ?_assertEqual({1, 0}, parse('mime-version', <<"1.0">>)),
+     ?_assertEqual(<<"1.0">>, format('mime-version', {1, 0})),
 
 
 
