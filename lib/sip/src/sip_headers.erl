@@ -364,6 +364,13 @@ process(fn, 'organization', _Ignore) -> <<"Organization">>;
 process(p, 'organization', Bin) ->
     sip_binary:trim(Bin);
 
+%% 20.26 Priority
+%% http://tools.ietf.org/html/rfc3261#section-20.26
+process(fn, 'priority', _Ignore) -> <<"Priority">>;
+process(p, 'priority', Bin) ->
+    {Priority, <<>>} = sip_binary:parse_token(Bin),
+    sip_binary:binary_to_existing_atom(Priority);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -866,7 +873,7 @@ parse_test_() ->
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
                      "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
-                     "Organization: Boxes by Bob\r\n",
+                     "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -885,7 +892,7 @@ parse_test_() ->
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
-                                   {'organization', <<"Boxes by Bob">>},
+                                   {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1131,6 +1138,10 @@ parse_test_() ->
      % Organization
      ?_assertEqual(<<"Boxes by Bob">>, parse('organization', <<"  Boxes by Bob  ">>)),
      ?_assertEqual(<<"Boxes by Bob">>, format('organization', <<"Boxes by Bob">>)),
+
+     % Priority
+     ?_assertEqual('non-urgent', parse('priority', <<"non-urgent">>)),
+     ?_assertEqual(<<"non-urgent">>, format('priority', 'non-urgent')),
 
 
 
