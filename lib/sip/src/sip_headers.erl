@@ -358,6 +358,12 @@ process(f, 'mime-version', {Major, Minor}) ->
     MinorBin = sip_binary:integer_to_binary(Minor),
     <<MajorBin/binary, $., MinorBin/binary>>;
 
+%% 20.25 Organization
+%% http://tools.ietf.org/html/rfc3261#section-20.25
+process(fn, 'organization', _Ignore) -> <<"Organization">>;
+process(p, 'organization', Bin) ->
+    sip_binary:trim(Bin);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -860,6 +866,7 @@ parse_test_() ->
                      "Expires: 213\r\nFrom: sip:alice@localhost\r\n",
                      "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
+                     "Organization: Boxes by Bob\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -878,6 +885,7 @@ parse_test_() ->
                                    {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
+                                   {'organization', <<"Boxes by Bob">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1119,6 +1127,10 @@ parse_test_() ->
      % MIME-Version
      ?_assertEqual({1, 0}, parse('mime-version', <<"1.0">>)),
      ?_assertEqual(<<"1.0">>, format('mime-version', {1, 0})),
+
+     % Organization
+     ?_assertEqual(<<"Boxes by Bob">>, parse('organization', <<"  Boxes by Bob  ">>)),
+     ?_assertEqual(<<"Boxes by Bob">>, format('organization', <<"Boxes by Bob">>)),
 
 
 
