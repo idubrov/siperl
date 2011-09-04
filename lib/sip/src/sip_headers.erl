@@ -419,6 +419,15 @@ process(p, 'record-route', Bin) ->
 process(f, 'record-route', RecordRoute) when is_record(RecordRoute, sip_hdr_address) ->
     format_address(RecordRoute);
 
+%% 20.31 Reply-To
+process(fn, 'reply-to', _Ignore) -> <<"Reply-To">>;
+process(p, 'reply-to', Bin) ->
+    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
+    Top;
+
+process(f, 'reply-to', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -926,6 +935,7 @@ parse_test_() ->
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
+                     "Reply-To: Bob <sip:bob@biloxi.com>\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -947,6 +957,7 @@ parse_test_() ->
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
+                                   {'reply-to', <<"Bob <sip:bob@biloxi.com>">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1260,6 +1271,12 @@ parse_test_() ->
                    parse('record-route', <<"<sip:p1.example.com;lr>">>)),
      ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
                    format('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
+
+     % Reply-To
+     ?_assertEqual(address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{param, <<"value">>}]),
+                   parse('reply-to', <<"Bob <sip:bob@biloxi.com>;param=value">>)),
+     ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;param=value">>,
+                   format('reply-to', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{param, <<"value">>}]))),
 
 
 
