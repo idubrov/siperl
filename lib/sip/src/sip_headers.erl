@@ -398,6 +398,16 @@ process(f, 'proxy-authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
     % same as Authorization header
     process(f, 'authorization', Auth);
 
+%% 20.29 Proxy-Require
+%% http://tools.ietf.org/html/rfc3261#section-20.29
+process(fn, 'proxy-require', _Ignore) -> <<"Proxy-Require">>;
+process(p, 'proxy-require', Bin) ->
+    {ReqBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ReqBin)),
+    parse_list('require', Ext, Rest);
+
+process(f, 'proxy-require', Bin) ->
+    sip_binary:any_to_binary(Bin);
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -466,16 +476,6 @@ process(p, 'require', Bin) ->
     parse_list('require', Ext, Rest);
 
 process(f, 'require', Ext) ->
-    sip_binary:any_to_binary(Ext);
-
-%% ...
-process(fn, 'proxy-require', _Ignore) -> <<"Proxy-Require">>;
-process(p, 'proxy-require', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
-    parse_list('proxy-require', Ext, Rest);
-
-process(f, 'proxy-require', Ext) ->
     sip_binary:any_to_binary(Ext);
 
 %% ...
@@ -924,6 +924,7 @@ parse_test_() ->
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
+                     "Proxy-Require: foo\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -944,6 +945,7 @@ parse_test_() ->
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
+                                   {'proxy-require', <<"foo">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1248,6 +1250,9 @@ parse_test_() ->
                                 {cnonce, <<"0a4f113b">>}, {opaque, <<"5ccc069c403ebaf9f0171e9517f40e41">>},
                                 {qop, auth}, {nc, 1}, {param, <<"value">>}, {param2, <<"va lue">>}]))),
 
+     % Proxy-Require
+     ?_assertEqual([foo, bar], parse('proxy-require', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('proxy-require', [foo, bar])),
 
 
 
@@ -1306,9 +1311,6 @@ parse_test_() ->
      % Require, Proxy-Require, Supported, Unsupported
      ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
-
-     ?_assertEqual([foo, bar], parse('proxy-require', <<"foo, bar">>)),
-     ?_assertEqual(<<"foo, bar">>, format('proxy-require', [foo, bar])),
 
      ?_assertEqual([foo, bar], parse('supported', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('supported', [foo, bar])),
