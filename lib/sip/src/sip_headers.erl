@@ -371,6 +371,22 @@ process(p, 'priority', Bin) ->
     {Priority, <<>>} = sip_binary:parse_token(Bin),
     sip_binary:binary_to_existing_atom(Priority);
 
+%% 20.27 Proxy-Authenticate
+%% http://tools.ietf.org/html/rfc3261#section-20.27
+process(fn, 'proxy-authenticate', _Ignore) -> <<"Proxy-Authenticate">>;
+process(p, 'proxy-authenticate', Bin) ->
+    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    % parse scheme, the rest is list of paris param=value
+    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
+    auth(Scheme, parse_auths(Bin2));
+
+process(f, 'proxy-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
+    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    [First | Rest] = Auth#sip_hdr_auth.params,
+    FirstBin = format_auth(First),
+    Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
+    lists:foldl(Fun, <<SchemeBin/binary, ?SP, FirstBin/binary>>, Rest);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -722,6 +738,7 @@ add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
 %%-----------------------------------------------------------------
 
 %% Parsing/formatting authentication/authorization parameters
+%% XXX: Probably, should be separated for Authentication-Info, Authorization, Proxy-Authenticate, etc.
 parse_auths(Bin) ->
     {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_binary:parse_token(Bin),
     Name = sip_binary:binary_to_existing_atom(NameBin),
@@ -729,14 +746,27 @@ parse_auths(Bin) ->
         case Name of
             _ when Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
                    Name =:= username; Name =:= realm; Name =:= uri;
-                   Name =:= opaque ->
+                   Name =:= opaque; Name =:= domain ->
                 sip_binary:parse_quoted_string(ValueBin);
+            _ when Name =:= qop, binary_part(ValueBin, {0, 1}) =:= <<?DQUOTE>> ->
+                % special case for Proxy-Authenticate, qop parameter is quoted string
+                % which can contain several qop-value's
+                {QOPsBin, R} = sip_binary:parse_quoted_string(ValueBin),
+                List = binary:split(QOPsBin, [<<?COMMA>>], [global]),
+                QOPs = [sip_binary:binary_to_existing_atom(sip_binary:trim(QOP)) || QOP <- List],
+                {QOPs, R};
             _ when Name =:= qop; Name =:= algorithm ->
                 {Val, R} = sip_binary:parse_token(ValueBin),
                 {sip_binary:binary_to_existing_atom(Val), R};
             _ when Name =:= rspauth; Name =:= response ->
                 {Digest, R} = sip_binary:parse_quoted_string(ValueBin),
                 {sip_binary:hexstr_to_binary(Digest), R};
+            _ when Name =:= stale ->
+                {Stale, R} = sip_binary:parse_token(ValueBin),
+                case sip_binary:to_lower(Stale) of
+                    <<"false">> -> {false, R};
+                    <<"true">> -> {true, R}
+                end;
             nc ->
                 {NC, R} = sip_binary:parse_while(ValueBin, fun sip_binary:is_alphanum_char/1),
                 {list_to_integer(binary_to_list(NC), 16), sip_binary:trim_leading(R)};
@@ -759,8 +789,13 @@ format_auth({Name, Value}) ->
 format_auth(Name, Value) when
   Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
   Name =:= username; Name =:= realm; Name =:= uri;
-  Name =:= opaque ->
+  Name =:= opaque; Name =:= domain ->
     sip_binary:quote_string(Value);
+format_auth(qop, [First|Rest]) ->
+    % special case for Proxy-Authenticate, qop is a list
+    Acc0 = <<(sip_binary:any_to_binary(First))/binary>>,
+    Bin = lists:foldl(fun(QOP, Acc) -> <<Acc/binary, ?COMMA, ?SP, (sip_binary:any_to_binary(QOP))/binary>> end, Acc0, Rest),
+    sip_binary:quote_string(Bin);
 format_auth(Name, Qop)
   when Name =:= qop; Name =:= algorithm ->
     sip_binary:any_to_binary(Qop);
@@ -770,6 +805,8 @@ format_auth(Name, Bin) when Name =:= rspauth; Name =:= response ->
 format_auth(nc, NonceCount) ->
     [NCBin] = io_lib:format("~8.16.0b", [NonceCount]),
     list_to_binary(NCBin);
+format_auth(stale, false) -> <<"false">>;
+format_auth(stale, true) -> <<"true">>;
 format_auth(_Name, Value) when is_binary(Value) ->
     % arbitrary auth-param
     case need_quoting(Value) of
@@ -874,6 +911,7 @@ parse_test_() ->
                      "In-Reply-To: 70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com\r\nMax-Forwards: 70\r\n",
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
+                     "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -893,6 +931,7 @@ parse_test_() ->
                                    {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
+                                   {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1143,7 +1182,27 @@ parse_test_() ->
      ?_assertEqual('non-urgent', parse('priority', <<"non-urgent">>)),
      ?_assertEqual(<<"non-urgent">>, format('priority', 'non-urgent')),
 
-
+     % Proxy-Authenticate
+     ?_assertEqual(auth('Digest',
+                        [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
+                         {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
+                         {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
+                         {param, <<"value">>}]),
+                   parse('proxy-authenticate',
+                         <<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
+                           "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
+                           "stale=FALSE, algorithm=MD5, qop=\"auth, auth-int\", ",
+                           "param=\"value\"">>)),
+     ?_assertEqual(<<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
+                     "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
+                     "stale=false, algorithm=MD5, qop=\"auth, auth-int\", ",
+                     "param=value">>,
+                   format('proxy-authenticate',
+                          auth('Digest',
+                               [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
+                                {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
+                                {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
+                                {param, <<"value">>}]))),
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
