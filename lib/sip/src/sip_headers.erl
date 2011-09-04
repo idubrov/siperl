@@ -420,6 +420,7 @@ process(f, 'record-route', RecordRoute) when is_record(RecordRoute, sip_hdr_addr
     format_address(RecordRoute);
 
 %% 20.31 Reply-To
+%% http://tools.ietf.org/html/rfc3261#section-20.31
 process(fn, 'reply-to', _Ignore) -> <<"Reply-To">>;
 process(p, 'reply-to', Bin) ->
     {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
@@ -427,6 +428,17 @@ process(p, 'reply-to', Bin) ->
 
 process(f, 'reply-to', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
+
+%% 20.32 Require
+%% http://tools.ietf.org/html/rfc3261#section-20.32
+process(fn, 'require', _Ignore) -> <<"Require">>;
+process(p, 'require', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('require', Ext, Rest);
+
+process(f, 'require', Ext) ->
+    sip_binary:any_to_binary(Ext);
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -478,15 +490,6 @@ process(p, 'route', Bin) ->
 process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
     format_address(Route);
 
-%% ...
-process(fn, 'require', _Ignore) -> <<"Require">>;
-process(p, 'require', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
-    parse_list('require', Ext, Rest);
-
-process(f, 'require', Ext) ->
-    sip_binary:any_to_binary(Ext);
 
 %% ...
 process(pn, <<"k">>, _Ignore) -> 'supported';
@@ -935,12 +938,12 @@ parse_test_() ->
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
-                     "Reply-To: Bob <sip:bob@biloxi.com>\r\n"
+                     "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
                      "x-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
-                     "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
+                     "Supported: 100rel\r\nUnsupported: bar, baz\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
@@ -957,7 +960,7 @@ parse_test_() ->
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
-                                   {'reply-to', <<"Bob <sip:bob@biloxi.com>">>},
+                                   {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -965,7 +968,6 @@ parse_test_() ->
                                    {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
-                                   {'require', <<"foo">>}, {'proxy-require', <<"some">>},
                                    {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
@@ -1277,6 +1279,12 @@ parse_test_() ->
                    parse('reply-to', <<"Bob <sip:bob@biloxi.com>;param=value">>)),
      ?_assertEqual(<<"\"Bob\" <sip:bob@biloxi.com>;param=value">>,
                    format('reply-to', address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{param, <<"value">>}]))),
+
+     % Require
+     ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
+
+
 
 
 
