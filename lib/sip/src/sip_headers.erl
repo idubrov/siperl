@@ -409,6 +409,16 @@ process(p, 'proxy-require', Bin) ->
 process(f, 'proxy-require', Bin) ->
     sip_binary:any_to_binary(Bin);
 
+%% 20.30 Record-Route
+%% http://tools.ietf.org/html/rfc3261#section-20.30
+process(fn, 'record-route', _Ignore) -> <<"Record-Route">>;
+process(p, 'record-route', Bin) ->
+    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
+    parse_list('record-route', Top, Rest);
+
+process(f, 'record-route', RecordRoute) when is_record(RecordRoute, sip_hdr_address) ->
+    format_address(RecordRoute);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -458,15 +468,6 @@ process(p, 'route', Bin) ->
 
 process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
     format_address(Route);
-
-%% ...
-process(fn, 'record-route', _Ignore) -> <<"Record-Route">>;
-process(p, 'record-route', Bin) ->
-    {Top, Rest} = parse_address(Bin, fun parse_generic_param/2),
-    parse_list('record-route', Top, Rest);
-
-process(f, 'record-route', RecordRoute) when is_record(RecordRoute, sip_hdr_address) ->
-    format_address(RecordRoute);
 
 %% ...
 process(fn, 'require', _Ignore) -> <<"Require">>;
@@ -924,7 +925,7 @@ parse_test_() ->
                      "Min-Expires: 213\r\nMIME-Version: 1.0\r\n",
                      "Organization: Boxes by Bob\r\nPriority: non-urgent\r\n",
                      "Proxy-Authenticate: Digest realm=\"atlanta.com\"\r\nProxy-Authorization: Digest username=\"Alice\"\r\n",
-                     "Proxy-Require: foo\r\n"
+                     "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -945,7 +946,7 @@ parse_test_() ->
                                    {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
                                    {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
                                    {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
-                                   {'proxy-require', <<"foo">>},
+                                   {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1253,6 +1254,12 @@ parse_test_() ->
      % Proxy-Require
      ?_assertEqual([foo, bar], parse('proxy-require', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('proxy-require', [foo, bar])),
+
+     % Record-Route
+     ?_assertEqual([address(<<>>, <<"sip:p1.example.com;lr">>, [])],
+                   parse('record-route', <<"<sip:p1.example.com;lr>">>)),
+     ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
+                   format('record-route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
 
 
