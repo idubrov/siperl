@@ -278,7 +278,15 @@ process(f, 'cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
     MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
     <<SequenceBin/binary, " ", MethodBin/binary>>;
 
+%% 20.17 Date
+%% http://tools.ietf.org/html/rfc3261#section-20.17
+process(fn, 'date', _Ignore) -> <<"Date">>;
+process(p, 'date', Bin) ->
+    httpd_util:convert_request_date(binary_to_list(Bin));
 
+process(f, 'date', Date) ->
+    Local = calendar:universal_time_to_local_time(Date),
+    list_to_binary(httpd_util:rfc1123_date(Local));
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -792,11 +800,12 @@ parse_test_() ->
                      "Call-Info: <http://www.example.com/alice/photo.jpg>\r\nContact: *\r\n",
                      "Content-Disposition: session\r\nContent-Encoding: gzip\r\n",
                      "Content-Language: en\r\nContent-Length: 5\r\n",
-                     "Content-Type: application/sdp\r\n",
+                     "Content-Type: application/sdp\r\nCSeq: 123 INVITE\r\n",
+                     "Date: Sat, 13 Nov 2010 23:29:00 GMT\r\n"
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\nFrom: sip:alice@localhost\r\n",
                      "To: sip:bob@localhost\r\n"
-                     "CSeq: 123 INVITE\r\nMax-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
+                     "Max-Forwards: 70\r\nx-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
                      "Supported: 100rel\r\nUnsupported: bar, baz\r\nRequire: foo\r\nProxy-Require: some\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
@@ -806,12 +815,13 @@ parse_test_() ->
                                    {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
                                    {'content-disposition', <<"session">>}, {'content-encoding', gzip},
                                    {'content-language', <<"en">>}, {'content-length', <<"5">>},
-                                   {'content-type', <<"application/sdp">>},
+                                   {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
+                                   {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                                   {'cseq', <<"123 INVITE">>}, {'max-forwards', 70}, {'x-custom-atom', 25},
+                                   {'max-forwards', 70}, {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
                                    {'require', <<"foo">>}, {'proxy-require', <<"some">>},
@@ -996,8 +1006,11 @@ parse_test_() ->
      ?_assertEqual(cseq(1231, 'ACK'), parse('cseq', <<"1231 ACK">>)),
      ?_assertEqual(<<"123453 INVITE">>, format('cseq', cseq(123453, 'INVITE'))),
 
-
-
+     % Date
+     ?_assertEqual({{2010, 11, 13}, {23, 29, 00}},
+                    parse('date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>)),
+     ?_assertEqual(<<"Sat, 13 Nov 2010 23:29:00 GMT">>,
+                    format('date', {{2010, 11, 13}, {23, 29, 00}})),
 
      % Max-Forwards
      ?_assertEqual(70, parse('max-forwards', <<"70">>)),
