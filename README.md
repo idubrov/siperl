@@ -11,9 +11,8 @@ Currently, a lot of the pieces are missing, some implemented only partially.
 
 Here is a checklist of most important areas:
 
-* Syntax and enconding layer is mostly implemented, however a lot of headers
-  are not supported yet. They are not parsed (they are retained in binary form)
-  and are not formatted when generating outgoing messages.
+* Syntax and enconding layer is mostly implemented. All RFC 3261 headers
+  support is implemented.
 * Message parsing/generation API is somewhat clumsy.
 * Error handling at syntax and encoding layer is not done. i.e., the code can
   crash on invalid messages, headers, etc, even if such errors are to be
