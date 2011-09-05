@@ -1003,28 +1003,20 @@ parse_generic_param(_Name, Value) -> Value.
 %%-----------------------------------------------------------------
 -ifndef(NO_TEST).
 
--spec parse_test_() -> list().
-parse_test_() ->
-    [
-     % parsing
-     ?_assertEqual([], parse_headers(<<>>)),
-
-     % short names support
-     ?_assertEqual([{'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-                    {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
-                    {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
-                    {'supported', <<"100rel">>}, {'content-encoding', <<"gzip">>},
-                    {'content-type', <<"application/sdp">>}, {'subject', <<"Need more boxes">>}],
-                   parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\n",
-                                   "f: sip:alice@localhost\r\nt: sip:bob@localhost\r\n",
-                                   "i: callid\r\nm: Alice <sip:example.com>\r\n",
-                                   "k: 100rel\r\ne: gzip\r\n",
-                                   "c: application/sdp\r\ns: Need more boxes\r\n">>)),
-     % multi-line headers
-     ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
-                   parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
-     ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
-                   parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
+-spec header_names_test_() -> list().
+header_names_test_() ->
+    [% compact names support
+     ?_assertEqual([{'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>}, 
+                    {'content-encoding', <<"gzip">>}, {'content-length', <<"5">>},
+                    {'content-type', <<"application/sdp">>}, {'from', <<"sip:alice@localhost">>},
+                    {'subject', <<"Need more boxes">>}, {'supported', <<"100rel">>},
+                    {'to', <<"sip:bob@localhost">>}, {'via', <<"SIP/2.0/UDP localhost">>}],
+                   parse_headers(
+                     <<"i: callid\r\nm: Alice <sip:example.com>\r\n",
+                       "e: gzip\r\nl: 5\r\n",
+                       "c: application/sdp\r\nf: sip:alice@localhost\r\n",
+                       "s: Need more boxes\r\nk: 100rel\r\n",
+                       "t: sip:bob@localhost\r\nv: SIP/2.0/UDP localhost\r\n">>)),
 
      % formatting, check that header names have proper case
      ?_assertEqual(<<"Accept: */*\r\nAccept-Encoding: identity\r\n",
@@ -1051,30 +1043,45 @@ parse_test_() ->
                      "Warning: 307 isi.edu \"Session parameter 'foo' not understood\"\r\n",
                      "WWW-Authenticate: Digest realm=\"atlanta.com\"\r\n",
                      "x-custom-atom: 25\r\nX-Custom: value\r\n">>,
-                   format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
-                                   {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
-                                   {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
-                                   {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
-                                   {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
-                                   {'content-disposition', <<"session">>}, {'content-encoding', gzip},
-                                   {'content-language', <<"en">>}, {'content-length', <<"5">>},
-                                   {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
-                                   {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
-                                   {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
-                                   {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
-                                   {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
-                                   {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
-                                   {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
-                                   {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
-                                   {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
-                                   {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
-                                   {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
-                                   {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
-                                   {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
-                                   {'user-agent', <<"Softphone Beta1.5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-                                   {'warning', <<"307 isi.edu \"Session parameter 'foo' not understood\"">>},
-                                   {'www-authenticate', <<"Digest realm=\"atlanta.com\"">>},
-                                   {'x-custom-atom', 25}, {<<"X-Custom">>, <<"value">>}])),
+                   format_headers(
+                     [{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
+                      {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
+                      {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
+                      {'authorization', <<"Digest username=\"Alice\"">>}, {'call-id', <<"callid">>},
+                      {'call-info', <<"<http://www.example.com/alice/photo.jpg>">>}, {'contact', <<"*">>},
+                      {'content-disposition', <<"session">>}, {'content-encoding', gzip},
+                      {'content-language', <<"en">>}, {'content-length', <<"5">>},
+                      {'content-type', <<"application/sdp">>}, {'cseq', <<"123 INVITE">>},
+                      {'date', <<"Sat, 13 Nov 2010 23:29:00 GMT">>}, {'error-info', <<"<sip:not-in-service-recording@atlanta.com>">>},
+                      {'expires', <<"213">>}, {'from', <<"sip:alice@localhost">>},
+                      {'in-reply-to', <<"70710@saturn.bell-tel.com, 17320@saturn.bell-tel.com">>}, {'max-forwards', 70},
+                      {'min-expires', <<"213">>}, {'mime-version', <<"1.0">>},
+                      {'organization', <<"Boxes by Bob">>}, {'priority', <<"non-urgent">>},
+                      {'proxy-authenticate', <<"Digest realm=\"atlanta.com\"">>}, {'proxy-authorization', <<"Digest username=\"Alice\"">>},
+                      {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
+                      {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
+                      {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
+                      {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
+                      {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
+                      {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
+                      {'user-agent', <<"Softphone Beta1.5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
+                      {'warning', <<"307 isi.edu \"Session parameter 'foo' not understood\"">>},
+                      {'www-authenticate', <<"Digest realm=\"atlanta.com\"">>},
+                      {'x-custom-atom', 25}, {<<"X-Custom">>, <<"value">>}]))
+     ].
+
+-spec parse_headers_test_() -> list().
+parse_headers_test_() ->
+    [% verify parsing/formatting of all supported headers
+     
+     % parsing
+     ?_assertEqual([], parse_headers(<<>>)),
+
+     % multi-line headers
+     ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
+                   parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
+     ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
+                   parse_headers(<<"Subject: I know you're there,\r\n\tpick up the phone    \r\n               and talk to me!\r\n">>)),
 
      % Already parsed
      ?_assertEqual({parsed, value}, parse('x-custom2', {parsed, value})),

@@ -126,7 +126,7 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
                  QValue =
                      case lists:keyfind(q, 1, Contact#sip_hdr_address.params) of
                          false -> 1.0;
-                         Value when is_float(Value) -> Value
+                         {_Key, Value} when is_float(Value) -> Value
                      end,
                  sip_priority_set:put(Contact#sip_hdr_address.uri, QValue, TargetSet)
         end,
