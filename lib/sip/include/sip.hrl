@@ -28,7 +28,7 @@
 %% SIP message types.
 %% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
 -record(sip_request, {method :: binary() | atom(), uri :: #sip_uri{} | #tel_uri{} | term()}).
--record(sip_response, {status :: integer() | atom(), reason :: binary()}).
+-record(sip_response, {status :: integer(), reason :: binary()}).
 -record(sip_message, {kind :: #sip_request{} | #sip_response{},
                       headers = [] :: [{Name :: atom() | binary(), Value :: binary() | term()}],
                       body = <<"">> :: binary()}).
@@ -37,18 +37,18 @@
 
 %% Value for headers `Accept:', ...
 -record(sip_hdr_mediatype,
-        {type :: atom() | binary(),
-         subtype :: atom() | binary(),
+        {type :: sip_syntax:name(),
+         subtype :: sip_syntax:name(),
          params = []}).
 
 %% Value for headers `Accept-Encoding:', ...
 -record(sip_hdr_encoding,
-        {encoding :: atom() | binary(),
+        {encoding :: sip_syntax:name(),
          params = []}).
 
 %% Value for headers `Accept-Language:', ...
 -record(sip_hdr_language,
-        {language :: atom() | binary(),
+        {language :: sip_syntax:name(),
          params = []}).
 
 %% Value for headers `Alert-Info:', `Call-Info', `Error-Info', ...
@@ -58,12 +58,12 @@
 
 %% Value for header `Authorization:'
 -record(sip_hdr_auth,
-        {scheme :: binary() | atom(),
+        {scheme :: sip_syntax:name(),
          params = []}).
 
 %% Value for header `Content-Disposition:'
 -record(sip_hdr_disposition,
-        {type :: binary() | atom(),
+        {type :: sip_syntax:name(),
          params = []}).
 
 %% Value for header `Retry-After:'
@@ -92,8 +92,7 @@
                                       {'maddr', string() | inet:ip_address()} |
                                       {'received', inet:ip_address()} |
                                       {'branch', binary()} |
-                                      {binary() | atom(), term()} |
-                                      binary() | atom()]}).
+                                      {sip_syntax:name(), term()} | sip_syntax:name()]}).
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 
@@ -101,7 +100,7 @@
 -record(sip_hdr_address,
         {display_name = <<>> :: binary(), % display name is unquoted (all escapes are unescaped)
          uri = <<>>          :: binary() | #sip_uri{},
-         params = []         :: [{binary() | atom(), term()} | binary() | atom()]}).
+         params = []         :: [{sip_syntax:name(), term()} | sip_syntax:name()]}).
 
 %%-----------------------------------------------------------------
 %% SIP transport layer types
@@ -125,13 +124,13 @@
 -define(MAGIC_COOKIE, "z9hG4bK").
 
 %% Client transaction unique key
--record(sip_tx_client, {branch :: binary(), method :: atom() | binary()}).
+-record(sip_tx_client, {branch :: binary(), method :: sip_syntax:name()}).
 
 %% Server transaction unique key
 -record(sip_tx_server, {host :: binary(), % via sent-by host
                         port :: integer() | 'undefined', % via sent-by port,
                         branch :: binary(),
-                        method :: atom() | binary()}).
+                        method :: sip_syntax:name()}).
 
 %%-----------------------------------------------------------------
 %% SIP dialogs

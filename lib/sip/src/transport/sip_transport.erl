@@ -196,7 +196,8 @@ dispatch(From, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
                                  {reason, Reason},
                                  {from, From},
                                  {msg, Msg}]),
-    Response = sip_message:create_response(Msg, 400, sip_binary:any_to_binary(Reason)),
+    % TODO: Put reason in the response
+    Response = sip_message:create_response(Msg, 400),
 
     % we are not going to go through whole procedures for sending response, just try to send
     % via the same transport
@@ -220,7 +221,7 @@ add_via_sentby(Message, #sip_destination{address = To, transport = Transport}, T
                    NewParams = case To of
                                    % multicast
                                    {A, _B, _C, _D} when A >= 224, A =< 239 -> % FIXME: utility...
-                                       AddrBin = sip_binary:addr_to_binary(To),
+                                       AddrBin = sip_syntax:format_addr(To),
                                        Params2 = lists:keystore('maddr', 1, Params,  {'maddr', AddrBin}),
                                        Params3 = lists:keystore('ttl', 1, Params2,  {'ttl', TTL}),
                                        Params3;
@@ -323,7 +324,7 @@ init({}) ->
 -spec handle_call(_, _, #state{}) -> {reply, {term(), integer()}, #state{}} | {stop, _, #state{}}.
 handle_call({get_sentby, Transport}, _From, State) ->
     Self = sip_config:self(),
-    {Host, undefined, <<>>} = sip_binary:parse_host_port(Self),
+    {Host, undefined, <<>>} = sip_syntax:parse_host_port(Self),
     [Port | _] = sip_config:ports(Transport),
     {reply, {Host, Port}, State};
 handle_call(Req, _From, State) ->

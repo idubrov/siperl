@@ -30,7 +30,7 @@
 -spec client_resolve(term()) -> [#sip_destination{}].
 client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI, sip_uri) ->
     case lists:keyfind('maddr', 1, URI#sip_uri.params) of
-        {_, MAddr} -> Target = sip_binary:parse_ip_address(MAddr);
+        {_, MAddr} -> Target = sip_syntax:parse_ip_address(MAddr);
         false -> Target = URI#sip_uri.host
     end,
 

@@ -62,7 +62,7 @@ parse_sip(Scheme, Bin) ->
             User = <<>>,
             Password = <<>>
     end,
-    {Host, Port, ParamsBin} = sip_binary:parse_host_port(Rest),
+    {Host, Port, ParamsBin} = sip_syntax:parse_host_port(Rest),
     {Params, HeadersBin} = parse_params(ParamsBin, []),
     Headers = parse_headers(HeadersBin),
     #sip_uri{scheme = Scheme,
@@ -108,10 +108,10 @@ parse_params(<<$;, Bin/binary>>, List) ->
             {Name, <<$=, Bin2/binary>>} ->
                 % parse value
                 {Value, R} = sip_binary:parse_until(Bin2, Pred),
-                {{sip_binary:binary_to_existing_atom(Name), Value}, R};
+                {{sip_syntax:parse_name(Name), Value}, R};
             {Name, Bin2} ->
                 % no value
-                {sip_binary:binary_to_existing_atom(Name), Bin2}
+                {sip_syntax:parse_name(Name), Bin2}
         end,
     parse_params(Rest, [Param|List]);
 parse_params(Bin, List) ->
@@ -134,7 +134,7 @@ parse_params(Bin, List) ->
 parse_headers(<<>>) -> [];
 parse_headers(<<$?, Bin/binary>>) ->
     Headers = [binary:split(Header, <<$=>>) || Header <- binary:split(Bin, <<$&>>)],
-    [{sip_binary:binary_to_existing_atom(Name), Value} ||
+    [{sip_syntax:parse_name(Name), Value} ||
      [Name, Value] <- Headers].
 
 %% @doc Format URI to binary string
@@ -152,25 +152,25 @@ append_password(#sip_uri{password = <<>>} = URI, Bin) ->     append_hostport(URI
 append_password(#sip_uri{password = Password} = URI, Bin) -> append_hostport(URI, <<Bin/binary, $:, Password/binary, $@>>).
 
 append_hostport(URI, Bin) ->
-    Host = sip_binary:addr_to_binary(URI#sip_uri.host),
+    Host = sip_syntax:format_addr(URI#sip_uri.host),
     append_port(URI, <<Bin/binary, Host/binary>>).
 
 append_port(#sip_uri{port = undefined} = URI, Bin) -> append_params(URI, URI#sip_uri.params, Bin);
 append_port(#sip_uri{port = Port} = URI, Bin) ->      append_params(URI, URI#sip_uri.params, <<Bin/binary, $:, (sip_binary:integer_to_binary(Port))/binary>>).
 
 append_params(URI, [{Name, Value} | Tail], Bin) ->
-    NameBin = sip_binary:any_to_binary(Name),
+    NameBin = sip_syntax:format_name(Name),
     Bin2 = <<Bin/binary, $;, NameBin/binary, $=, Value/binary>>,
     append_params(URI, Tail, Bin2);
 append_params(URI, [Name | Tail], Bin) ->
-    NameBin = sip_binary:any_to_binary(Name),
+    NameBin = sip_syntax:format_name(Name),
     Bin2 = <<Bin/binary, $;, NameBin/binary>>,
     append_params(URI, Tail, Bin2);
 append_params(URI, [], Bin) -> append_headers(URI#sip_uri.headers, $?, Bin).
 
 append_headers([], _Sep, Bin) -> Bin;
 append_headers([{Name, Value} | Tail], Sep, Bin) ->
-    NameBin = sip_binary:any_to_binary(Name),
+    NameBin = sip_syntax:format_name(Name),
     Bin2 = <<Bin/binary, Sep, NameBin/binary, $=, Value/binary>>,
     append_headers(Tail, $&, Bin2).
 

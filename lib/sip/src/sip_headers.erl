@@ -13,21 +13,6 @@
 -export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3, retry/3]).
 -export([add_tag/3]).
 
--type name() :: atom() | binary().
-%% Optimized representation of entity name. When name is constructed
-%% from the binary, a check is made if atom with this value exists.
-%% If atom exists, it is used to represent the name of the entitiy.
-%% Otherwise, binary is used.
-%%
-%% This ensures both optimal representation of name at runtime without
-%% the danger of overloading atom table by malicious requests.
-%%
-%% Note that client code can always safely match against atom, since
-%% matching against atom ensures atom is loaded (and therefore, atom
-%% representation will be chosen by SIP libary).
--export_type([name/0]).
-
-
 %% Includes
 -include("sip_common.hrl").
 -include("sip_parse.hrl").
@@ -52,7 +37,7 @@ parse_headers(Headers) when is_binary(Headers) ->
 
 %% @doc Formats headers into the binary
 %%
-%% For supported header representations, see {@link parse/2}/{@link format/2} functions. 
+%% For supported header representations, see {@link parse/2}/{@link format/2} functions.
 %% @end
 -spec format_headers([{atom() | binary(), binary() | term()}]) -> binary().
 format_headers(Headers) ->
@@ -68,15 +53,15 @@ format_headers(Headers) ->
            ('accept-encoding', binary()) -> [#sip_hdr_encoding{}];
            ('accept-language', binary()) -> [#sip_hdr_language{}];
            ('alert-info', binary()) -> [#sip_hdr_info{}];
-           ('allow', binary()) -> [Method :: name()];
+           ('allow', binary()) -> [Method :: sip_syntax:name()];
            ('authentication-info', binary()) -> #sip_hdr_auth{};
            ('authorization', binary()) -> #sip_hdr_auth{};
            ('call-id', binary()) -> binary();
            ('call-info', binary()) -> [#sip_hdr_info{}];
            ('contact', binary()) -> [#sip_hdr_address{}]; % FIXME '*'
            ('content-disposition', binary()) -> #sip_hdr_disposition{};
-           ('content-encoding', binary()) -> [ContentCoding :: name()];
-           ('content-language', binary()) -> [LanguageTag :: name()];
+           ('content-encoding', binary()) -> [ContentCoding :: sip_syntax:name()];
+           ('content-language', binary()) -> [LanguageTag :: sip_syntax:name()];
            ('content-length', binary()) -> integer();
            ('content-type', binary()) -> #sip_hdr_mediatype{};
            ('cseq', binary()) -> #sip_hdr_cseq{};
@@ -89,27 +74,27 @@ format_headers(Headers) ->
            ('min-expires', binary()) -> integer();
            ('mime-version', binary()) -> {Major :: integer(), Minor :: integer()};
            ('organization', binary()) -> Organization :: binary();
-           ('priority', binary()) -> Priority :: name();
+           ('priority', binary()) -> Priority :: sip_syntax:name();
            ('proxy-authenticate', binary()) -> #sip_hdr_auth{};
            ('proxy-authorization', binary()) -> #sip_hdr_auth{};
-           ('proxy-require', binary()) -> [OptionTag :: name()];
+           ('proxy-require', binary()) -> [OptionTag :: sip_syntax:name()];
            ('record-route', binary()) -> [#sip_hdr_address{}];
            ('reply-to', binary()) -> #sip_hdr_address{};
-           ('require', binary()) -> [OptionTag :: name()];
+           ('require', binary()) -> [OptionTag :: sip_syntax:name()];
            ('retry-after', binary()) -> #sip_hdr_retry{};
            ('route', binary()) -> [#sip_hdr_address{}];
            ('server', binary()) -> Server :: binary();
            ('subject', binary()) -> Subject :: binary();
-           ('supported', binary()) -> [OptionTag :: name()];
+           ('supported', binary()) -> [OptionTag :: sip_syntax:name()];
            ('timestamp', binary()) -> #sip_hdr_timestamp{};
            ('to', binary()) -> #sip_hdr_address{};
-           ('unsupported', binary()) -> [OptionTag :: name()];
+           ('unsupported', binary()) -> [OptionTag :: sip_syntax:name()];
            ('user-agent', binary()) -> UserAgent :: binary();
            ('via', binary()) -> [#sip_hdr_via{}];
            ('warning', binary()) -> [#sip_hdr_warning{}];
            ('www-authenticate', binary()) -> #sip_hdr_auth{};
-           (Other :: name(), binary()) -> binary();
-           (Name :: name(), Parsed :: any()) -> Parsed :: any().
+           (Other :: sip_syntax:name(), binary()) -> binary();
+           (Name :: sip_syntax:name(), Parsed :: any()) -> Parsed :: any().
 %% @doc Parse binary header value into the Erlang term representation
 %%
 %% See type specification for information about which term is used to represent
@@ -121,15 +106,15 @@ parse(Name, Bin) -> process(p, Name, Bin).
            ('accept-encoding', [#sip_hdr_encoding{}]) -> binary();
            ('accept-language', [#sip_hdr_language{}]) -> binary();
            ('alert-info', [#sip_hdr_info{}]) -> binary();
-           ('allow', [Method :: name()]) -> binary();
+           ('allow', [Method :: sip_syntax:name()]) -> binary();
            ('authentication-info', #sip_hdr_auth{}) -> binary();
            ('authorization', #sip_hdr_auth{}) -> binary();
            ('call-id', binary()) -> binary();
            ('call-info', [#sip_hdr_info{}]) -> binary();
            ('contact', [#sip_hdr_address{}]) -> binary(); % FIXME '*'
            ('content-disposition', #sip_hdr_disposition{}) -> binary();
-           ('content-encoding', [ContentCoding :: name()]) -> binary();
-           ('content-language', [LanguageTag :: name()]) -> binary();
+           ('content-encoding', [ContentCoding :: sip_syntax:name()]) -> binary();
+           ('content-language', [LanguageTag :: sip_syntax:name()]) -> binary();
            ('content-length', integer()) -> binary();
            ('content-type', #sip_hdr_mediatype{}) -> binary();
            ('cseq', #sip_hdr_cseq{}) -> binary();
@@ -142,27 +127,27 @@ parse(Name, Bin) -> process(p, Name, Bin).
            ('min-expires', integer()) -> binary();
            ('mime-version', {Major :: integer(), Minor :: integer()}) -> binary();
            ('organization', Organization :: binary()) -> binary();
-           ('priority', Priority :: name()) -> binary();
+           ('priority', Priority :: sip_syntax:name()) -> binary();
            ('proxy-authenticate', #sip_hdr_auth{}) -> binary();
            ('proxy-authorization', #sip_hdr_auth{}) -> binary();
-           ('proxy-require', [OptionTag :: name()]) -> binary();
+           ('proxy-require', [OptionTag :: sip_syntax:name()]) -> binary();
            ('record-route', [#sip_hdr_address{}]) -> binary();
            ('reply-to', #sip_hdr_address{}) -> binary();
-           ('require', [OptionTag :: name()]) -> binary();
+           ('require', [OptionTag :: sip_syntax:name()]) -> binary();
            ('retry-after', #sip_hdr_retry{}) -> binary();
            ('route', [#sip_hdr_address{}]) -> binary();
            ('server', Server :: binary()) -> binary();
            ('subject', Subject :: binary()) -> binary();
-           ('supported', [OptionTag :: name()]) -> binary();
+           ('supported', [OptionTag :: sip_syntax:name()]) -> binary();
            ('timestamp', #sip_hdr_timestamp{}) -> binary();
            ('to', #sip_hdr_address{}) -> binary();
-           ('unsupported', [OptionTag :: name()]) -> binary();
+           ('unsupported', [OptionTag :: sip_syntax:name()]) -> binary();
            ('user-agent', UserAgent :: binary()) -> binary();
            ('via', [#sip_hdr_via{}]) -> binary();
            ('warning', [#sip_hdr_warning{}]) -> binary();
            ('www-authenticate', #sip_hdr_auth{}) -> binary();
-           (Other :: name(), binary()) -> binary();
-           (Name :: name(), Parsed :: any()) -> binary().
+           (Other :: sip_syntax:name(), binary()) -> binary();
+           (Name :: sip_syntax:name(), Parsed :: any()) -> binary().
 %% @doc Format header value into the binary.
 %% @end
 format(Name, [Value]) -> process(f, Name, Value);
@@ -194,8 +179,8 @@ process(p, 'accept', Bin) ->
     parse_list('accept', Media, Rest);
 
 process(f, 'accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
-    Type = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.type),
-    SubType = sip_binary:any_to_binary(Accept#sip_hdr_mediatype.subtype),
+    Type = sip_syntax:format_name(Accept#sip_hdr_mediatype.type),
+    SubType = sip_syntax:format_name(Accept#sip_hdr_mediatype.subtype),
     append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
 
 %% 20.2 Accept-Encoding
@@ -203,11 +188,11 @@ process(f, 'accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
 process(fn, 'accept-encoding', _Ignore) -> <<"Accept-Encoding">>;
 process(p, 'accept-encoding', Bin) ->
     {EncodingBin, Params, Rest} = parse_accept(Bin),
-    Encoding = encoding(sip_binary:binary_to_existing_atom(EncodingBin), Params),
+    Encoding = encoding(sip_syntax:parse_name(EncodingBin), Params),
     parse_list('accept-encoding', Encoding, Rest);
 
 process(f, 'accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
-    Encoding = sip_binary:any_to_binary(Accept#sip_hdr_encoding.encoding),
+    Encoding = sip_syntax:format_name(Accept#sip_hdr_encoding.encoding),
     append_params(Encoding, Accept#sip_hdr_encoding.params);
 
 %% 20.3 Accept-Language
@@ -219,7 +204,7 @@ process(p, 'accept-language', Bin) ->
     parse_list('accept-language', language(Language, Params), Rest2);
 
 process(f, 'accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
-    LangBin = sip_binary:any_to_binary(Accept#sip_hdr_language.language),
+    LangBin = sip_syntax:format_name(Accept#sip_hdr_language.language),
     append_params(LangBin, Accept#sip_hdr_language.params);
 
 %% 20.4 Alert-Info
@@ -237,12 +222,12 @@ process(f, 'alert-info', Info) when is_record(Info, sip_hdr_info) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.5
 process(fn, 'allow', _Ignore) -> <<"Allow">>;
 process(p, 'allow', Bin) ->
-    {MethodBin, Rest} = sip_binary:parse_token(Bin),
-    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    {MethodBin, Rest} = sip_syntax:parse_token(Bin),
+    Method = sip_syntax:parse_name(sip_binary:to_upper(MethodBin)),
     parse_list('allow', Method, Rest);
 
 process(f, 'allow', Allow) ->
-    sip_binary:any_to_binary(Allow);
+    sip_syntax:format_name(Allow);
 
 %% 20.6 Authentication-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.6
@@ -257,13 +242,13 @@ process(f, 'authentication-info', {_Key, _Value} = Pair) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.7
 process(fn, 'authorization', _Ignore) -> <<"Authorization">>;
 process(p, 'authorization', Bin) ->
-    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    {SchemeBin, Bin2} = sip_syntax:parse_token(Bin),
     % parse scheme, the rest is list of paris param=value
-    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
+    Scheme = sip_syntax:parse_name(SchemeBin),
     auth(Scheme, parse_auths(Bin2));
 
 process(f, 'authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
-    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    SchemeBin = sip_syntax:format_name(Auth#sip_hdr_auth.scheme),
     [First | Rest] = Auth#sip_hdr_auth.params,
     FirstBin = format_auth(First),
     Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
@@ -280,7 +265,7 @@ process(p, 'call-id', Bin) -> Bin;
 process(fn, 'call-info', _Ignore) -> <<"Call-Info">>;
 process(p, 'call-info', Bin) ->
     ParamFun =
-        fun(purpose, Value) -> sip_binary:binary_to_existing_atom(Value);
+        fun(purpose, Value) -> sip_syntax:parse_name(Value);
            (_Name, Value) -> Value
         end,
     parse_info('call-info', Bin, ParamFun);
@@ -307,16 +292,16 @@ process(f, 'contact', Addr) when is_record(Addr, sip_hdr_address) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.11
 process(fn, 'content-disposition', _Ignore) -> <<"Content-Disposition">>;
 process(p, 'content-disposition', Bin) ->
-    {TypeBin, Rest} = sip_binary:parse_token(Bin),
-    ParamFun = fun(handling, Value) -> sip_binary:binary_to_existing_atom(Value);
+    {TypeBin, Rest} = sip_syntax:parse_token(Bin),
+    ParamFun = fun(handling, Value) -> sip_syntax:parse_name(Value);
                   (_Name, Value) -> Value
                end,
     {Params, <<>>} = parse_params(Rest, ParamFun),
-    Type = sip_binary:binary_to_existing_atom(TypeBin),
+    Type = sip_syntax:parse_name(TypeBin),
     #sip_hdr_disposition{type = Type, params = Params};
 
 process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition) ->
-    TypeBin = sip_binary:any_to_binary(Disp#sip_hdr_disposition.type),
+    TypeBin = sip_syntax:format_name(Disp#sip_hdr_disposition.type),
     append_params(TypeBin, Disp#sip_hdr_disposition.params);
 
 %% 20.12 Content-Encoding
@@ -324,23 +309,23 @@ process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition
 process(pn, <<"e">>, _Ignore) -> 'content-encoding';
 process(fn, 'content-encoding', _Ignore) -> <<"Content-Encoding">>;
 process(p, 'content-encoding', Bin) ->
-    {EncodingBin, Rest} = sip_binary:parse_token(Bin),
-    Encoding = sip_binary:binary_to_existing_atom(sip_binary:to_lower(EncodingBin)),
+    {EncodingBin, Rest} = sip_syntax:parse_token(Bin),
+    Encoding = sip_syntax:parse_name(sip_binary:to_lower(EncodingBin)),
     parse_list('content-encoding', Encoding, Rest);
 
 process(f, 'content-encoding', Encoding) ->
-    sip_binary:any_to_binary(Encoding);
+    sip_syntax:format_name(Encoding);
 
 %% 20.13 Content-Language
 %% http://tools.ietf.org/html/rfc3261#section-20.13
 process(fn, 'content-language', _Ignore) -> <<"Content-Language">>;
 process(p, 'content-language', Bin) ->
-    {LangBin, Rest} = sip_binary:parse_token(Bin),
+    {LangBin, Rest} = sip_syntax:parse_token(Bin),
     {Language, <<>>} = parse_language(LangBin),
     parse_list('content-language', Language, Rest);
 
 process(f, 'content-language', Lang) ->
-    sip_binary:any_to_binary(Lang);
+    sip_syntax:format_name(Lang);
 
 %% 20.14 Content-Length
 %% http://tools.ietf.org/html/rfc3261#section-20.14
@@ -361,23 +346,23 @@ process(p, 'content-type', Bin) ->
     Media;
 
 process(f, 'content-type', CType) when is_record(CType, sip_hdr_mediatype) ->
-    Type = sip_binary:any_to_binary(CType#sip_hdr_mediatype.type),
-    SubType = sip_binary:any_to_binary(CType#sip_hdr_mediatype.subtype),
+    Type = sip_syntax:format_name(CType#sip_hdr_mediatype.type),
+    SubType = sip_syntax:format_name(CType#sip_hdr_mediatype.subtype),
     append_params(<<Type/binary, ?SLASH, SubType/binary>>, CType#sip_hdr_mediatype.params);
 
 %% 20.16 CSeq
 %% http://tools.ietf.org/html/rfc3261#section-20.16
 process(fn, 'cseq', _Ignore) -> <<"CSeq">>;
 process(p, 'cseq', Bin) ->
-    {SeqBin, Bin2} = sip_binary:parse_token(Bin),
-    {MethodBin, <<>>} = sip_binary:parse_token(Bin2),
+    {SeqBin, Bin2} = sip_syntax:parse_token(Bin),
+    {MethodBin, <<>>} = sip_syntax:parse_token(Bin2),
     Sequence = sip_binary:binary_to_integer(SeqBin),
-    Method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(MethodBin)),
+    Method = sip_syntax:parse_name(sip_binary:to_upper(MethodBin)),
     cseq(Sequence, Method);
 
 process(f, 'cseq', CSeq) when is_record(CSeq, sip_hdr_cseq) ->
     SequenceBin = sip_binary:integer_to_binary(CSeq#sip_hdr_cseq.sequence),
-    MethodBin = sip_binary:any_to_binary(CSeq#sip_hdr_cseq.method),
+    MethodBin = sip_syntax:format_name(CSeq#sip_hdr_cseq.method),
     <<SequenceBin/binary, " ", MethodBin/binary>>;
 
 %% 20.17 Date
@@ -426,7 +411,7 @@ process(f, 'from', Addr) when is_record(Addr, sip_hdr_address) ->
 process(fn, 'in-reply-to', _Ignore) -> <<"In-Reply-To">>;
 process(p, 'in-reply-to', Bin) ->
     Bin2 = sip_binary:trim_leading(Bin),
-    Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?COMMA end,
+    Fun = fun (C) -> sip_syntax:is_space_char(C) orelse C =:= ?COMMA end,
     {InReplyTo, Rest} = sip_binary:parse_until(Bin2, Fun),
     parse_list('in-reply-to', InReplyTo, Rest);
 
@@ -470,20 +455,20 @@ process(p, 'organization', Bin) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.26
 process(fn, 'priority', _Ignore) -> <<"Priority">>;
 process(p, 'priority', Bin) ->
-    {Priority, <<>>} = sip_binary:parse_token(Bin),
-    sip_binary:binary_to_existing_atom(Priority);
+    {Priority, <<>>} = sip_syntax:parse_token(Bin),
+    sip_syntax:parse_name(Priority);
 
 %% 20.27 Proxy-Authenticate
 %% http://tools.ietf.org/html/rfc3261#section-20.27
 process(fn, 'proxy-authenticate', _Ignore) -> <<"Proxy-Authenticate">>;
 process(p, 'proxy-authenticate', Bin) ->
-    {SchemeBin, Bin2} = sip_binary:parse_token(Bin),
+    {SchemeBin, Bin2} = sip_syntax:parse_token(Bin),
     % parse scheme, the rest is list of paris param=value
-    Scheme = sip_binary:binary_to_existing_atom(SchemeBin),
+    Scheme = sip_syntax:parse_name(SchemeBin),
     auth(Scheme, parse_auths(Bin2));
 
 process(f, 'proxy-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
-    SchemeBin = sip_binary:any_to_binary(Auth#sip_hdr_auth.scheme),
+    SchemeBin = sip_syntax:format_name(Auth#sip_hdr_auth.scheme),
     [First | Rest] = Auth#sip_hdr_auth.params,
     FirstBin = format_auth(First),
     Fun = fun (Val, Acc) -> <<Acc/binary, ?COMMA, ?SP, (format_auth(Val))/binary>> end,
@@ -504,12 +489,12 @@ process(f, 'proxy-authorization', Auth) when is_record(Auth, sip_hdr_auth) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.29
 process(fn, 'proxy-require', _Ignore) -> <<"Proxy-Require">>;
 process(p, 'proxy-require', Bin) ->
-    {ReqBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ReqBin)),
+    {ReqBin, Rest} = sip_syntax:parse_token(Bin),
+    Ext = sip_syntax:parse_name(sip_binary:to_lower(ReqBin)),
     parse_list('require', Ext, Rest);
 
 process(f, 'proxy-require', Bin) ->
-    sip_binary:any_to_binary(Bin);
+    sip_syntax:format_name(Bin);
 
 %% 20.30 Record-Route
 %% http://tools.ietf.org/html/rfc3261#section-20.30
@@ -535,22 +520,22 @@ process(f, 'reply-to', Addr) when is_record(Addr, sip_hdr_address) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.32
 process(fn, 'require', _Ignore) -> <<"Require">>;
 process(p, 'require', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    {ExtBin, Rest} = sip_syntax:parse_token(Bin),
+    Ext = sip_syntax:parse_name(sip_binary:to_lower(ExtBin)),
     parse_list('require', Ext, Rest);
 
 process(f, 'require', Ext) ->
-    sip_binary:any_to_binary(Ext);
+    sip_syntax:format_name(Ext);
 
 %% 20.33 Retry-After
 %% http://tools.ietf.org/html/rfc3261#section-20.33
 process(fn, 'retry-after', _Ignore) -> <<"Retry-After">>;
 process(p, 'retry-after', Bin) ->
-    {Delay, CommentParams} = sip_binary:parse_while(Bin, fun sip_binary:is_digit_char/1),
+    {Delay, CommentParams} = sip_binary:parse_while(Bin, fun sip_syntax:is_digit_char/1),
     {Comment, ParamsBin} =
         case sip_binary:trim_leading(CommentParams) of
             <<?LPAREN, _/binary>> = CommentBin ->
-                sip_binary:parse_comment_string(CommentBin);
+                sip_syntax:parse_comment_string(CommentBin);
             Rest ->
                 {<<>>, Rest}
         end,
@@ -596,18 +581,18 @@ process(p, 'subject', Bin) ->
 process(pn, <<"k">>, _Ignore) -> 'supported';
 process(fn, 'supported', _Ignore) -> <<"Supported">>;
 process(p, 'supported', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    {ExtBin, Rest} = sip_syntax:parse_token(Bin),
+    Ext = sip_syntax:parse_name(sip_binary:to_lower(ExtBin)),
     parse_list('supported', Ext, Rest);
 
 process(f, 'supported', Ext) ->
-    sip_binary:any_to_binary(Ext);
+    sip_syntax:format_name(Ext);
 
 %% 20.38 Timestamp
 %% http://tools.ietf.org/html/rfc3261#section-20.38
 process(fn, 'timestamp', _Ignore) -> <<"Timestamp">>;
 process(p, 'timestamp', Bin) ->
-    case sip_binary:parse_token(Bin) of
+    case sip_syntax:parse_token(Bin) of
         {TimestampBin, <<>>} ->
             timestamp(sip_binary:binary_to_float(TimestampBin), 0.0);
         {TimestampBin, DelayBin} ->
@@ -639,12 +624,12 @@ process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.40
 process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
 process(p, 'unsupported', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    {ExtBin, Rest} = sip_syntax:parse_token(Bin),
+    Ext = sip_syntax:parse_name(sip_binary:to_lower(ExtBin)),
     parse_list('require', Ext, Rest);
 
 process(f, 'unsupported', Ext) ->
-    sip_binary:any_to_binary(Ext);
+    sip_syntax:format_name(Ext);
 
 %% 20.41 User-Agent
 %% http://tools.ietf.org/html/rfc3261#section-20.41
@@ -658,7 +643,7 @@ process(fn, 'via', _Ignore) -> <<"Via">>;
 process(p, 'via', Bin) ->
     {{<<"SIP">>, Version, Transport}, Bin2} = parse_sent_protocol(Bin),
     % Parse parameters (which should start with semicolon)
-    {Host, Port, Bin3} = sip_binary:parse_host_port(Bin2),
+    {Host, Port, Bin3} = sip_syntax:parse_host_port(Bin2),
     {Params, Rest} = parse_params(Bin3, fun parse_via_param/2),
 
     Top = #sip_hdr_via{transport = Transport,
@@ -672,7 +657,7 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
     Version = Via#sip_hdr_via.version,
     Transport = sip_binary:to_upper(atom_to_binary(Via#sip_hdr_via.transport, latin1)),
     Bin = <<"SIP/", Version/binary, $/, Transport/binary>>,
-    Host = sip_binary:addr_to_binary(Via#sip_hdr_via.host),
+    Host = sip_syntax:format_addr(Via#sip_hdr_via.host),
     Bin2 =
         case Via#sip_hdr_via.port of
             undefined -> <<Bin/binary, ?SP, Host/binary>>;
@@ -684,16 +669,16 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.43
 process(fn, 'warning', _Ignore) -> <<"Warning">>;
 process(p, 'warning', Bin) ->
-    {CodeBin, Bin2} = sip_binary:parse_token(Bin),
+    {CodeBin, Bin2} = sip_syntax:parse_token(Bin),
     Code = sip_binary:binary_to_integer(CodeBin),
-    {Agent, Bin3} = sip_binary:parse_until(Bin2, fun sip_binary:is_space_char/1),
-    {Text, Rest} = sip_binary:parse_quoted_string(Bin3),
+    {Agent, Bin3} = sip_binary:parse_until(Bin2, fun sip_syntax:is_space_char/1),
+    {Text, Rest} = sip_syntax:parse_quoted_string(Bin3),
     parse_list('warning', warning(Code, Agent, Text), Rest);
 
 process(f, 'warning', Warning) when is_record(Warning, sip_hdr_warning) ->
     CodeBin = sip_binary:integer_to_binary(Warning#sip_hdr_warning.code),
     Agent = Warning#sip_hdr_warning.agent,
-    Text = sip_binary:quote_string(Warning#sip_hdr_warning.text),
+    Text = sip_syntax:quote_string(Warning#sip_hdr_warning.text),
     <<CodeBin/binary, ?SP, Agent/binary, ?SP, Text/binary>>;
 
 %% 20.44 WWW-Authenticate
@@ -707,8 +692,8 @@ process(f, 'www-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
 
 % Default header processing
 process(p, _Name, Header) -> Header; % cannot parse, leave as is
-process(f, _Name, Value) -> sip_binary:any_to_binary(Value);
-process(pn, Name, _Ignore) when is_binary(Name) -> sip_binary:binary_to_existing_atom(Name);
+process(f, _Name, Value) -> format_value(Value); % do our best to format header value
+process(pn, Name, _Ignore) when is_binary(Name) -> sip_syntax:parse_name(Name);
 process(fn, Name, _Ignore) when is_binary(Name) -> Name;
 process(fn, Name, _Ignore) when is_atom(Name) -> atom_to_binary(Name, utf8).
 
@@ -723,10 +708,10 @@ process(fn, Name, _Ignore) when is_atom(Name) -> atom_to_binary(Name, utf8).
 %%                      / other-transport
 %% other-transport   =  token
 parse_sent_protocol(Bin) ->
-    {Protocol, <<$/, Bin2/binary>>} = sip_binary:parse_token(Bin),
-    {Version, <<$/, Bin3/binary>>} = sip_binary:parse_token(Bin2),
-    {Transport, Bin4} = sip_binary:parse_token(Bin3),
-    Transport2 = sip_binary:binary_to_existing_atom(sip_binary:to_lower(Transport)),
+    {Protocol, <<$/, Bin2/binary>>} = sip_syntax:parse_token(Bin),
+    {Version, <<$/, Bin3/binary>>} = sip_syntax:parse_token(Bin2),
+    {Transport, Bin4} = sip_syntax:parse_token(Bin3),
+    Transport2 = sip_syntax:parse_name(sip_binary:to_lower(Transport)),
     {{Protocol, Version, Transport2}, Bin4}.
 
 %% Parse parameters lists
@@ -737,8 +722,8 @@ parse_params(Bin, ParseFun) ->
     parse_params_loop(sip_binary:trim_leading(Bin), ParseFun, []).
 
 parse_params_loop(<<?SEMI, Bin/binary>>, ParseFun, List) ->
-    {NameBin, MaybeValue} = sip_binary:parse_token(Bin),
-    Name = sip_binary:binary_to_existing_atom(NameBin),
+    {NameBin, MaybeValue} = sip_syntax:parse_token(Bin),
+    Name = sip_syntax:parse_name(NameBin),
     {Value, Rest} =
         case MaybeValue of
             % Parameter with value
@@ -756,8 +741,8 @@ parse_params_loop(Bin, _ParseFun, List) ->
 
 parse_token_or_quoted(Bin) ->
     case sip_binary:trim_leading(Bin) of
-        <<?DQUOTE, _Rest/binary>> -> sip_binary:parse_quoted_string(Bin);
-        _Token -> sip_binary:parse_token(Bin)
+        <<?DQUOTE, _Rest/binary>> -> sip_syntax:parse_quoted_string(Bin);
+        _Token -> sip_syntax:parse_token(Bin)
     end.
 
 %% Parse address-like headers (`Contact:', `To:', `From:')
@@ -769,7 +754,7 @@ parse_address(Bin, ParamFun) ->
 
 parse_address_uri(<<?DQUOTE, _/binary>> = Bin) ->
     % name-addr with quoted-string display-name
-    {Display, <<?LAQUOT, Rest/binary>>} = sip_binary:parse_quoted_string(Bin),
+    {Display, <<?LAQUOT, Rest/binary>>} = sip_syntax:parse_quoted_string(Bin),
     {URI, <<?RAQUOT, Params/binary>>} = sip_binary:parse_until(Rest, ?RAQUOT),
     {Display, URI, Params};
 parse_address_uri(<<?LAQUOT, Rest/binary>>) ->
@@ -785,7 +770,7 @@ parse_address_uri(Bin) ->
             % If the URI is not enclosed in angle brackets, any semicolon-delimited
             % parameters are header-parameters, not URI parameters.
             % so, parse until comma (next header value), space character or semicolon
-            Fun = fun (C) -> sip_binary:is_space_char(C) orelse C =:= ?SEMI orelse C =:= ?COMMA end,
+            Fun = fun (C) -> sip_syntax:is_space_char(C) orelse C =:= ?SEMI orelse C =:= ?COMMA end,
 
             {URI, Params} = sip_binary:parse_until(Bin, Fun),
             {<<>>, URI, Params};
@@ -801,7 +786,7 @@ format_address(Addr) ->
     Bin = case Addr#sip_hdr_address.display_name of
               <<>> -> <<?LAQUOT, URIBin/binary, ?RAQUOT>>;
               DisplayName ->
-                  Quoted = sip_binary:quote_string(DisplayName),
+                  Quoted = sip_syntax:quote_string(DisplayName),
                   <<Quoted/binary, " ", ?LAQUOT, URIBin/binary, ?RAQUOT>>
           end,
     append_params(Bin, Addr#sip_hdr_address.params).
@@ -814,13 +799,13 @@ parse_media_range(Bin, ParamFun) ->
             <<"*/*", ParamsBin/binary>> ->
                 {'*', '*', ParamsBin};
         _ ->
-            {TypeBin, <<?SLASH, Bin2/binary>>} = sip_binary:parse_token(Bin),
-            Type = sip_binary:binary_to_existing_atom(TypeBin),
+            {TypeBin, <<?SLASH, Bin2/binary>>} = sip_syntax:parse_token(Bin),
+            Type = sip_syntax:parse_name(TypeBin),
             case sip_binary:trim_leading(Bin2) of
                 <<"*", ParamsBin/binary>> -> {Type, '*', ParamsBin};
                 Bin3 ->
-                    {SubTypeBin, ParamsBin} = sip_binary:parse_token(Bin3),
-                    SubType = sip_binary:binary_to_existing_atom(SubTypeBin),
+                    {SubTypeBin, ParamsBin} = sip_syntax:parse_token(Bin3),
+                    SubType = sip_syntax:parse_name(SubTypeBin),
                     {Type, SubType, ParamsBin}
             end
     end,
@@ -841,7 +826,7 @@ parse_accept(Bin) ->
     {TokenBin, ParamsBin} =
         case sip_binary:trim_leading(Bin) of
             <<"*", P/binary>> -> {'*', P};
-            Bin2 -> sip_binary:parse_token(Bin2)
+            Bin2 -> sip_syntax:parse_token(Bin2)
     end,
     {Params, Rest} = parse_params(ParamsBin, fun parse_q_param/2),
     {TokenBin, Params, Rest}.
@@ -857,23 +842,32 @@ append_params(Bin, Params) ->
 %% tuple of two binaries (parameter name and value).
 %% @end
 format_param({Name, Value}, Bin) ->
-    Name2 = sip_binary:any_to_binary(Name),
+    Name2 = sip_syntax:format_name(Name),
 
     % If contains non-token characters, write as quoted string
-    Value2 = case need_quoting(Value) of
-                 true -> sip_binary:quote_string(Value);
-                 false -> Value
-             end,
-    Value3 = sip_binary:any_to_binary(Value2),
-    <<Bin/binary, ?SEMI, Name2/binary, ?EQUAL, Value3/binary>>;
+    Value2 =
+        case need_quoting(Value) of
+            true -> sip_syntax:quote_string(Value);
+            false -> format_value(Value)
+        end,
+    <<Bin/binary, ?SEMI, Name2/binary, ?EQUAL, Value2/binary>>;
 format_param(Name, Bin) ->
-    Name2 = sip_binary:any_to_binary(Name),
+    Name2 = sip_syntax:format_name(Name),
     <<Bin/binary, ?SEMI, Name2/binary>>.
 
 need_quoting(Value) when not is_binary(Value) -> false; % integer, atom, etc, no quoting
 need_quoting(<<>>) -> true;
 need_quoting(<<C, Rest/binary>>)  ->
-    (not sip_binary:is_token_char(C)) orelse (Rest =/= <<>> andalso need_quoting(Rest)).
+    (not sip_syntax:is_token_char(C)) orelse (Rest =/= <<>> andalso need_quoting(Rest)).
+
+%% format unknown parameter value
+format_value(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+format_value(Bin) when is_binary(Bin) -> Bin;
+format_value(Int) when is_integer(Int) -> sip_binary:integer_to_binary(Int);
+format_value(Float) when is_float(Float) -> sip_binary:float_to_binary(Float);
+format_value(List) when is_list(List) -> list_to_binary(List);
+format_value({_A, _B, _C, _D} = Addr) -> sip_syntax:format_addr(Addr);
+format_value({_A, _B, _C, _D, _E, _F, _G, _H} = Addr) -> sip_syntax:format_addr(Addr).
 
 %%-----------------------------------------------------------------
 %% Header-specific helpers
@@ -971,35 +965,35 @@ add_tag(Name, Value, Tag) when Name =:= 'to'; Name =:= 'from' ->
 %% Parsing/formatting authentication/authorization parameters
 %% XXX: Probably, should be separated for Authentication-Info, Authorization, Proxy-Authenticate, etc.
 parse_auths(Bin) ->
-    {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_binary:parse_token(Bin),
-    Name = sip_binary:binary_to_existing_atom(NameBin),
+    {NameBin, <<?EQUAL, ValueBin/binary>>} = sip_syntax:parse_token(Bin),
+    Name = sip_syntax:parse_name(NameBin),
     {Value, Rest} =
         case Name of
             _ when Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
                    Name =:= username; Name =:= realm; Name =:= uri;
                    Name =:= opaque; Name =:= domain ->
-                sip_binary:parse_quoted_string(ValueBin);
+                sip_syntax:parse_quoted_string(ValueBin);
             _ when Name =:= qop, binary_part(ValueBin, {0, 1}) =:= <<?DQUOTE>> ->
                 % special case for Proxy-Authenticate, qop parameter is quoted string
                 % which can contain several qop-value's
-                {QOPsBin, R} = sip_binary:parse_quoted_string(ValueBin),
+                {QOPsBin, R} = sip_syntax:parse_quoted_string(ValueBin),
                 List = binary:split(QOPsBin, [<<?COMMA>>], [global]),
-                QOPs = [sip_binary:binary_to_existing_atom(sip_binary:trim(QOP)) || QOP <- List],
+                QOPs = [sip_syntax:parse_name(sip_binary:trim(QOP)) || QOP <- List],
                 {QOPs, R};
             _ when Name =:= qop; Name =:= algorithm ->
-                {Val, R} = sip_binary:parse_token(ValueBin),
-                {sip_binary:binary_to_existing_atom(Val), R};
+                {Val, R} = sip_syntax:parse_token(ValueBin),
+                {sip_syntax:parse_name(Val), R};
             _ when Name =:= rspauth; Name =:= response ->
-                {Digest, R} = sip_binary:parse_quoted_string(ValueBin),
+                {Digest, R} = sip_syntax:parse_quoted_string(ValueBin),
                 {sip_binary:hexstr_to_binary(Digest), R};
             _ when Name =:= stale ->
-                {Stale, R} = sip_binary:parse_token(ValueBin),
+                {Stale, R} = sip_syntax:parse_token(ValueBin),
                 case sip_binary:to_lower(Stale) of
                     <<"false">> -> {false, R};
                     <<"true">> -> {true, R}
                 end;
             nc ->
-                {NC, R} = sip_binary:parse_while(ValueBin, fun sip_binary:is_alphanum_char/1),
+                {NC, R} = sip_binary:parse_while(ValueBin, fun sip_syntax:is_alphanum_char/1),
                 {list_to_integer(binary_to_list(NC), 16), sip_binary:trim_leading(R)};
             % arbitrary auth-param
             _Other ->
@@ -1013,7 +1007,7 @@ parse_auths(Bin) ->
     end.
 
 format_auth({Name, Value}) ->
-    NameBin = sip_binary:any_to_binary(Name),
+    NameBin = sip_syntax:format_name(Name),
     ValBin = format_auth(Name, Value),
     <<NameBin/binary, ?EQUAL, ValBin/binary>>.
 
@@ -1021,18 +1015,18 @@ format_auth(Name, Value) when
   Name =:= nextnonce; Name =:= nonce; Name =:= cnonce;
   Name =:= username; Name =:= realm; Name =:= uri;
   Name =:= opaque; Name =:= domain ->
-    sip_binary:quote_string(Value);
+    sip_syntax:quote_string(Value);
 format_auth(qop, [First|Rest]) ->
     % special case for Proxy-Authenticate, qop is a list
-    Acc0 = <<(sip_binary:any_to_binary(First))/binary>>,
-    Bin = lists:foldl(fun(QOP, Acc) -> <<Acc/binary, ?COMMA, ?SP, (sip_binary:any_to_binary(QOP))/binary>> end, Acc0, Rest),
-    sip_binary:quote_string(Bin);
+    Acc0 = <<(sip_syntax:format_name(First))/binary>>,
+    Bin = lists:foldl(fun(QOP, Acc) -> <<Acc/binary, ?COMMA, ?SP, (sip_syntax:format_name(QOP))/binary>> end, Acc0, Rest),
+    sip_syntax:quote_string(Bin);
 format_auth(Name, Qop)
   when Name =:= qop; Name =:= algorithm ->
-    sip_binary:any_to_binary(Qop);
+    sip_syntax:format_name(Qop);
 format_auth(Name, Bin) when Name =:= rspauth; Name =:= response ->
     HexStr = sip_binary:binary_to_hexstr(Bin),
-    sip_binary:quote_string(HexStr);
+    sip_syntax:quote_string(HexStr);
 format_auth(nc, NonceCount) ->
     [NCBin] = io_lib:format("~8.16.0b", [NonceCount]),
     list_to_binary(NCBin);
@@ -1041,7 +1035,7 @@ format_auth(stale, true) -> <<"true">>;
 format_auth(_Name, Value) when is_binary(Value) ->
     % arbitrary auth-param
     case need_quoting(Value) of
-        true -> sip_binary:quote_string(Value);
+        true -> sip_syntax:quote_string(Value);
         false -> Value
     end.
 
@@ -1055,9 +1049,9 @@ parse_list(Name, Top, <<?COMMA, Rest/binary>>) -> [Top | parse(Name, Rest)].
 %% @end
 parse_language(<<$*, Rest/binary>>) -> {'*', Rest};
 parse_language(Bin) ->
-    IsLangChar = fun(C) -> sip_binary:is_alpha_char(C) orelse C =:= $- end,
+    IsLangChar = fun(C) -> sip_syntax:is_alpha_char(C) orelse C =:= $- end,
     {LangBin, Rest} = sip_binary:parse_while(Bin, IsLangChar),
-    {sip_binary:binary_to_existing_atom(LangBin), Rest}.
+    {sip_syntax:parse_name(LangBin), Rest}.
 
 
 % RFC 3261, 7.3.1
@@ -1078,12 +1072,12 @@ fold_header(HeaderLine, List) ->
 %% Parse standard Via: parameters
 parse_via_param('ttl', TTL) -> sip_binary:binary_to_integer(TTL);
 parse_via_param('maddr', MAddr) ->
-    case sip_binary:parse_ip_address(MAddr) of
+    case sip_syntax:parse_ip_address(MAddr) of
         {ok, Addr} -> Addr;
         {error, einval} -> binary_to_list(MAddr)
     end;
 parse_via_param('received', Received) ->
-    {ok, Addr} = sip_binary:parse_ip_address(Received),
+    {ok, Addr} = sip_syntax:parse_ip_address(Received),
     Addr;
 parse_via_param(_Name, Value) -> Value.
 
@@ -1108,7 +1102,7 @@ parse_generic_param(_Name, Value) -> Value.
 -spec header_names_test_() -> list().
 header_names_test_() ->
     [% compact names support
-     ?_assertEqual([{'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>}, 
+     ?_assertEqual([{'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
                     {'content-encoding', <<"gzip">>}, {'content-length', <<"5">>},
                     {'content-type', <<"application/sdp">>}, {'from', <<"sip:alice@localhost">>},
                     {'subject', <<"Need more boxes">>}, {'supported', <<"100rel">>},
@@ -1175,7 +1169,7 @@ header_names_test_() ->
 -spec parse_headers_test_() -> list().
 parse_headers_test_() ->
     [% verify parsing/formatting of all supported headers
-     
+
      % parsing
      ?_assertEqual([], parse_headers(<<>>)),
 
@@ -1621,7 +1615,16 @@ parse_headers_test_() ->
      % If the URI is not enclosed in angle brackets, any semicolon-delimited
      % parameters are header-parameters, not URI parameters, Section 20.
      ?_assertEqual({address(<<>>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{param, <<"value">>}]), <<>>},
-                   parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2))
+                   parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2)),
+
+     % Check we support certain values
+     ?_assertEqual(<<"some">>, format_value(some)),
+     ?_assertEqual(<<"some">>, format_value(<<"some">>)),
+     ?_assertEqual(<<"123">>, format_value(123)),
+     ?_assertEqual(<<"123.35">>, format_value(123.35)),
+     ?_assertEqual(<<"example.com">>, format_value("example.com")),
+     ?_assertEqual(<<"10.0.0.1">>, format_value({10, 0, 0, 1})),
+     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, format_value({8193,3512,4515,2519,7988,35374,1952,30301}))
     ].
 
 -spec utility_test_() -> list().

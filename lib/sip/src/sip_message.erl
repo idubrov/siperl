@@ -82,7 +82,7 @@ to_binary(Message) ->
     Top = case Message#sip_message.kind of
               #sip_request{method = Method, uri = URI} ->
                   URIBin = sip_uri:format(URI),
-                  <<(sip_binary:any_to_binary(Method))/binary, " ", URIBin/binary, " ", ?SIPVERSION>>;
+                  <<(sip_syntax:format_name(Method))/binary, " ", URIBin/binary, " ", ?SIPVERSION>>;
               #sip_response{status = Status, reason = Reason} ->
                   StatusStr = list_to_binary(integer_to_list(Status)),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
@@ -368,7 +368,7 @@ parse_start_line(StartLine) when is_binary(StartLine) ->
     [Second, Third] = binary:split(Rest, <<" ">>),
     case {First, Second, Third} of
         {Method, RequestURI, <<?SIPVERSION>>} ->
-            #sip_request{method = sip_binary:binary_to_existing_atom(sip_binary:to_upper(Method)),
+            #sip_request{method = sip_syntax:parse_name(sip_binary:to_upper(Method)),
                          uri = RequestURI};
 
         {<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase} when
