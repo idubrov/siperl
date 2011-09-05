@@ -523,7 +523,7 @@ process(f, 'timestamp', Timestamp) when is_record(Timestamp, sip_hdr_timestamp) 
     end;
 
 %% 20.39 To
-%% http://tools.ietf.org/html/rfc3261#section-20.38
+%% http://tools.ietf.org/html/rfc3261#section-20.39
 process(pn, <<"t">>, _Ignore) -> 'to';
 process(fn, 'to', _Ignore) -> <<"To">>;
 process(p, 'to', Bin) ->
@@ -533,6 +533,21 @@ process(p, 'to', Bin) ->
 process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
 
+%% 20.40 Unsupported
+%% http://tools.ietf.org/html/rfc3261#section-20.40
+process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
+process(p, 'unsupported', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('require', Ext, Rest);
+
+process(f, 'unsupported', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+%% 20.41 User-Agent
+%% http://tools.ietf.org/html/rfc3261#section-20.41
+process(fn, 'user-agent', _Ignore) -> <<"User-Agent">>;
+process(p, 'user-agent', Bin) -> Bin;
 
 
 %% .....
@@ -568,14 +583,6 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
 
 %% ....
 %% ...
-process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
-process(p, 'unsupported', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
-    parse_list('require', Ext, Rest);
-
-process(f, 'unsupported', Ext) ->
-    sip_binary:any_to_binary(Ext);
 
 % Default header processing
 process(p, _Name, Header) -> Header; % cannot parse, leave as is
@@ -1016,9 +1023,10 @@ parse_test_() ->
                      "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
                      "Supported: 100rel\r\nTimestamp: 54\r\n",
                      "To: sip:bob@localhost\r\nUnsupported: bar, baz\r\n",
+                     "User-Agent: Softphone Beta1.5\r\n"
 
-                     "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
-                     "x-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
+                     "Via: SIP/2.0/UDP localhost\r\n",
+                     "x-custom-atom: 25\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
@@ -1040,12 +1048,11 @@ parse_test_() ->
                                    {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
                                    {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
                                    {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
+                                   {'user-agent', <<"Softphone Beta1.5">>},
 
 
-                                   {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-
+                                   {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'x-custom-atom', 25},
-                                   {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
                                    {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
@@ -1411,6 +1418,9 @@ parse_test_() ->
      ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
 
+     % User-Agent
+     ?_assertEqual(<<"Softphone Beta1.5">>, parse('user-agent', <<"Softphone Beta1.5">>)),
+     ?_assertEqual(<<"Softphone Beta1.5">>, format('user-agent', <<"Softphone Beta1.5">>)),
 
 
      % Via
