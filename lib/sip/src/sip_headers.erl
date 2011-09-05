@@ -354,9 +354,8 @@ process(f, 'content-type', CType) when is_record(CType, sip_hdr_mediatype) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.16
 process(fn, 'cseq', _Ignore) -> <<"CSeq">>;
 process(p, 'cseq', Bin) ->
-    {SeqBin, Bin2} = sip_syntax:parse_token(Bin),
+    {Sequence, Bin2} = sip_syntax:parse_integer(Bin),
     {MethodBin, <<>>} = sip_syntax:parse_token(Bin2),
-    Sequence = sip_binary:binary_to_integer(SeqBin),
     Method = sip_syntax:parse_name(sip_binary:to_upper(MethodBin)),
     cseq(Sequence, Method);
 
@@ -437,8 +436,8 @@ process(f, 'min-expires', Length) when is_integer(Length) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.24
 process(fn, 'mime-version', _Ignore) -> <<"MIME-Version">>;
 process(p, 'mime-version', Bin) ->
-    {Major, <<$., Minor/binary>>} = sip_binary:parse_until(Bin, $.),
-    {sip_binary:binary_to_integer(Major), sip_binary:binary_to_integer(Minor)};
+    {Major, <<$., MinorBin/binary>>} = sip_syntax:parse_integer(Bin),
+    {Major, sip_binary:binary_to_integer(MinorBin)};
 
 process(f, 'mime-version', {Major, Minor}) ->
     MajorBin = sip_binary:integer_to_binary(Major),
@@ -669,9 +668,8 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
 %% http://tools.ietf.org/html/rfc3261#section-20.43
 process(fn, 'warning', _Ignore) -> <<"Warning">>;
 process(p, 'warning', Bin) ->
-    {CodeBin, Bin2} = sip_syntax:parse_token(Bin),
-    Code = sip_binary:binary_to_integer(CodeBin),
-    {Agent, Bin3} = sip_binary:parse_until(Bin2, fun sip_syntax:is_space_char/1),
+    {Code, Bin2} = sip_syntax:parse_integer(sip_binary:trim_leading(Bin)),
+    {Agent, Bin3} = sip_binary:parse_until(sip_binary:trim_leading(Bin2), fun sip_syntax:is_space_char/1),
     {Text, Rest} = sip_syntax:parse_quoted_string(Bin3),
     parse_list('warning', warning(Code, Agent, Text), Rest);
 
