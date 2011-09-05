@@ -522,6 +522,17 @@ process(f, 'timestamp', Timestamp) when is_record(Timestamp, sip_hdr_timestamp) 
             <<Bin/binary, ?SP, DelayBin/binary>>
     end;
 
+%% 20.39 To
+%% http://tools.ietf.org/html/rfc3261#section-20.38
+process(pn, <<"t">>, _Ignore) -> 'to';
+process(fn, 'to', _Ignore) -> <<"To">>;
+process(p, 'to', Bin) ->
+    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
+    Top;
+
+process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
+    format_address(Addr);
+
 
 
 %% .....
@@ -556,15 +567,6 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
 
 
 %% ....
-process(pn, <<"t">>, _Ignore) -> 'to';
-process(fn, 'to', _Ignore) -> <<"To">>;
-process(p, 'to', Bin) ->
-    {Top, <<>>} = parse_address(Bin, fun parse_generic_param/2),
-    Top;
-
-process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
-    format_address(Addr);
-
 %% ...
 process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
 process(p, 'unsupported', Bin) ->
@@ -1013,11 +1015,10 @@ parse_test_() ->
                      "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
                      "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
                      "Supported: 100rel\r\nTimestamp: 54\r\n",
+                     "To: sip:bob@localhost\r\nUnsupported: bar, baz\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
-                     "To: sip:bob@localhost\r\n"
                      "x-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
-                     "Unsupported: bar, baz\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
@@ -1038,13 +1039,13 @@ parse_test_() ->
                                    {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
                                    {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
+                                   {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
-                                   {'to', <<"sip:bob@localhost">>},
+
                                    {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
-                                   {'unsupported', <<"bar, baz">>},
                                    {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
@@ -1395,7 +1396,6 @@ parse_test_() ->
      ?_assertEqual(<<"54.3 2.6">>, format('timestamp', timestamp(54.3, 2.6))),
      ?_assertEqual(<<"54.3">>, format('timestamp', timestamp(54.3, 0.0))),
 
-
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
                    parse('to', <<"\"Bob Zert\" <sip:bob@biloxi.com>;tag=1928301774">>)),
@@ -1406,6 +1406,11 @@ parse_test_() ->
                    format('to', address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
      ?_assertEqual(<<"\"Bob \\\"Zert\" <sip:bob@biloxi.com>;tag=1928301774">>,
                    format('to', address(<<"Bob \"Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]))),
+
+     % Unsupported
+     ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
+
 
 
      % Via
@@ -1439,9 +1444,6 @@ parse_test_() ->
      % Require, Proxy-Require, Supported, Unsupported
      ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
-
-     ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
-     ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
 
      % If the URI is not enclosed in angle brackets, any semicolon-delimited
      % parameters are header-parameters, not URI parameters, Section 20.
