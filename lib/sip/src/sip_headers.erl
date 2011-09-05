@@ -482,6 +482,13 @@ process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
 process(fn, 'server', _Ignore) -> <<"Server">>;
 process(p, 'server', Bin) -> Bin;
 
+%% 20.36 Subject
+%% http://tools.ietf.org/html/rfc3261#section-20.36
+process(pn, <<"s">>, _Ignore) -> 'subject';
+process(fn, 'subject', _Ignore) -> <<"Subject">>;
+process(p, 'subject', Bin) ->
+    sip_binary:trim(Bin);
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -946,12 +953,12 @@ parse_test_() ->
                     {'from', <<"sip:alice@localhost">>}, {'to', <<"sip:bob@localhost">>},
                     {'call-id', <<"callid">>}, {'contact', <<"Alice <sip:example.com>">>},
                     {'supported', <<"100rel">>}, {'content-encoding', <<"gzip">>},
-                    {'content-type', <<"application/sdp">>}],
+                    {'content-type', <<"application/sdp">>}, {'subject', <<"Need more boxes">>}],
                    parse_headers(<<"l: 5\r\nv: SIP/2.0/UDP localhost\r\n",
                                    "f: sip:alice@localhost\r\nt: sip:bob@localhost\r\n",
                                    "i: callid\r\nm: Alice <sip:example.com>\r\n",
                                    "k: 100rel\r\ne: gzip\r\n",
-                                   "c: application/sdp\r\n">>)),
+                                   "c: application/sdp\r\ns: Need more boxes\r\n">>)),
      % multi-line headers
      ?_assertEqual([{'subject', <<"I know you're there, pick up the phone and talk to me!">>}],
                    parse_headers(<<"Subject: I know you're there,\r\n               pick up the phone   \r\n               and talk to me!\r\n">>)),
@@ -976,7 +983,7 @@ parse_test_() ->
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
                      "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
-                     "Server: HomeServer v2\r\n",
+                     "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -1000,7 +1007,7 @@ parse_test_() ->
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
                                    {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
-                                   {'server', <<"HomeServer v2">>},
+                                   {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1340,8 +1347,14 @@ parse_test_() ->
      ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
                    format('route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
+     % Server
      ?_assertEqual(<<"HomeServer v2">>, parse('server', <<"HomeServer v2">>)),
      ?_assertEqual(<<"HomeServer v2">>, format('server', <<"HomeServer v2">>)),
+     
+     % Subject
+     ?_assertEqual(<<"Need more boxes">>, parse('subject', <<"Need more boxes">>)),
+     ?_assertEqual(<<"Need more boxes">>, format('subject', <<"Need more boxes">>)),
+     
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
@@ -1399,11 +1412,7 @@ parse_test_() ->
                             sip_uri:parse(<<"sip:alice@atlanta.com">>),
                             [{param, <<"value">>}]),
                     <<>>},
-                   parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2)),
-
-     % Subject (FIXME: implement proper tests)
-     ?_assertEqual(<<"I know you're there, pick up the phone and talk to me!">>,
-        format('subject', <<"I know you're there, pick up the phone and talk to me!">>))
+                   parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2))
     ].
 
 -spec utility_test_() -> list().
