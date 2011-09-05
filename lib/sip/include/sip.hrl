@@ -77,6 +77,12 @@
         {timestamp :: float(),
          delay = 0.0 :: float()}).
 
+%% Value for header `Warning:'
+-record(sip_hdr_warning,
+        {code :: integer(),
+         agent :: binary(),
+         text :: binary()}).
+
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
                       transport :: 'udp' | 'tcp' | 'tls' | atom(),

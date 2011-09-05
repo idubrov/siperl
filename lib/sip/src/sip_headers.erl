@@ -549,8 +549,8 @@ process(f, 'unsupported', Ext) ->
 process(fn, 'user-agent', _Ignore) -> <<"User-Agent">>;
 process(p, 'user-agent', Bin) -> Bin;
 
-
-%% .....
+%% 20.42 Via
+%% http://tools.ietf.org/html/rfc3261#section-20.42
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
 process(p, 'via', Bin) ->
@@ -578,11 +578,21 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
         end,
     append_params(Bin2, Via#sip_hdr_via.params);
 
-%% ....
+%% 20.43 Warning
+%% http://tools.ietf.org/html/rfc3261#section-20.43
+process(fn, 'warning', _Ignore) -> <<"Warning">>;
+process(p, 'warning', Bin) ->
+    {CodeBin, Bin2} = sip_binary:parse_token(Bin),
+    Code = sip_binary:binary_to_integer(CodeBin),
+    {Agent, Bin3} = sip_binary:parse_until(Bin2, fun sip_binary:is_space_char/1),
+    {Text, Rest} = sip_binary:parse_quoted_string(Bin3),
+    parse_list('warning', warning(Code, Agent, Text), Rest);
 
-
-%% ....
-%% ...
+process(f, 'warning', Warning) when is_record(Warning, sip_hdr_warning) ->
+    CodeBin = sip_binary:integer_to_binary(Warning#sip_hdr_warning.code),
+    Agent = Warning#sip_hdr_warning.agent,
+    Text = sip_binary:quote_string(Warning#sip_hdr_warning.text),
+    <<CodeBin/binary, ?SP, Agent/binary, ?SP, Text/binary>>;
 
 % Default header processing
 process(p, _Name, Header) -> Header; % cannot parse, leave as is
@@ -829,6 +839,11 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) -
 timestamp(Timestamp, Delay) when is_float(Timestamp), is_float(Delay) ->
     #sip_hdr_timestamp{timestamp = Timestamp, delay = Delay}.
 
+%% @doc Construct `Warning:' header value.
+%% @end
+-spec warning(integer(), binary() | binary(), binary()) -> #sip_hdr_warning{}.
+warning(Code, Agent, Text) when is_integer(Code), is_binary(Agent), is_binary(Text) ->
+    #sip_hdr_warning{code = Code, agent = Agent, text = Text}.
 
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
@@ -1023,9 +1038,9 @@ parse_test_() ->
                      "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
                      "Supported: 100rel\r\nTimestamp: 54\r\n",
                      "To: sip:bob@localhost\r\nUnsupported: bar, baz\r\n",
-                     "User-Agent: Softphone Beta1.5\r\n"
+                     "User-Agent: Softphone Beta1.5\r\nVia: SIP/2.0/UDP localhost\r\n",
+                     "Warning: 307 isi.edu \"Session parameter 'foo' not understood\"\r\n",
 
-                     "Via: SIP/2.0/UDP localhost\r\n",
                      "x-custom-atom: 25\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
@@ -1048,10 +1063,10 @@ parse_test_() ->
                                    {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
                                    {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
                                    {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
-                                   {'user-agent', <<"Softphone Beta1.5">>},
+                                   {'user-agent', <<"Softphone Beta1.5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
+                                   {'warning', <<"307 isi.edu \"Session parameter 'foo' not understood\"">>},
 
 
-                                   {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'x-custom-atom', 25},
                                    {<<"X-Custom">>, <<"value">>}])),
 
@@ -1422,7 +1437,6 @@ parse_test_() ->
      ?_assertEqual(<<"Softphone Beta1.5">>, parse('user-agent', <<"Softphone Beta1.5">>)),
      ?_assertEqual(<<"Softphone Beta1.5">>, format('user-agent', <<"Softphone Beta1.5">>)),
 
-
      % Via
      ?_assertEqual([via(udp, {{8193,3512,0,0,0,0,44577,44306}, undefined}, [{branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP [2001:0db8:0000:0000:0000:0000:ae21:ad12];branch=z9hG4bK776asdhds">>)),
@@ -1451,9 +1465,16 @@ parse_test_() ->
      ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
 
-     % Require, Proxy-Require, Supported, Unsupported
-     ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
-     ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
+     % Warning
+     ?_assertEqual([warning(307, <<"isi.edu">>, <<"Session parameter 'foo' not understood">>),
+                    warning(301, <<"isi.edu">>, <<"Incompatible network address type 'E.164'">>)],
+                   parse('warning', <<"307 isi.edu \"Session parameter 'foo' not understood\", ",
+                                      "301 isi.edu \"Incompatible network address type 'E.164'\"">>)),
+     ?_assertEqual(<<"307 isi.edu \"Session parameter 'foo' not understood\", ",
+                     "301 isi.edu \"Incompatible network address type 'E.164'\"">>,
+                   format('warning',
+                          [warning(307, <<"isi.edu">>, <<"Session parameter 'foo' not understood">>),
+                           warning(301, <<"isi.edu">>, <<"Incompatible network address type 'E.164'">>)])),
 
      % If the URI is not enclosed in angle brackets, any semicolon-delimited
      % parameters are header-parameters, not URI parameters, Section 20.
