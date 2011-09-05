@@ -594,6 +594,15 @@ process(f, 'warning', Warning) when is_record(Warning, sip_hdr_warning) ->
     Text = sip_binary:quote_string(Warning#sip_hdr_warning.text),
     <<CodeBin/binary, ?SP, Agent/binary, ?SP, Text/binary>>;
 
+%% 20.44 WWW-Authenticate
+%% http://tools.ietf.org/html/rfc3261#section-20.44
+process(fn, 'www-authenticate', _Ignore) -> <<"WWW-Authenticate">>;
+process(p, 'www-authenticate', Bin) ->
+    process(p, 'proxy-authenticate', Bin);
+
+process(f, 'www-authenticate', Auth) when is_record(Auth, sip_hdr_auth) ->
+    process(f, 'proxy-authenticate', Auth);
+
 % Default header processing
 process(p, _Name, Header) -> Header; % cannot parse, leave as is
 process(f, _Name, Value) -> sip_binary:any_to_binary(Value);
@@ -1040,9 +1049,8 @@ parse_test_() ->
                      "To: sip:bob@localhost\r\nUnsupported: bar, baz\r\n",
                      "User-Agent: Softphone Beta1.5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "Warning: 307 isi.edu \"Session parameter 'foo' not understood\"\r\n",
-
-                     "x-custom-atom: 25\r\n",
-                     "X-Custom: value\r\n">>,
+                     "WWW-Authenticate: Digest realm=\"atlanta.com\"\r\n",
+                     "x-custom-atom: 25\r\nX-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
                                    {'allow', <<"INVITE">>}, {'authentication-info', <<"nextnonce=\"47364c23432d2e131a5fb210812c\"">>},
@@ -1065,10 +1073,8 @@ parse_test_() ->
                                    {'to', <<"sip:bob@localhost">>}, {'unsupported', <<"bar, baz">>},
                                    {'user-agent', <<"Softphone Beta1.5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'warning', <<"307 isi.edu \"Session parameter 'foo' not understood\"">>},
-
-
-                                   {'x-custom-atom', 25},
-                                   {<<"X-Custom">>, <<"value">>}])),
+                                   {'www-authenticate', <<"Digest realm=\"atlanta.com\"">>},
+                                   {'x-custom-atom', 25}, {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
      ?_assertEqual({parsed, value}, parse('x-custom2', {parsed, value})),
@@ -1476,12 +1482,36 @@ parse_test_() ->
                           [warning(307, <<"isi.edu">>, <<"Session parameter 'foo' not understood">>),
                            warning(301, <<"isi.edu">>, <<"Incompatible network address type 'E.164'">>)])),
 
+     % WWW-Authenticate
+     ?_assertEqual(auth('Digest',
+                        [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
+                         {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
+                         {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
+                         {param, <<>>}]),
+                   parse('www-authenticate',
+                         <<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
+                           "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
+                           "stale=FALSE, algorithm=MD5, qop=\"auth, auth-int\", ",
+                           "param=\"\"">>)),
+     ?_assertEqual(<<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
+                     "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
+                     "stale=false, algorithm=MD5, qop=\"auth, auth-int\", ",
+                     "param=\"\"">>,
+                   format('www-authenticate',
+                          auth('Digest',
+                               [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
+                                {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
+                                {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
+                                {param, <<>>}]))),
+
+     ?_assertEqual(auth('Digest', [{realm, <<"atlanta.com">>}, {stale, true}]),
+                   parse('www-authenticate', <<"Digest realm=\"atlanta.com\", stale=true">>)),
+     ?_assertEqual(<<"Digest realm=\"atlanta.com\", stale=true">>,
+                   format('www-authenticate', auth('Digest', [{realm, <<"atlanta.com">>}, {stale, true}]))),
+
      % If the URI is not enclosed in angle brackets, any semicolon-delimited
      % parameters are header-parameters, not URI parameters, Section 20.
-     ?_assertEqual({address(<<>>,
-                            sip_uri:parse(<<"sip:alice@atlanta.com">>),
-                            [{param, <<"value">>}]),
-                    <<>>},
+     ?_assertEqual({address(<<>>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [{param, <<"value">>}]), <<>>},
                    parse_address(<<"sip:alice@atlanta.com;param=value">>, fun parse_generic_param/2))
     ].
 
