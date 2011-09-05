@@ -1,43 +1,46 @@
-%%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc SIP headers parsing/generation and utility functions
+%%% @doc SIP headers parsing, formating and utility functions to construct
+%%% header values
 %%%
-%%% FIXME: need to verify that all binary generation properly unescapes/escapes characters!
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-20">RFC 3261</a> for details.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
-%%%----------------------------------------------------------------
 -module(sip_headers).
 
-%%-----------------------------------------------------------------
 %% Exports
-%%-----------------------------------------------------------------
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
 -export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3, retry/3]).
 -export([add_tag/3]).
 
-%%-----------------------------------------------------------------
-%% Macros
-%%-----------------------------------------------------------------
+-type name() :: atom() | binary().
+%% Optimized representation of entity name. When name is constructed
+%% from the binary, a check is made if atom with this value exists.
+%% If atom exists, it is used to represent the name of the entitiy.
+%% Otherwise, binary is used.
+%%
+%% This ensures both optimal representation of name at runtime without
+%% the danger of overloading atom table by malicious requests.
+%%
+%% Note that client code can always safely match against atom, since
+%% matching against atom ensures atom is loaded (and therefore, atom
+%% representation will be chosen by SIP libary).
+-export_type([name/0]).
 
-%%-----------------------------------------------------------------
-%% Include files
-%%-----------------------------------------------------------------
+
+%% Includes
 -include("sip_common.hrl").
 -include("sip_parse.hrl").
 -include("sip.hrl").
 
-%%-----------------------------------------------------------------
 %% API functions
-%%-----------------------------------------------------------------
 
-%% @doc Parse binary into list of headers
+%% @doc Split binary into list of headers
 %%
 %% Convert binary containing headers into list of non-parsed headers
-%% (with binary values). Binary must be `\r\n' separated headers. If
-%% at least one header is present, binary must end with `\r\n'. Otherwise,
-%% it must be empty binary.
+%% (with binary values). Binary must contain a sequence headers, each
+%% header terminated by `CRLF'. Empty binary is valid argument that
+%% results in empty list returned.
 %% @end
 -spec parse_headers(binary()) -> [{Name :: atom() | binary(), Value :: binary() | term()}].
 parse_headers(<<>>) -> [];
@@ -47,7 +50,9 @@ parse_headers(Headers) when is_binary(Headers) ->
     Lines = binary:split(Headers2, <<"\r\n">>, [global]),
     lists:reverse(lists:foldl(fun (Bin, List) -> fold_header(Bin, List) end, [], Lines)).
 
-%% @doc Convert header name and value into the binary
+%% @doc Formats headers into the binary
+%%
+%% For supported header representations, see {@link parse/2}/{@link format/2} functions. 
 %% @end
 -spec format_headers([{atom() | binary(), binary() | term()}]) -> binary().
 format_headers(Headers) ->
@@ -59,8 +64,105 @@ format_headers(Headers) ->
 %% Header parsing/format functions
 %%-----------------------------------------------------------------
 
+-spec parse('accept', binary()) -> [#sip_hdr_mediatype{}];
+           ('accept-encoding', binary()) -> [#sip_hdr_encoding{}];
+           ('accept-language', binary()) -> [#sip_hdr_language{}];
+           ('alert-info', binary()) -> [#sip_hdr_info{}];
+           ('allow', binary()) -> [Method :: name()];
+           ('authentication-info', binary()) -> #sip_hdr_auth{};
+           ('authorization', binary()) -> #sip_hdr_auth{};
+           ('call-id', binary()) -> binary();
+           ('call-info', binary()) -> [#sip_hdr_info{}];
+           ('contact', binary()) -> [#sip_hdr_address{}]; % FIXME '*'
+           ('content-disposition', binary()) -> #sip_hdr_disposition{};
+           ('content-encoding', binary()) -> [ContentCoding :: name()];
+           ('content-language', binary()) -> [LanguageTag :: name()];
+           ('content-length', binary()) -> integer();
+           ('content-type', binary()) -> #sip_hdr_mediatype{};
+           ('cseq', binary()) -> #sip_hdr_cseq{};
+           ('date', binary()) -> calendar:t_datetime();
+           ('error-info', binary()) -> [#sip_hdr_info{}];
+           ('expires', binary()) -> integer();
+           ('from', binary()) -> #sip_hdr_address{};
+           ('in-reply-to', binary()) -> [CallID :: binary()];
+           ('max-forwards', binary()) -> integer();
+           ('min-expires', binary()) -> integer();
+           ('mime-version', binary()) -> {Major :: integer(), Minor :: integer()};
+           ('organization', binary()) -> Organization :: binary();
+           ('priority', binary()) -> Priority :: name();
+           ('proxy-authenticate', binary()) -> #sip_hdr_auth{};
+           ('proxy-authorization', binary()) -> #sip_hdr_auth{};
+           ('proxy-require', binary()) -> [OptionTag :: name()];
+           ('record-route', binary()) -> [#sip_hdr_address{}];
+           ('reply-to', binary()) -> #sip_hdr_address{};
+           ('require', binary()) -> [OptionTag :: name()];
+           ('retry-after', binary()) -> #sip_hdr_retry{};
+           ('route', binary()) -> [#sip_hdr_address{}];
+           ('server', binary()) -> Server :: binary();
+           ('subject', binary()) -> Subject :: binary();
+           ('supported', binary()) -> [OptionTag :: name()];
+           ('timestamp', binary()) -> #sip_hdr_timestamp{};
+           ('to', binary()) -> #sip_hdr_address{};
+           ('unsupported', binary()) -> [OptionTag :: name()];
+           ('user-agent', binary()) -> UserAgent :: binary();
+           ('via', binary()) -> [#sip_hdr_via{}];
+           ('warning', binary()) -> [#sip_hdr_warning{}];
+           ('www-authenticate', binary()) -> #sip_hdr_auth{};
+           (Other :: name(), binary()) -> binary();
+           (Name :: name(), Parsed :: any()) -> Parsed :: any().
+%% @doc Parse binary header value into the Erlang term representation
+%%
+%% See type specification for information about which term is used to represent
+%% particular header value.
+%% @end
 parse(Name, Bin) -> process(p, Name, Bin).
 
+-spec format('accept', [#sip_hdr_mediatype{}]) -> binary();
+           ('accept-encoding', [#sip_hdr_encoding{}]) -> binary();
+           ('accept-language', [#sip_hdr_language{}]) -> binary();
+           ('alert-info', [#sip_hdr_info{}]) -> binary();
+           ('allow', [Method :: name()]) -> binary();
+           ('authentication-info', #sip_hdr_auth{}) -> binary();
+           ('authorization', #sip_hdr_auth{}) -> binary();
+           ('call-id', binary()) -> binary();
+           ('call-info', [#sip_hdr_info{}]) -> binary();
+           ('contact', [#sip_hdr_address{}]) -> binary(); % FIXME '*'
+           ('content-disposition', #sip_hdr_disposition{}) -> binary();
+           ('content-encoding', [ContentCoding :: name()]) -> binary();
+           ('content-language', [LanguageTag :: name()]) -> binary();
+           ('content-length', integer()) -> binary();
+           ('content-type', #sip_hdr_mediatype{}) -> binary();
+           ('cseq', #sip_hdr_cseq{}) -> binary();
+           ('date', calendar:t_datetime()) -> binary();
+           ('error-info', [#sip_hdr_info{}]) -> binary();
+           ('expires', integer()) -> binary();
+           ('from', #sip_hdr_address{}) -> binary();
+           ('in-reply-to', [CallID :: binary()]) -> binary();
+           ('max-forwards', integer()) -> binary();
+           ('min-expires', integer()) -> binary();
+           ('mime-version', {Major :: integer(), Minor :: integer()}) -> binary();
+           ('organization', Organization :: binary()) -> binary();
+           ('priority', Priority :: name()) -> binary();
+           ('proxy-authenticate', #sip_hdr_auth{}) -> binary();
+           ('proxy-authorization', #sip_hdr_auth{}) -> binary();
+           ('proxy-require', [OptionTag :: name()]) -> binary();
+           ('record-route', [#sip_hdr_address{}]) -> binary();
+           ('reply-to', #sip_hdr_address{}) -> binary();
+           ('require', [OptionTag :: name()]) -> binary();
+           ('retry-after', #sip_hdr_retry{}) -> binary();
+           ('route', [#sip_hdr_address{}]) -> binary();
+           ('server', Server :: binary()) -> binary();
+           ('subject', Subject :: binary()) -> binary();
+           ('supported', [OptionTag :: name()]) -> binary();
+           ('timestamp', #sip_hdr_timestamp{}) -> binary();
+           ('to', #sip_hdr_address{}) -> binary();
+           ('unsupported', [OptionTag :: name()]) -> binary();
+           ('user-agent', UserAgent :: binary()) -> binary();
+           ('via', [#sip_hdr_via{}]) -> binary();
+           ('warning', [#sip_hdr_warning{}]) -> binary();
+           ('www-authenticate', #sip_hdr_auth{}) -> binary();
+           (Other :: name(), binary()) -> binary();
+           (Name :: name(), Parsed :: any()) -> binary().
 %% @doc Format header value into the binary.
 %% @end
 format(Name, [Value]) -> process(f, Name, Value);
@@ -222,12 +324,12 @@ process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition
 process(pn, <<"e">>, _Ignore) -> 'content-encoding';
 process(fn, 'content-encoding', _Ignore) -> <<"Content-Encoding">>;
 process(p, 'content-encoding', Bin) ->
-    {MethodBin, Rest} = sip_binary:parse_token(Bin),
-    Method = sip_binary:binary_to_existing_atom(sip_binary:to_lower(MethodBin)),
-    parse_list('content-encoding', Method, Rest);
+    {EncodingBin, Rest} = sip_binary:parse_token(Bin),
+    Encoding = sip_binary:binary_to_existing_atom(sip_binary:to_lower(EncodingBin)),
+    parse_list('content-encoding', Encoding, Rest);
 
-process(f, 'content-encoding', Allow) ->
-    sip_binary:any_to_binary(Allow);
+process(f, 'content-encoding', Encoding) ->
+    sip_binary:any_to_binary(Encoding);
 
 %% 20.13 Content-Language
 %% http://tools.ietf.org/html/rfc3261#section-20.13
