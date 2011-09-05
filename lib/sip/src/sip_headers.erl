@@ -477,6 +477,10 @@ process(p, 'route', Bin) ->
 process(f, 'route', Route) when is_record(Route, sip_hdr_address) ->
     format_address(Route);
 
+%% 20.35 Server
+%% http://tools.ietf.org/html/rfc3261#section-20.35
+process(fn, 'server', _Ignore) -> <<"Server">>;
+process(p, 'server', Bin) -> Bin;
 
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
@@ -972,6 +976,7 @@ parse_test_() ->
                      "Proxy-Require: foo\r\nRecord-Route: <sip:server10.biloxi.com;lr>\r\n",
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
                      "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
+                     "Server: HomeServer v2\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -995,6 +1000,7 @@ parse_test_() ->
                                    {'proxy-require', <<"foo">>}, {'record-route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
                                    {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
+                                   {'server', <<"HomeServer v2">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1334,7 +1340,8 @@ parse_test_() ->
      ?_assertEqual(<<"<sip:p1.example.com;lr>">>,
                    format('route', address(<<>>, <<"sip:p1.example.com;lr">>, []))),
 
-
+     ?_assertEqual(<<"HomeServer v2">>, parse('server', <<"HomeServer v2">>)),
+     ?_assertEqual(<<"HomeServer v2">>, format('server', <<"HomeServer v2">>)),
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
