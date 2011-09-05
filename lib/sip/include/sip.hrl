@@ -72,6 +72,11 @@
          comment = <<>> :: binary(),
          params = []}).
 
+%% Value for header `Timestamp:'
+-record(sip_hdr_timestamp,
+        {timestamp :: float(),
+         delay = 0.0 :: float()}).
+
 -record(sip_hdr_via, {version = <<"2.0">> :: binary(),
                       % note that tcp+tls becomes 'tls' transport
                       transport :: 'udp' | 'tcp' | 'tls' | atom(),

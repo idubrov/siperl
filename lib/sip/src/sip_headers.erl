@@ -501,6 +501,27 @@ process(p, 'supported', Bin) ->
 process(f, 'supported', Ext) ->
     sip_binary:any_to_binary(Ext);
 
+%% 20.38 Timestamp
+%% http://tools.ietf.org/html/rfc3261#section-20.38
+process(fn, 'timestamp', _Ignore) -> <<"Timestamp">>;
+process(p, 'timestamp', Bin) ->
+    case sip_binary:parse_token(Bin) of
+        {TimestampBin, <<>>} ->
+            timestamp(sip_binary:binary_to_float(TimestampBin), 0.0);
+        {TimestampBin, DelayBin} ->
+            timestamp(sip_binary:binary_to_float(TimestampBin),
+                      sip_binary:binary_to_float(DelayBin))
+    end;
+
+process(f, 'timestamp', Timestamp) when is_record(Timestamp, sip_hdr_timestamp) ->
+    Bin = sip_binary:float_to_binary(Timestamp#sip_hdr_timestamp.timestamp),
+    case Timestamp#sip_hdr_timestamp.delay of
+        0.0 -> Bin;
+        Delay ->
+            DelayBin = sip_binary:float_to_binary(Delay),
+            <<Bin/binary, ?SP, DelayBin/binary>>
+    end;
+
 
 
 %% .....
@@ -793,6 +814,13 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), 
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
 
+%% @doc Construct `Timestamp:' header value.
+%% @end
+-spec timestamp(float(), float()) -> #sip_hdr_timestamp{}.
+timestamp(Timestamp, Delay) when is_float(Timestamp), is_float(Delay) ->
+    #sip_hdr_timestamp{timestamp = Timestamp, delay = Delay}.
+
+
 %% @doc Add tag to the `From:' or `To:' header.
 %% @end
 -spec add_tag(atom(), #sip_hdr_address{}, binary()) -> #sip_hdr_address{}.
@@ -984,7 +1012,7 @@ parse_test_() ->
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
                      "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
                      "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
-                     "Supported: 100rel\r\n",
+                     "Supported: 100rel\r\nTimestamp: 54\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
@@ -1009,7 +1037,7 @@ parse_test_() ->
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
                                    {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
-                                   {'supported', <<"100rel">>},
+                                   {'supported', <<"100rel">>}, {'timestamp', <<"54">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
@@ -1361,7 +1389,11 @@ parse_test_() ->
      ?_assertEqual([foo, bar], parse('supported', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('supported', [foo, bar])),
 
-
+     % Timestamp
+     ?_assertEqual(timestamp(54.3, 2.6), parse('timestamp', <<"54.3 2.6">>)),
+     ?_assertEqual(timestamp(54.3, 0.0), parse('timestamp', <<"54.3">>)),
+     ?_assertEqual(<<"54.3 2.6">>, format('timestamp', timestamp(54.3, 2.6))),
+     ?_assertEqual(<<"54.3">>, format('timestamp', timestamp(54.3, 0.0))),
 
 
      % To
