@@ -708,14 +708,10 @@ format_param(Name, Bin) ->
     Name2 = sip_binary:any_to_binary(Name),
     <<Bin/binary, ?SEMI, Name2/binary>>.
 
-need_quoting(Value) when not is_binary(Value) ->
-    % no need to escape non-binary values
-    % (it could be number, IP address, atom)
-    false;
-need_quoting(<<>>) ->
-    false;
+need_quoting(Value) when not is_binary(Value) -> false; % integer, atom, etc, no quoting
+need_quoting(<<>>) -> true;
 need_quoting(<<C, Rest/binary>>)  ->
-    (not sip_binary:is_token_char(C)) orelse need_quoting(Rest).
+    (not sip_binary:is_token_char(C)) orelse (Rest =/= <<>> andalso need_quoting(Rest)).
 
 %%-----------------------------------------------------------------
 %% Header-specific helpers
@@ -1253,22 +1249,22 @@ parse_test_() ->
                         [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
                          {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
                          {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
-                         {param, <<"value">>}]),
+                         {param, <<>>}]),
                    parse('proxy-authenticate',
                          <<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
                            "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
                            "stale=FALSE, algorithm=MD5, qop=\"auth, auth-int\", ",
-                           "param=\"value\"">>)),
+                           "param=\"\"">>)),
      ?_assertEqual(<<"Digest realm=\"atlanta.com\", domain=\"sip:ss1.carrier.com\", ",
                      "nonce=\"f84f1cec41e6cbe5aea9c8e88d359\", opaque=\"\", ",
                      "stale=false, algorithm=MD5, qop=\"auth, auth-int\", ",
-                     "param=value">>,
+                     "param=\"\"">>,
                    format('proxy-authenticate',
                           auth('Digest',
                                [{realm, <<"atlanta.com">>}, {domain, <<"sip:ss1.carrier.com">>},
                                 {nonce, <<"f84f1cec41e6cbe5aea9c8e88d359">>}, {opaque, <<>>},
                                 {stale, false}, {algorithm, 'MD5'}, {qop, [auth, 'auth-int']},
-                                {param, <<"value">>}]))),
+                                {param, <<>>}]))),
 
      ?_assertEqual(auth('Digest', [{realm, <<"atlanta.com">>}, {stale, true}]),
                    parse('proxy-authenticate', <<"Digest realm=\"atlanta.com\", stale=true">>)),
