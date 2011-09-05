@@ -489,6 +489,20 @@ process(fn, 'subject', _Ignore) -> <<"Subject">>;
 process(p, 'subject', Bin) ->
     sip_binary:trim(Bin);
 
+%% 20.37 Supported
+%% http://tools.ietf.org/html/rfc3261#section-20.37
+process(pn, <<"k">>, _Ignore) -> 'supported';
+process(fn, 'supported', _Ignore) -> <<"Supported">>;
+process(p, 'supported', Bin) ->
+    {ExtBin, Rest} = sip_binary:parse_token(Bin),
+    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
+    parse_list('supported', Ext, Rest);
+
+process(f, 'supported', Ext) ->
+    sip_binary:any_to_binary(Ext);
+
+
+
 %% .....
 process(pn, <<"v">>, _Ignore) -> 'via';
 process(fn, 'via', _Ignore) -> <<"Via">>;
@@ -529,20 +543,6 @@ process(p, 'to', Bin) ->
 
 process(f, 'to', Addr) when is_record(Addr, sip_hdr_address) ->
     format_address(Addr);
-
-%% ...
-
-
-%% ...
-process(pn, <<"k">>, _Ignore) -> 'supported';
-process(fn, 'supported', _Ignore) -> <<"Supported">>;
-process(p, 'supported', Bin) ->
-    {ExtBin, Rest} = sip_binary:parse_token(Bin),
-    Ext = sip_binary:binary_to_existing_atom(sip_binary:to_lower(ExtBin)),
-    parse_list('supported', Ext, Rest);
-
-process(f, 'supported', Ext) ->
-    sip_binary:any_to_binary(Ext);
 
 %% ...
 process(fn, 'unsupported', _Ignore) -> <<"Unsupported">>;
@@ -984,11 +984,12 @@ parse_test_() ->
                      "Reply-To: Bob <sip:bob@biloxi.com>\r\nRequire: foo\r\n",
                      "Retry-After: 120\r\nRoute: <sip:server10.biloxi.com;lr>\r\n",
                      "Server: HomeServer v2\r\nSubject: Need more boxes\r\n",
+                     "Supported: 100rel\r\n",
 
                      "Content-Length: 5\r\nVia: SIP/2.0/UDP localhost\r\n",
                      "To: sip:bob@localhost\r\n"
                      "x-custom-atom: 25\r\nAllow: INVITE, ACK, CANCEL, OPTIONS, BYE\r\n",
-                     "Supported: 100rel\r\nUnsupported: bar, baz\r\n",
+                     "Unsupported: bar, baz\r\n",
                      "X-Custom: value\r\n">>,
                    format_headers([{'accept', <<"*/*">>}, {'accept-encoding', <<"identity">>},
                                    {'accept-language', <<"en">>}, {'alert-info', <<"<http://www.example.com/sounds/moo.wav>">>},
@@ -1008,13 +1009,14 @@ parse_test_() ->
                                    {'reply-to', <<"Bob <sip:bob@biloxi.com>">>}, {'require', <<"foo">>},
                                    {'retry-after', <<"120">>}, {'route', <<"<sip:server10.biloxi.com;lr>">>},
                                    {'server', <<"HomeServer v2">>}, {'subject', <<"Need more boxes">>},
+                                   {'supported', <<"100rel">>},
 
 
                                    {'content-length', <<"5">>}, {'via', <<"SIP/2.0/UDP localhost">>},
                                    {'to', <<"sip:bob@localhost">>},
                                    {'x-custom-atom', 25},
                                    {'allow', <<"INVITE, ACK, CANCEL, OPTIONS, BYE">>},
-                                   {'supported', <<"100rel">>}, {'unsupported', <<"bar, baz">>},
+                                   {'unsupported', <<"bar, baz">>},
                                    {<<"X-Custom">>, <<"value">>}])),
 
      % Already parsed
@@ -1350,11 +1352,17 @@ parse_test_() ->
      % Server
      ?_assertEqual(<<"HomeServer v2">>, parse('server', <<"HomeServer v2">>)),
      ?_assertEqual(<<"HomeServer v2">>, format('server', <<"HomeServer v2">>)),
-     
+
      % Subject
      ?_assertEqual(<<"Need more boxes">>, parse('subject', <<"Need more boxes">>)),
      ?_assertEqual(<<"Need more boxes">>, format('subject', <<"Need more boxes">>)),
-     
+
+     % Supported
+     ?_assertEqual([foo, bar], parse('supported', <<"foo, bar">>)),
+     ?_assertEqual(<<"foo, bar">>, format('supported', [foo, bar])),
+
+
+
 
      % To
      ?_assertEqual(address(<<"Bob Zert">>, <<"sip:bob@biloxi.com">>, [{'tag', <<"1928301774">>}]),
@@ -1399,9 +1407,6 @@ parse_test_() ->
      % Require, Proxy-Require, Supported, Unsupported
      ?_assertEqual([foo, bar], parse('require', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('require', [foo, bar])),
-
-     ?_assertEqual([foo, bar], parse('supported', <<"foo, bar">>)),
-     ?_assertEqual(<<"foo, bar">>, format('supported', [foo, bar])),
 
      ?_assertEqual([foo, bar], parse('unsupported', <<"foo, bar">>)),
      ?_assertEqual(<<"foo, bar">>, format('unsupported', [foo, bar])),
