@@ -5,6 +5,7 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 
+%% Basic elements of SIP syntax
 -define(EQUAL, $=).
 -define(SP, $ ).
 -define(SEMI, $;).
@@ -17,3 +18,4 @@
 -define(SLASH, $/).
 -define(LPAREN, $().
 -define(RPAREN, $)).
+-define(SIPVERSION, "SIP/2.0").

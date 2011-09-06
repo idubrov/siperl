@@ -11,7 +11,7 @@
 %% API
 -export([send_response/2, handle_info/2]).
 
-%% Request processing
+%% Request processing valves
 -export([validate_allowed/2, validate_loop/2, validate_required/2]).
 
 %% Include files

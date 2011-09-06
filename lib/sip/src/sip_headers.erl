@@ -15,7 +15,7 @@
 
 %% Includes
 -include("sip_common.hrl").
--include("sip_parse.hrl").
+-include("sip_syntax.hrl").
 -include("sip.hrl").
 
 %% API functions

@@ -1,11 +1,10 @@
-%%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UAC/UAS core implementation
 %%%
+%%% This module could be used as base implementation of UAC/UAS gen_server.
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-8">RFC 3261</a> for details.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
-%%%----------------------------------------------------------------
 -module(sip_ua).
 -compile({parse_transform, do}).
 
@@ -73,13 +72,13 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Default UAC/UAS callbacks
 
--spec handle_request(binary() | atom(), #sip_message{}, #sip_ua_state{}) -> any().
+-spec handle_request(binary() | atom(), #sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 handle_request(_Method, _Msg, State) ->
     % Apply next request processor
-    {next, State}.
+    pipeline_m:next(State).
 
--spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> any().
+-spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
 handle_response(_UserData, _Msg, State) ->
     % Ignore the response
-    {noreply, State}.
+    pipeline_m:next(State).
 

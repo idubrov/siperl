@@ -16,7 +16,6 @@
 
 %% Include files
 -include("sip_common.hrl").
--include("sip_parse.hrl").
 
 
 %%-----------------------------------------------------------------
