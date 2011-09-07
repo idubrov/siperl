@@ -98,7 +98,7 @@ client_invite_ok(Transport) ->
     Request = sip_test:invite(Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 
@@ -158,7 +158,7 @@ client_invite_err(Transport)->
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
 
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 
@@ -222,7 +222,7 @@ client_invite_timeout_calling(Transport)->
     Request = sip_test:invite(Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 
@@ -252,7 +252,7 @@ client_invite_timeout_proceeding(Transport)->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 
@@ -286,7 +286,7 @@ client_ok(Transport) ->
     Request = sip_test:request('OPTIONS', Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
 
     ?assertReceive("Expect request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
@@ -371,7 +371,7 @@ client_timeout_trying(Transport)->
     Request = sip_test:request('OPTIONS', Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 
@@ -402,7 +402,7 @@ client_timeout_proceeding(Transport)->
     Request = sip_test:request('OPTIONS', Transport),
 
     {ok, TxKey} = sip_transaction:start_client_tx(self(), To, Request),
-    ExpectedRequest = sip_message:with_branch(Request, TxKey#sip_tx_client.branch),
+    ExpectedRequest = sip_message:with_branch(TxKey#sip_tx_client.branch, Request),
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, ExpectedRequest}),
 

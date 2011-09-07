@@ -154,6 +154,17 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
         false -> {error, not_found}
     end.
 
+%% @doc Update top `Via:' header of given request with provided branch value
+%% @end
+-spec with_branch(binary(), #sip_message{}) -> #sip_message{}.
+with_branch(Branch, #sip_message{kind = #sip_request{}} = Msg) when is_binary(Branch) ->
+    UpdateBranch =
+        fun (Via) ->
+                 Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
+                 Via#sip_hdr_via{params = Params}
+        end,
+    update_top_header('via', UpdateBranch, Msg).
+
 %% @doc Retrieve `tag' parameter of From/To header
 %%
 %% Retrieve `tag' parameter of `From:'/`To:' header or `undefined' if no such
@@ -510,17 +521,6 @@ default_reason(Status) ->
         606 -> <<"Not Acceptable">>
     end.
 
-%% @doc Update top `Via:' header of given request with provided branch value
-%% @end
--spec with_branch(#sip_message{}, binary()) -> #sip_message{}.
-with_branch(#sip_message{kind = #sip_request{}} = Msg, Branch) when is_binary(Branch) ->
-    UpdateBranch =
-        fun (Via) ->
-                 Params = lists:keystore(branch, 1, Via#sip_hdr_via.params, {branch, Branch}),
-                 Via#sip_hdr_via{params = Params}
-        end,
-    update_top_header('via', UpdateBranch, Msg).
-
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
@@ -732,8 +732,6 @@ helpers_test_() ->
         InvalidRequest#sip_message{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_message.headers]},
     [% Header lookup functions
      ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
-     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [{'via', [Via1]}, {'via', [Via2]}]})),
-     ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [{'via', [Via2]}]})),
      ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
      % Fold Via's (extract hostnames in reverse order)
@@ -795,5 +793,34 @@ update_header_test() ->
     ?assertEqual(Msg5Up, append_header(cseq, CSeq, Msg5)),
     ?assertEqual(Msg5, append_header(via, [], Msg5)), % empty value
     ok.
+
+-spec branch_helpers_test_() -> list().
+branch_helpers_test_() ->
+
+    Via1 = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
+    Via2 = sip_headers:via(tcp, {"127.0.0.2", 15060}, [{ttl, 4}]),
+    Via1Up = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bKkjshdyff">>}]),
+    [
+     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>},
+                   top_via_branch(#sip_message{headers = [{via, [Via1, Via2]}]})),
+     ?_assertEqual({error, not_found},
+                   top_via_branch(#sip_message{headers = [{via, [Via2]}]})),
+     
+     % updating branch
+     ?_assertEqual(#sip_message{kind = #sip_request{method = 'INVITE', uri = <<"sip@nowhere.invalid">>},
+                                headers = [{via, [Via1Up, Via2]}]},
+                   with_branch(<<"z9hG4bKkjshdyff">>,
+                               #sip_message{kind = #sip_request{method = 'INVITE', uri = <<"sip@nowhere.invalid">>},
+                                            headers = [{via, [Via1, Via2]}]}))
+     ].
+
+-spec fake_test() -> ok.
+fake_test() ->
+    % fake test to create coverage for default_reason function
+    Fun = fun(700, _Self) -> ok;
+             (Code, Self) -> catch default_reason(Code), Self(Code + 1, Self)
+          end,
+    % simply call it with all codes from 100 to 700
+    Fun(100, Fun).
 
 -endif.

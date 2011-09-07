@@ -1,0 +1,91 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>Module sip_transaction_server</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module sip_transaction_server</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
+   RFC 3261 17.2.2 Non-INVITE Server Transaction.
+<p>Copyright © 2011 Ivan Dubrov. See LICENSE file.
+  ----------------------------------------------------------------</p>
+
+<p><b>Authors:</b> Ivan Dubrov (<a href="mailto:dubrov.ivan@gmail.com"><tt>dubrov.ivan@gmail.com</tt></a>).</p>
+
+<h2><a name="description">Description</a></h2>
+   RFC 3261 17.2.2 Non-INVITE Server Transaction
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#COMPLETED-2">'COMPLETED'/2</a></td><td>
+  The server transaction remains in this state until Timer J fires, at which
+  point it MUST transition to the "Terminated" state.</td></tr>
+<tr><td valign="top"><a href="#COMPLETED-3">'COMPLETED'/3</a></td><td>
+  While in the "Completed" state, the server transaction MUST pass the
+  final response to the transport layer for retransmission whenever a
+  retransmission of the request is received.</td></tr>
+<tr><td valign="top"><a href="#INIT-2">'INIT'/2</a></td><td><code>INIT</code> state is for heavy-weight initialization (sending request, starting timers).</td></tr>
+<tr><td valign="top"><a href="#PROCEEDING-3">'PROCEEDING'/3</a></td><td>
+  Any further provisional responses that are received from the TU while in
+  the "Proceeding" state MUST be passed to the transport layer for transmission.</td></tr>
+<tr><td valign="top"><a href="#TRYING-3">'TRYING'/3</a></td><td>
+  Once in the "Trying" state, any further request retransmissions are
+  discarded.</td></tr>
+<tr><td valign="top"><a href="#handle_info-3">handle_info/3</a></td><td>
+  Handle case when we expect response from the TU, but it goes down.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="COMPLETED-2">'COMPLETED'/2</a></h3>
+<div class="spec">
+<p><tt>'COMPLETED'(X1::term(), Tx_state::#tx_state{}) -&gt; term()</tt><br></p>
+</div><p>
+  The server transaction remains in this state until Timer J fires, at which
+  point it MUST transition to the "Terminated" state.</p>
+
+<h3 class="function"><a name="COMPLETED-3">'COMPLETED'/3</a></h3>
+<div class="spec">
+<p><tt>'COMPLETED'(X1::term(), From::term(), Tx_state::#tx_state{}) -&gt; term()</tt><br></p>
+</div><p>
+  While in the "Completed" state, the server transaction MUST pass the
+  final response to the transport layer for retransmission whenever a
+  retransmission of the request is received.  Any other final responses
+  passed by the TU to the server transaction MUST be discarded while in
+  the "Completed" state.  The server transaction remains in this state
+  until Timer J fires, at which point it MUST transition to the "Terminated"
+  state.</p>
+
+<h3 class="function"><a name="INIT-2">'INIT'/2</a></h3>
+<div class="spec">
+<p><tt>'INIT'(X1::init, Tx_state::#tx_state{}) -&gt; {next_state, atom(), #tx_state{}}</tt><br></p>
+</div><p><code>INIT</code> state is for heavy-weight initialization (sending request, starting timers)</p>
+
+<h3 class="function"><a name="PROCEEDING-3">'PROCEEDING'/3</a></h3>
+<div class="spec">
+<p><tt>'PROCEEDING'(X1::term(), From::term(), Tx_state::#tx_state{}) -&gt; term()</tt><br></p>
+</div><p>
+  Any further provisional responses that are received from the TU while in
+  the "Proceeding" state MUST be passed to the transport layer for transmission.</p>
+
+<h3 class="function"><a name="TRYING-3">'TRYING'/3</a></h3>
+<div class="spec">
+<p><tt>'TRYING'(X1::term(), From::term(), Tx_state::#tx_state{}) -&gt; term()</tt><br></p>
+</div><p>
+  Once in the "Trying" state, any further request retransmissions are
+  discarded.  A request is a retransmission if it matches the same server
+  transaction.</p>
+
+<h3 class="function"><a name="handle_info-3">handle_info/3</a></h3>
+<div class="spec">
+<p><tt>handle_info(Info::term(), State::atom(), Tx_state::#tx_state{}) -&gt; {stop, term(), #tx_state{}}</tt><br></p>
+</div><p>
+  Handle case when we expect response from the TU, but it goes down</p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, Sep 5 2011, 15:11:48.</i></p>
+</body>
+</html>

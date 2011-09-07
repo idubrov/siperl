@@ -35,7 +35,7 @@ start_client_tx(TU, To, Request)
        is_record(Request, sip_message) ->
 
     % Every new client transaction has its own branch value
-    Request2 = sip_message:with_branch(Request, sip_idgen:generate_branch()),
+    Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
 
     % Transport reliability is from To: header
     % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
