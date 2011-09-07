@@ -5,7 +5,7 @@
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
--module(sip_transport_test).
+-module(sip_transport_tests).
 
 %% Exports
 -compile(export_all).

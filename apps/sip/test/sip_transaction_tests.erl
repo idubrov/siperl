@@ -5,7 +5,7 @@
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
--module(sip_transaction_test).
+-module(sip_transaction_tests).
 
 %% Exports
 -compile(export_all).
@@ -50,7 +50,7 @@ transaction_test_() ->
 -spec specs([atom()]) -> term().
 specs(Funs) ->
     Transports = [tcp, udp],
-    Tests = [{timeout, 60, fun () -> sip_transaction_test:Test(Transport) end} || Test <- Funs, Transport <- Transports],
+    Tests = [{timeout, 60, fun () -> ?MODULE:Test(Transport) end} || Test <- Funs, Transport <- Transports],
     {setup, fun setup/0, fun cleanup/1, {inparallel, Tests}}.
 
 setup() ->
