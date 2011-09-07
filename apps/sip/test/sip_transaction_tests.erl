@@ -1,14 +1,11 @@
-%%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc
-%%% Transaction layer functional tests.
+%%% @doc White-box style testing for transaction layer
+%%%
+%%% Starts transaction layer supervisor, mocks transport layer
+%%% and runs a set of functional tests to verify transactons FSMs.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
-%%%----------------------------------------------------------------
 -module(sip_transaction_tests).
-
-%% Exports
--compile(export_all).
 
 %% Include files
 -include("sip.hrl").
@@ -21,37 +18,27 @@
 
 -spec transaction_test_() -> term().
 transaction_test_() ->
-    Tests = [client_invite_ok,
-             client_invite_err,
-             client_invite_timeout_calling,
-             client_invite_timeout_proceeding,
+    Tests = [fun client_invite_ok/1,
+             fun client_invite_err/1,
+             fun client_invite_timeout_calling/1,
+             fun client_invite_timeout_proceeding/1,
 
-             client_ok,
-             client_timeout_trying,
-             client_timeout_proceeding,
+             fun client_ok/1,
+             fun client_timeout_trying/1,
+             fun client_timeout_proceeding/1,
 
-             server_invite_ok,
-             server_invite_err,
-             server_invite_timeout,
-             server_invite_tu_down,
+             fun server_invite_ok/1,
+             fun server_invite_err/1,
+             fun server_invite_timeout/1,
+             fun server_invite_tu_down/1,
 
-             server_ok,
-             server_err,
-             server_tu_down
+             fun server_ok/1,
+             fun server_err/1,
+             fun server_tu_down/1
             ],
-    specs(Tests).
-
-%% @doc
-%% Generates EUnit specification for given tests. Each test is given
-%% as function name (atom).
-%% Could be used like:
-%% eunit:test(sip_transaction_test:test_([client_invite_ok]))
-%% @end
--spec specs([atom()]) -> term().
-specs(Funs) ->
     Transports = [tcp, udp],
-    Tests = [{timeout, 60, fun () -> ?MODULE:Test(Transport) end} || Test <- Funs, Transport <- Transports],
-    {setup, fun setup/0, fun cleanup/1, {inparallel, Tests}}.
+    Specs = [{timeout, 60, fun () -> Test(Transport) end} || Test <- Tests, Transport <- Transports],
+    {setup, fun setup/0, fun cleanup/1, {inparallel, Specs}}.
 
 setup() ->
     application:start(gproc),
@@ -77,12 +64,6 @@ cleanup({Pid}) ->
     sip_test:shutdown_sup(Pid),
     application:stop(gproc),
     ok.
-
-%% Generate list of test functions with single parameter (resource created by setup)
-%% for every possible combination of test function and transport. Each test function
-%% from the list accepts single transport parameter.
-for_transports(Tests, Transports) ->
-    [fun (_Res) -> Test(Transport) end || Test <- Tests, Transport <- Transports].
 
 %% @doc
 %% Scenario tested:

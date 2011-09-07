@@ -1,14 +1,11 @@
-%%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc
-%%% Transport layer functional tests.
+%%% @doc White-box style testing for transport layer
+%%%
+%%% Starts transport layer supervisor, mocks `sip_core:lookup_core/1'
+%%% to retrieve core process `Pid' from the message `Call-ID:' header.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
-%%%----------------------------------------------------------------
 -module(sip_transport_tests).
-
-%% Exports
--compile(export_all).
 
 %% Include files
 -include("sip.hrl").
@@ -18,6 +15,8 @@
 %% Tests
 %%-----------------------------------------------------------------
 -ifdef(TEST).
+
+-record(resource, {tcp_sock, udp_sock, transport_sup}).
 
 -spec transport_test_() -> term().
 transport_test_() ->
@@ -38,9 +37,13 @@ transport_test_() ->
 
 setup() ->
     application:start(gproc),
-    % Listen on 15060
+    % Mocked modules
     meck:new(sip_config, [passthrough]),
+    meck:new(sip_cores),
+    
+    % start transport layer on port 15060
     meck:expect(sip_config, ports, fun (udp) -> [15060]; (tcp) -> [15060] end),
+    % and use port 25060 for sockets, created by tests
     {ok, Pid} = sip_transport_sup:start_link(),
     {ok, UDP} = gen_udp:open(25060,
                              [inet, binary,
@@ -51,26 +54,25 @@ setup() ->
                                {packet, raw},
                                {reuseaddr, true}]),
 
-    meck:new(sip_cores),
+    
     LookupFun =
         fun (Msg) ->
                  TestPid = sip_test:pid_from_message(Msg),
                  {ok, TestPid, #sip_core_info{}}
         end,
     meck:expect(sip_cores, lookup_core, LookupFun),
-    {Pid, UDP, TCP}.
+    #resource{tcp_sock = TCP, udp_sock = UDP, transport_sup = Pid}.
 
-cleanup({Pid, UDP, TCP}) ->
+cleanup(#resource{tcp_sock = TCP, udp_sock = UDP, transport_sup = Pid}) ->
     gen_tcp:close(TCP),
     gen_udp:close(UDP),
     sip_test:shutdown_sup(Pid),
-    meck:unload(sip_cores),
-    meck:unload(sip_config),
+    meck:unload([sip_cores, sip_config]),
     application:stop(gproc),
     ok.
 
 %% Tests for RFC 3261 18.1.1 Sending Requests
-send_request_udp({_Transport, UDP, _TCP}) ->
+send_request_udp(#resource{udp_sock = UDP}) ->
     Request = sip_test:invite(udp),
     To = #sip_destination{address = {127, 0, 0, 1}, port = 25060, transport = udp},
 
@@ -87,7 +89,7 @@ send_request_udp({_Transport, UDP, _TCP}) ->
     {ok, {_, _, Packet}} = gen_udp:recv(UDP, size(ExpectedRequestBin), ?TIMEOUT),
     ?assertEqual(ExpectedRequestBin, Packet).
 
-send_request_udp_fallback({_Transport, _UDP, TCP}) ->
+send_request_udp_fallback(#resource{tcp_sock = TCP}) ->
     LongBody = sip_test:generate_body(<<$A>>, 1300),
     Request = (sip_test:invite(tcp))#sip_message{body = LongBody},
     To = #sip_destination{address = {127, 0, 0, 1}, port = 25060, transport = udp},
@@ -108,7 +110,7 @@ send_request_udp_fallback({_Transport, _UDP, TCP}) ->
     ?assertEqual(ExpectedRequestBin, Packet),
     gen_tcp:close(RecvSocket).
 
-send_request_udp_multicast({_Transport, UDP, _TCP}) ->
+send_request_udp_multicast(#resource{udp_sock = UDP}) ->
     Request = sip_test:invite(udp),
     MAddr = {239, 0, 0, 100},
     To = #sip_destination{address = MAddr, port = 25060, transport = udp},
@@ -133,7 +135,7 @@ send_request_udp_multicast({_Transport, UDP, _TCP}) ->
     inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
     ok.
 
-receive_response_udp({_Transport, UDP, _TCP}) ->
+receive_response_udp(#resource{udp_sock = UDP}) ->
     Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>),
 
     % send with updated via
@@ -153,7 +155,7 @@ receive_response_udp({_Transport, UDP, _TCP}) ->
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
-receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
+receive_response_udp_wrong(#resource{udp_sock = UDP}) ->
     Response = sip_message:create_response(sip_test:invite(udp), 200, <<"Ok">>),
     Via = sip_headers:via(udp, {"incorrect-sent-by", 35060}, [{branch, sip_idgen:generate_branch()}]),
     WrongResponse = sip_message:replace_top_header('via', Via, Response),
@@ -166,7 +168,7 @@ receive_response_udp_wrong({_Transport, UDP, _TCP}) ->
         after ?TIMEOUT -> ok
     end.
 
-receive_request_udp({_Transport, UDP, _TCP}) ->
+receive_request_udp(#resource{udp_sock = UDP}) ->
     SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
@@ -181,7 +183,7 @@ receive_request_udp({_Transport, UDP, _TCP}) ->
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
-receive_request_udp2({_Transport, UDP, _TCP}) ->
+receive_request_udp2(#resource{udp_sock = UDP}) ->
     SentBy = {"localhost", 25060},
     Branch = sip_idgen:generate_branch(),
     Via = sip_headers:via(udp, SentBy, [{branch, Branch}]),
@@ -200,7 +202,7 @@ receive_request_udp2({_Transport, UDP, _TCP}) ->
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
     end.
 
-send_response_tcp({_Transport, _UDP, _TCP}) ->
+send_response_tcp(#resource{}) ->
     SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
@@ -231,7 +233,7 @@ send_response_tcp({_Transport, _UDP, _TCP}) ->
     gen_tcp:close(Socket),
     ok.
 
-send_response_tcp2({_Transport, _UDP, TCP}) ->
+send_response_tcp2(#resource{tcp_sock = TCP}) ->
     SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
@@ -267,7 +269,7 @@ send_response_tcp2({_Transport, _UDP, TCP}) ->
     gen_tcp:close(Socket),
     ok.
 
-send_response_udp_maddr({_Transport, UDP, _TCP}) ->
+send_response_udp_maddr(#resource{udp_sock = UDP}) ->
     MAddr = {239, 0, 0, 100},
     SentBy = {{127, 0, 0, 1}, 25060},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_idgen:generate_branch()}, {'maddr', <<"239.0.0.100">>}]),
@@ -301,7 +303,7 @@ send_response_udp_maddr({_Transport, UDP, _TCP}) ->
     ?assertEqual(ResponseBin3, Packet2),
     ok.
 
-send_response_udp_default_port({_Transport, _UDP, _TCP}) ->
+send_response_udp_default_port(#resource{}) ->
     SentBy = {{127, 0, 0, 1}, undefined},
     Via = sip_headers:via(udp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
