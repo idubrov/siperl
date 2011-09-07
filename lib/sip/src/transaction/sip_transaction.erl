@@ -119,7 +119,7 @@ is_loop_detected(Msg) ->
         false ->
             TxKey = sip_transaction:tx_key(server, Msg),
 
-            FromTag = sip_message:tag('from', Msg),
+            {value, FromTag} = sip_message:tag('from', Msg),
             CallId = sip_message:top_header('call-id', Msg),
             CSeq = sip_message:top_header('cseq', Msg),
             List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
@@ -133,7 +133,7 @@ is_loop_detected(Msg) ->
                 _Other -> true
             end;
         % tag present, no loop
-        {ok, _Tag} -> false
+        {value, _Tag} -> false
     end.
 
 %%-----------------------------------------------------------------

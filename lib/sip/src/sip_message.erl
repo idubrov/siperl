@@ -42,13 +42,13 @@
 %% API functions
 %%-----------------------------------------------------------------
 
-%% @doc Check if message is SIP request.
+%% @doc Check if message is SIP request
 %% @end
 -spec is_request(#sip_message{}) -> boolean().
 is_request(#sip_message{kind = #sip_request{}}) -> true;
 is_request(#sip_message{kind = #sip_response{}}) -> false.
 
-%% @doc Check if message is SIP response.
+%% @doc Check if message is SIP response
 %% @end
 -spec is_response(#sip_message{}) -> boolean().
 is_response(Message) ->
@@ -161,12 +161,12 @@ top_via_branch(Message) when is_record(Message, sip_message) ->
 %%
 %% This function parses the header value if header is in binary form.
 %% @end
--spec tag('to' | 'from', #sip_message{}) -> {ok, binary()} | false.
+-spec tag('to' | 'from', #sip_message{}) -> {value, binary()} | false.
 tag(Header, Message) when
   is_record(Message, sip_message), (Header =:= 'to' orelse Header =:= 'from') ->
     {ok, Value} = top_header(Header, Message#sip_message.headers),
     case lists:keyfind(tag, 1, Value#sip_hdr_address.params) of
-        {tag, Tag} when is_binary(Tag) -> {ok, Tag};
+        {tag, Tag} when is_binary(Tag) -> {value, Tag};
         false -> false
     end.
 
@@ -404,8 +404,8 @@ create_response(Request, Status, Reason) ->
                                  Name =:= cseq orelse Name =:= 'via' orelse
                                  Name =:= 'to')],
     Kind = #sip_response{status = Status, reason = Reason},
-    Headers2 = [{'content-length', 0} | Headers],
-    #sip_message{kind = Kind, headers = Headers2}.
+    % also, insert zero-length Content-Length, so response could be sent "as-is"
+    #sip_message{kind = Kind, headers = [{'content-length', 0} | Headers]}.
 
 %% @doc Create response for given request (with default Reason)
 %% @end
@@ -426,13 +426,13 @@ validate_request(Request) when is_record(Request, sip_message) ->
         fun ({Name, Value}, Counts) ->
                  % assign tuple index for every header being counted
                  Idx = case Name of
-                           'to' -> 1;
-                           'from' -> 2;
+                           to -> 1;
+                           from -> 2;
                            cseq -> 3;
                            'call-id' -> 4;
                            'max-forwards' -> 5;
-                           'via' -> 6;
-                           'contact' -> 7;
+                           via -> 6;
+                           contact -> 7;
                            _ -> 0
                        end,
                  if
@@ -526,23 +526,13 @@ with_branch(#sip_message{kind = #sip_request{}} = Msg, Branch) when is_binary(Br
 %%-----------------------------------------------------------------
 -ifndef(NO_TEST).
 
--spec parse_request_line_test_() -> term().
-parse_request_line_test_() ->
-    [?_assertEqual(#sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>},
-                   parse_start_line(<<"INVITE sip:bob@biloxi.com SIP/2.0">>)),
-     ?_assertException(error, {case_clause, _}, parse_start_line(<<"INV ITE sip:bob@biloxi.com SIP/2.0">>)),
-     ?_assertEqual(#sip_response{status = 200, reason = <<"OK">>},
-                   parse_start_line(<<"SIP/2.0 200 OK">>)),
-     ?_assertException(error, {case_clause, _}, parse_start_line(<<"SIP/2.0 099 Invalid">>))
-    ].
-
 -spec parse_stream_test_() -> term().
 parse_stream_test_() ->
     SampleRequest = #sip_request{method = 'INVITE', uri = <<"sip:urn:service:test">>},
     SampleMessage = #sip_message{kind = SampleRequest,
                                  headers = [{'content-length', <<"5">>}],
                                  body = <<"Hello">>},
-    [ %% Skipping \r\n
+    [%% Skipping \r\n
      ?_assertEqual({ok, {'BEFORE', <<>>}},
                    parse_stream(<<>>, none)),
      ?_assertEqual({ok, {'BEFORE', <<>>}},
@@ -633,6 +623,16 @@ parse_datagram_test_() ->
                    parse_datagram(<<"SIP/2.0 200 Ok\r\n\r\n">>))
     ].
 
+-spec format_test_() -> term().
+format_test_() ->
+    {ok, Request, _} = parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nX-Custom: Nothing\r\n\r\nHello">>, none),
+    {ok, Response, _} = parse_stream(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, none),
+    [
+     ?_assertEqual(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nx-custom: Nothing\r\n\r\nHello">>, to_binary(Request)),
+     ?_assertEqual(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, to_binary(Response))
+    ].
+
+
 -spec is_test_() -> term().
 is_test_() ->
     {ok, Request, _} = parse_stream(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nX-Custom: Nothing\r\n\r\nHello">>, none),
@@ -640,9 +640,7 @@ is_test_() ->
     [?_assertEqual(true, is_request(Request)),
      ?_assertEqual(false, is_request(Response)),
      ?_assertEqual(false, is_response(Request)),
-     ?_assertEqual(true, is_response(Response)),
-     ?_assertEqual(<<"INVITE sip:urn:service:test SIP/2.0\r\nContent-Length: 5\r\nx-custom: Nothing\r\n\r\nHello">>, to_binary(Request)),
-     ?_assertEqual(<<"SIP/2.0 200 Ok\r\nContent-Length: 5\r\n\r\nHello">>, to_binary(Response))
+     ?_assertEqual(true, is_response(Response))
     ].
 
 -spec method_test_() -> term().
@@ -652,6 +650,39 @@ method_test_() ->
     [?_assertEqual('INVITE', method(Request)),
      ?_assertEqual('INVITE', method(Response))
      ].
+
+-spec create_response_test_() -> list().
+create_response_test_() ->
+    Request =
+        #sip_message{kind = #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>},
+                     headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                                {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+                                {to, <<"Bob <sip:bob@biloxi.com>">>},
+                                {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+                                {'call-id', <<"987asjd97y7atg">>},
+                                {cseq, <<"986759 INVITE">>},
+                                {route, <<"<sip:alice@atlanta.com>">>},
+                                {route, <<"<sip:bob@biloxi.com>">>}]},
+
+    % (default reason)
+    Response =
+        #sip_message{kind = #sip_response{status = 405, reason = <<"Method Not Allowed">>},
+                     headers = [{'content-length', 0},
+                                {via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                                {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+                                {to, <<"Bob <sip:bob@biloxi.com>">>},
+                                {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+                                {'call-id', <<"987asjd97y7atg">>},
+                                {cseq, <<"986759 INVITE">>}]},
+    % custom reason
+    Response2 = Response#sip_message{kind = #sip_response{status = 201, reason = <<"Very Ok!">>}},
+    [% Check that all required headers are copied
+     % Also, create_response adds content-length of 0
+     % XXX: Should the content-length be added by transport layer instead?
+     ?_assertEqual(Response, create_response(Request, 405)),
+     ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>))
+     ].
+
 
 -spec create_ack_test_() -> list().
 create_ack_test_() ->
@@ -675,8 +706,8 @@ create_ack_test_() ->
      ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(OrigRequest, Response)))
      ].
 
--spec header_test_() -> list().
-header_test_() ->
+-spec helpers_test_() -> list().
+helpers_test_() ->
 
     Via1 = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {"127.0.0.2", 15060}, [{ttl, 4}]),
@@ -686,24 +717,38 @@ header_test_() ->
     ValidRequest =
         #sip_message{kind = #sip_request{method = 'OPTIONS', uri = URI},
                      headers = [{to, sip_headers:address(<<>>, URI, [])},
-                                {from, sip_headers:address(<<>>, URI, [])},
+                                {from, sip_headers:address(<<>>, URI, [{tag, <<"fromtag">>}])},
                                 {cseq, sip_headers:cseq(1, 'OPTIONS')},
                                 {'call-id', <<"123">>},
                                 {'max-forwards', 70},
-                                {via, sip_headers:via(udp, "localhost", [])}]},
+                                {via, sip_headers:via(udp, "localhost", [])},
+                                {require, <<"foo">>}]},
 
     % No contact in INVITE
     InvalidRequest =
         ValidRequest#sip_message{kind = #sip_request{method = 'INVITE', uri = URI}},
+    % with added contact header
+    ValidRequest2 =
+        InvalidRequest#sip_message{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_message.headers]},
     [% Header lookup functions
      ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
      ?_assertEqual({ok, <<"z9hG4bK776asdhds">>}, top_via_branch(#sip_message{headers = [{'via', [Via1]}, {'via', [Via2]}]})),
      ?_assertEqual({error, not_found}, top_via_branch(#sip_message{headers = [{'via', [Via2]}]})),
      ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
+     % Fold Via's (extract hostnames in reverse order)
+     ?_assertEqual(["localhost", "127.0.0.2", "127.0.0.1"],
+                   foldl_headers(via, fun (#sip_hdr_via{host = Host}, Acc) -> [Host | Acc] end, [],
+                                 #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
+
+     % Common parameters lookup functions
+     ?_assertEqual({value, <<"fromtag">>}, tag(from, ValidRequest)),
+     ?_assertEqual(false, tag(to, ValidRequest)),
+
      % Validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
-     ?_assertEqual({error, invalid_headers}, validate_request(InvalidRequest))
+     ?_assertEqual({error, invalid_headers}, validate_request(InvalidRequest)),
+     ?_assertEqual(ok, validate_request(ValidRequest2))
      ].
 
 -spec update_header_test() -> ok.
@@ -750,4 +795,5 @@ update_header_test() ->
     ?assertEqual(Msg5Up, append_header(cseq, CSeq, Msg5)),
     ?assertEqual(Msg5, append_header(via, [], Msg5)), % empty value
     ok.
+
 -endif.
