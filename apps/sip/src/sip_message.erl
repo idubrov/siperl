@@ -524,7 +524,7 @@ default_reason(Status) ->
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec parse_stream_test_() -> term().
 parse_stream_test_() ->

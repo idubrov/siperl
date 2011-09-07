@@ -44,7 +44,7 @@ take({Added, [{_InvPri, Element} | NotVisited]}) -> {value, Element, {Added, Not
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec priority_test() -> term().
 priority_test() ->

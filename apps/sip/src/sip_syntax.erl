@@ -356,7 +356,7 @@ format_name(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec syntax_test_() -> list().
 syntax_test_() ->

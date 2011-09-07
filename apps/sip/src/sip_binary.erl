@@ -171,7 +171,7 @@ float_to_binary(Float) when is_float(Float) ->
     end.
 
 %% Tests
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec binary_test_() -> list().
 binary_test_() ->

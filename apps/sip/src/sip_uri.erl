@@ -177,7 +177,7 @@ append_headers([{Name, Value} | Tail], Sep, Bin) ->
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec parse_test_() -> list().
 parse_test_() ->

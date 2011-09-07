@@ -1095,7 +1095,7 @@ parse_generic_param(_Name, Value) -> Value.
 %%-----------------------------------------------------------------
 %% Tests
 %%-----------------------------------------------------------------
--ifndef(NO_TEST).
+-ifdef(TEST).
 
 -spec header_names_test_() -> list().
 header_names_test_() ->
