@@ -708,6 +708,9 @@ helpers_test_() ->
      ?_assertEqual(Via1, header_top_value('via', #sip_message{headers = [{'via', [Via1, Via2]}]})),
      ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
+     ?_assertEqual(true, has_header(via, #sip_message{headers = [{via, [Via1, Via2]}]})),
+     ?_assertEqual(false, has_header(via, #sip_message{headers = [{'content-length', 5}]})),
+
      % Fold Via's (extract hostnames in reverse order)
      ?_assertEqual(["localhost", "127.0.0.2", "127.0.0.1"],
                    foldl_headers(via, fun (#sip_hdr_via{host = Host}, Acc) -> [Host | Acc] end, [],
