@@ -340,7 +340,7 @@ parse_integer(<<Rest/binary>>, Acc) ->
 %% If atom matching the binary name exist, atom is returned. Otherwise,
 %% binary is returned as-is.
 %% @end
--spec parse_name(binary()) -> atom() | binary().
+-spec parse_name(binary()) -> name().
 parse_name(Bin) ->
     try binary_to_existing_atom(Bin, utf8)
     catch error:badarg -> Bin

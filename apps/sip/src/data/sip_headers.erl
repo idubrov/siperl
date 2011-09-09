@@ -27,7 +27,7 @@
 %% header terminated by `CRLF'. Empty binary is valid argument that
 %% results in empty list returned.
 %% @end
--spec parse_headers(binary()) -> [{Name :: atom() | binary(), Value :: binary() | term()}].
+-spec parse_headers(binary()) -> [{Name :: sip_syntax:name(), Value :: term()}].
 parse_headers(<<>>) -> [];
 parse_headers(Headers) when is_binary(Headers) ->
     Pos = size(Headers) - 2,
@@ -39,7 +39,7 @@ parse_headers(Headers) when is_binary(Headers) ->
 %%
 %% For supported header representations, see {@link parse/2}/{@link format/2} functions.
 %% @end
--spec format_headers([{atom() | binary(), binary() | term()}]) -> binary().
+-spec format_headers([{sip_syntax:name(), term()}]) -> binary().
 format_headers(Headers) ->
     << <<(process(fn, Name, ignore))/binary, ": ",
          (format(Name, Value))/binary, "\r\n">> ||
@@ -165,7 +165,7 @@ format(Name, Value) -> process(f, Name, Value).
 %%
 %% Parsing/formatting merged into single function for better locality of changes.
 %% @end
--spec process(p | f | pn | fn, Name :: atom() | binary(), Value :: any()) -> term().
+-spec process(p | f | pn | fn, Name :: sip_syntax:name(), Value :: any()) -> term().
 
 % Default header processing
 process(p, _Name, Header) when not is_binary(Header) -> Header; % already parsed
@@ -883,19 +883,19 @@ via(Transport, Host, Params) when is_list(Host); is_tuple(Host) ->
 
 %% @doc Construct media type value.
 %% @end
--spec media(atom() | binary(), atom() | binary(), [any()]) -> #sip_hdr_mediatype{}.
+-spec media(sip_syntax:name(), sip_syntax:name(), [any()]) -> #sip_hdr_mediatype{}.
 media(Type, SubType, Params) when is_list(Params) ->
     #sip_hdr_mediatype{type = Type, subtype = SubType, params = Params}.
 
 %% @doc Construct encoding type value.
 %% @end
--spec encoding(atom() | binary(), [any()]) -> #sip_hdr_encoding{}.
+-spec encoding(sip_syntax:name(), [any()]) -> #sip_hdr_encoding{}.
 encoding(Encoding, Params) when is_list(Params) ->
     #sip_hdr_encoding{encoding = Encoding, params = Params}.
 
 %% @doc Construct language type value.
 %% @end
--spec language(atom() | binary(), [any()]) -> #sip_hdr_language{}.
+-spec language(sip_syntax:name(), [any()]) -> #sip_hdr_language{}.
 language(Language, Params) when is_list(Params) ->
     #sip_hdr_language{language = Language, params = Params}.
 
@@ -913,7 +913,7 @@ auth(Scheme, Params) ->
 
 %% @doc Construct `CSeq:' header value.
 %% @end
--spec cseq(integer(), atom() | binary()) -> #sip_hdr_cseq{}.
+-spec cseq(integer(), sip_syntax:name()) -> #sip_hdr_cseq{}.
 cseq(Sequence, Method) when
   is_integer(Sequence),
   (is_atom(Method) orelse is_binary(Method)) ->

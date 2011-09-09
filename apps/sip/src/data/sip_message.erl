@@ -57,7 +57,7 @@ is_response(Message) ->
 %% Returns `Method' from `start-line' for requests, `Method' from `CSeq' header
 %% for responses.
 %% @end
--spec method(#sip_message{}) -> atom() | binary().
+-spec method(#sip_message{}) -> sip_syntax:name().
 method(#sip_message{kind = #sip_request{method = Method}}) -> Method;
 method(#sip_message{kind = #sip_response{}} = Msg) ->
     {ok, CSeq} = top_header(cseq, Msg),
@@ -88,8 +88,8 @@ to_binary(Message) ->
 %% a new header with that value is added.</em>
 %% @end
 -spec update_top_header(
-        atom() | binary(),
-        fun((Value :: any()) -> UpdatedValue :: any()),
+        sip_syntax:name(),
+        fun((Value :: term()) -> UpdatedValue :: term()),
         #sip_message{}) -> #sip_message{}.
 update_top_header(HeaderName, Fun, Request) ->
     Headers = update_header(HeaderName, Fun, Request#sip_message.headers),
@@ -123,7 +123,7 @@ update_header(HeaderName, Fun, []) ->
 %%
 %% <em>Note that header is added automatically, if there is no header with given name</em>
 %% @end
--spec replace_top_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
+-spec replace_top_header(sip_syntax:name(), term() | binary(), #sip_message{}) -> #sip_message{}.
 replace_top_header(HeaderName, Value, Message) ->
     update_top_header(HeaderName, fun (_Old) -> Value end, Message).
 
@@ -132,7 +132,7 @@ replace_top_header(HeaderName, Value, Message) ->
 %% Appends header with given name and value to the end of the headers list.
 %% <em>If header value is empty list, message is not modified</em>
 %% @end
--spec append_header(atom() | binary(), term() | binary(), #sip_message{}) -> #sip_message{}.
+-spec append_header(sip_syntax:name(), term() | binary(), #sip_message{}) -> #sip_message{}.
 append_header(_HeaderName, [], Message) when is_record(Message, sip_message) ->
     Message;
 append_header(HeaderName, Value, Message) when is_record(Message, sip_message) ->
@@ -183,7 +183,7 @@ tag(Header, Message) when
 %%
 %% <em>Note: this function parses the header value if header is in binary form.</em>
 %% @end
--spec foldl_headers(atom() | binary(),
+-spec foldl_headers(sip_syntax:name(),
                     fun ((Value::term(), AccIn::term()) -> AccOut :: term()),
                     term(),
                     #sip_message{}) -> Acc :: term().
@@ -201,8 +201,8 @@ foldl_headers(Name, Fun, Acc0, Msg) when is_function(Fun, 2), is_record(Msg, sip
 %% multiple values together. For example, `Authentication-Info' or `Contact' header
 %% with value `*' do NOT allow this). See RFC 3261, Section 7.3</em>
 %% @end
--spec header_values(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
-          [any()].
+-spec header_values(sip_syntax:name(), #sip_message{} | [{Name :: sip_syntax:name(), Value :: term()}]) ->
+          [term()].
 header_values(Name, Message) when is_record(Message, sip_message) ->
     header_values(Name, Message#sip_message.headers);
 header_values(Name, Headers) when is_list(Headers) ->
@@ -216,7 +216,7 @@ header_values(Name, Headers) when is_list(Headers) ->
 %%
 %% <em>This function parses the header value if header is in binary form.</em>
 %% @end
--spec top_header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
+-spec top_header(sip_syntax:name(), #sip_message{} | [{Name :: sip_syntax:name(), Value :: term()}]) ->
           {ok, term()} | error.
 top_header(Name, Message) when is_record(Message, sip_message) ->
     top_header(Name, Message#sip_message.headers);
