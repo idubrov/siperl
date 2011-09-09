@@ -1,4 +1,0 @@
-{application,sip}.
-{packages,[cores,transaction,transport]}.
-{modules,[pipeline_m,sip_app,sip_binary,sip_config,sip_cores,sip_headers,
-          sip_idgen,sip_message,sip_priority_set,sip_resolve,sip_sup,sip_uri]}.
