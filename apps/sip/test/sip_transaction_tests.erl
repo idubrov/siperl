@@ -34,7 +34,9 @@ transaction_test_() ->
 
              fun server_ok/1,
              fun server_err/1,
-             fun server_tu_down/1
+             fun server_tu_down/1,
+
+             fun server_loop/1
             ],
     Transports = [tcp, udp],
     Specs = [{timeout, 60, fun () -> Test(Transport) end} || Test <- Tests, Transport <- Transports],
@@ -719,4 +721,40 @@ server_tu_down(Transport) ->
     ?assertEqual([], [T || T <- sip_transaction:list_tx(), T =:= TxKey]), % do not have transaction in list
     ok.
 
+%% @doc
+%% Scenario tested:
+%% - non-INVITE request is received
+%% - request is passed to TU
+%% - is_loop_detected returns true for message with same tags, but different branch
+%% @end
+server_loop(Transport) ->
+    Request = sip_test:request('OPTIONS', Transport),
+    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    IsReliable = sip_transport:is_reliable(Transport),
+
+    % Start server transaction
+    {ok, TxKey} = sip_transaction:start_server_tx(self(), Request),
+
+    % Request2 does not match the transaction, but matches criteria in 8.2.2.2
+    Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
+    ?assertEqual(true, sip_transaction:is_loop_detected(Request2)),
+
+    % Request3 has tag, so does not match 8.2.2.2
+    {ok, To} = sip_message:top_header('to', Request),
+    Request3 = sip_message:replace_top_header('to', To#sip_hdr_address{params = [{tag, <<"tag">>}]}, Request2),
+
+    ?assertEqual(false, sip_transaction:is_loop_detected(Request3)),
+
+    % 2xx response is sent by TU
+    sip_transaction:send_response(Response),
+    ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
+
+    % wait for timer J to fire
+    IsReliable orelse timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {tx, TxKey, {terminated, normal}}),
+
+    ?assertReceiveNot("Message queue is empty", _),
+    ok.
 -endif.

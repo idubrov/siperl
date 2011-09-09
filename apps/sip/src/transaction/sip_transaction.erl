@@ -118,8 +118,8 @@ is_loop_detected(Msg) ->
             TxKey = sip_transaction:tx_key(server, Msg),
 
             {ok, FromTag} = sip_message:tag('from', Msg),
-            CallId = sip_message:top_header('call-id', Msg),
-            CSeq = sip_message:top_header('cseq', Msg),
+            {ok, CallId} = sip_message:top_header('call-id', Msg),
+            {ok, CSeq} = sip_message:top_header('cseq', Msg),
             List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
             case List of
                 % either no transactions with same From: tag, Call-Id and CSeq
