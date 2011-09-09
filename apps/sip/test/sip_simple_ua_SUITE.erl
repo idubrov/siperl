@@ -11,6 +11,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include("sip.hrl").
 
+-define(HOST, "sip.example.org").
+
 %% Common tests
 all() ->
     [request_response].
@@ -18,6 +20,7 @@ all() ->
 init_per_suite(Config) ->
     ok = application:start(gproc),
     ok = application:start(sip),
+    ok = application:set_env(sip, self, ?HOST),
     Config.
 
 end_per_suite(_Config) ->
@@ -37,7 +40,7 @@ request_response(_Config) ->
     0 = sip_message:header_top_value('content-length', Response),
 
     [Via] = sip_message:header_values(via, Response),
-    #sip_hdr_via{transport = udp, host = "ISDNOTE", port = 5060} = Via,
+    #sip_hdr_via{transport = udp, host = ?HOST, port = 5060} = Via,
     {received, {127, 0, 0, 1}} = lists:keyfind(received, 1, Via#sip_hdr_via.params),
 
     To = sip_message:header_top_value(to, Response),

@@ -46,7 +46,7 @@ ports(tcp) -> entry(tcp, [5060]).
 -spec self() -> binary().
 self() ->
     {ok, Hostname} = inet:gethostname(),
-    entry(self, list_to_binary(Hostname)).
+    list_to_binary(entry(self, Hostname)).
 
 -spec routes() -> [binary()].
 routes() ->
