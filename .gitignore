@@ -1,7 +1,8 @@
 _build
 *.beam
 .eunit
-apps/sip/ebin/sip.app
 rel/sipnode
 deps
+apps/sip/ebin/sip.app
 apps/sip/doc
+apps/sip/logs

@@ -15,11 +15,11 @@
 -include("sip_test.hrl").
 
 %% API
--export([start_link/0, ping/2]).
+-export([start_link/0, ping/2, stop/1]).
 
 %% Server callbacks
 -export([init/1]).
--export([handle_call/3, handle_response/3]).
+-export([handle_call/3, handle_response/3, handle_cast/2]).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -29,6 +29,9 @@ start_link() ->
 
 ping(Pid, To) ->
     gen_server:call(Pid, {ping, To}, 100000).
+
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -49,6 +52,11 @@ handle_call({ping, To}, Client, State) ->
     {noreply, State2};
 handle_call(Req, From, State) ->
     sip_ua:handle_call(Req, From, State).
+
+%% @private
+-spec handle_cast(_, #sip_ua_state{}) -> any().
+handle_cast(stop, State) ->
+    {stop, normal, State}.
 
 -spec handle_response(term(), #sip_message{}, #sip_ua_state{}) -> any().
 handle_response(Client, Response, State) ->
