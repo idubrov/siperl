@@ -21,34 +21,20 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-%%-----------------------------------------------------------------
-%% Macros
-%%-----------------------------------------------------------------
+
+-include("../sip_sup_specs.hrl").
 -define(SERVER, ?MODULE).
--define(LISTENER(Port),
-        {{listener, Port}, {sip_transport_tcp_listener, start_link, [Port]},
-             permanent, 2000, worker, [sip_transport_tcp_listener]}).
 
-%%-----------------------------------------------------------------
-%% Include files
-%%-----------------------------------------------------------------
--include("../sip_common.hrl").
-
-%%-----------------------------------------------------------------
 %% API functions
-%%-----------------------------------------------------------------
 -spec start_link([integer()]) -> {ok, pid()} | ignore | {error, _}.
 start_link(Ports) when is_list(Ports) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, Ports).
 
-%%-----------------------------------------------------------------
 %% Supervisor callbacks
-%%-----------------------------------------------------------------
 
 %% @private
 -spec init([integer()]) -> {ok, _}.
 init(Ports) ->
-    Children = [?SPEC(sip_transport_tcp_conn_sup, supervisor) | % Supervisor for connections
-                [?LISTENER(Port) || Port <- Ports] % Listeners
-               ],
+    Listeners = [?SERVER({listener, Port}, sip_transport_tcp_listener, [Port]) || Port <- Ports], % Listeners
+    Children = [?SUPERVISOR(sip_transport_tcp_conn_sup, []) | Listeners],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

@@ -19,27 +19,16 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-%%-----------------------------------------------------------------
-%% Macros
-%%-----------------------------------------------------------------
+-include("../sip_sup_specs.hrl").
+
 -define(SERVER, ?MODULE).
 
-%%-----------------------------------------------------------------
-%% Include files
-%%-----------------------------------------------------------------
--include("../sip_common.hrl").
-
-%%-----------------------------------------------------------------
 %% API functions
-%%-----------------------------------------------------------------
-
 -spec start_link() -> 'ignore' | {'error', _} | {'ok', pid()}.
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-%%-----------------------------------------------------------------
 %% Supervisor callbacks
-%%-----------------------------------------------------------------
 
 %% @private
 -spec init({}) -> {ok, _}.
@@ -48,9 +37,9 @@ init({}) ->
     UDP = sip_config:ports(udp),
     TCP = sip_config:ports(tcp),
 
-    Children = [?SPEC(sip_transport_udp_sup, supervisor, [UDP]),
-                ?SPEC(sip_transport_tcp_sup, supervisor, [TCP]),
-                ?WORKER(sip_transport, [])],
+    Children = [?SUPERVISOR(sip_transport_udp_sup, [UDP]),
+                ?SUPERVISOR(sip_transport_tcp_sup, [TCP]),
+                ?SERVER(sip_transport, sip_transport, [])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
 
 %%-----------------------------------------------------------------

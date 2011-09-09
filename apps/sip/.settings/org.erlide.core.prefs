@@ -1,4 +1,4 @@
-#Wed Aug 31 21:20:05 OMSST 2011
+#Fri Sep 09 17:41:17 OMSST 2011
 backend_version=R14B
 compiler/allOptions={pa, "/home/wfrag/Projects/siperl/deps/erlando/ebin"}, compile_args, {d, 'TEST',"true"}, warn_missing_spec
 eclipse.preferences.version=1
@@ -6,4 +6,4 @@ external_includes=
 external_modules=
 include_dirs=include
 output_dir=ebin
-source_dirs=src/transaction;src/transport;src/cores;test;src
+source_dirs=src/data;src/transaction;src/transport;src/cores;test;src

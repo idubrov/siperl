@@ -26,11 +26,9 @@
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
--include("sip_common.hrl").
+-include("../sip_common.hrl").
 -include("sip_syntax.hrl").
 -include("sip.hrl").
-
-%% Types
 
 %% Internal state
 %% 'BEFORE' -- state before Start-Line
