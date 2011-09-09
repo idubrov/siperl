@@ -81,7 +81,7 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 %% @end
 -spec send_response(#sip_message{}) -> ok | {error, Reason :: term()}.
 send_response(Response) ->
-    {ok, Via} = sip_message:top_header('via', Response),
+    Via = sip_message:header_top_value('via', Response),
     case is_reliable(Via#sip_hdr_via.transport) of
         true ->
             % try to lookup the connection
@@ -107,7 +107,7 @@ send_response(Response) ->
 %% @doc See RFC 3261 18.2.2 Sending Responses
 %% @end
 send_response_received(Response) ->
-    {ok, Via} = sip_message:top_header('via', Response),
+    Via = sip_message:header_top_value('via', Response),
     Transport = Via#sip_hdr_via.transport,
     IsReliable = is_reliable(Transport),
     Port = Via#sip_hdr_via.port,
@@ -239,7 +239,7 @@ check_sent_by(Transport, Msg) ->
     ExpectedSentBy = sent_by(Transport),
 
     % take top via sent-by
-    {ok, Via} = sip_message:top_header('via', Msg),
+    Via = sip_message:header_top_value('via', Msg),
     case Via#sip_hdr_via.port of
         % Default port, RFC 3261 18.1
         undefined ->

@@ -194,14 +194,14 @@ error_to_status(_Reason) -> 500.
 lookup_destinations(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
-        case sip_message:top_header('route', Request) of
-            error ->
-                RequestURI;
-            {ok, #sip_hdr_address{uri = Route}} ->
+        case sip_message:has_header(route, Request) of
+            false -> RequestURI;
+            true ->
+                Route = sip_message:header_top_value(route, Request),
                 % See RFC3261, 8.1.2
                 % If first element in the route set is strict router,
                 % use Request-URI
-                case is_strict_router(Route) of
+                case is_strict_router(Route#sip_hdr_address.uri) of
                     true -> RequestURI;
                     false -> Route
                 end

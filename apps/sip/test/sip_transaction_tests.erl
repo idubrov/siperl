@@ -740,7 +740,7 @@ server_loop(Transport) ->
     ?assertEqual(true, sip_transaction:is_loop_detected(Request2)),
 
     % Request3 has tag, so does not match 8.2.2.2
-    {ok, To} = sip_message:top_header('to', Request),
+    To = sip_message:header_top_value('to', Request),
     Request3 = sip_message:replace_top_header('to', To#sip_hdr_address{params = [{tag, <<"tag">>}]}, Request2),
 
     ?assertEqual(false, sip_transaction:is_loop_detected(Request3)),

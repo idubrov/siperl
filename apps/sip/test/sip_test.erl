@@ -24,12 +24,12 @@ invite(Transport) ->
 %% @end
 request(Method, Transport) ->
     % FIXME: Update sip_headers.
-    Headers = [{'cseq', sip_headers:cseq(232908, Method)},
-               {'via', [sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, sip_idgen:generate_branch()}])]},
-               {'via', [sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])]},
-               {'from', sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [{'tag', <<"1928301774">>}])},
-               {'contact', [sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [])]},
-               {'to', sip_headers:address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [])},
+    Headers = [{cseq, sip_headers:cseq(232908, Method)},
+               {via, [sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, sip_idgen:generate_branch()}])]},
+               {via, [sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])]},
+               {from, sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [{tag, <<"1928301774">>}])},
+               {contact, [sip_headers:address(<<"Bob">>, sip_uri:parse(<<"sip:bob@biloxi.com">>), [])]},
+               {to, sip_headers:address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), [])},
                {'call-id', list_to_binary(pid_to_list(self()))}, % encode PID in header for testing purposes
                {'max-forwards', 70},
                {'content-length', 6}],
@@ -40,7 +40,7 @@ request(Method, Transport) ->
 
 %% Extract test process pid from the top branch
 pid_from_message(Msg) when is_record(Msg, sip_message)->
-    {ok, PidBinary} = sip_message:top_header('call-id', Msg),
+    PidBinary = sip_message:header_top_value('call-id', Msg),
     list_to_pid(binary_to_list(PidBinary)).
 
 %% @doc

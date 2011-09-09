@@ -15,7 +15,7 @@
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
--export([header_values/2, top_header/2, top_via_branch/1, tag/2]).
+-export([header_values/2, header_top_value/2, has_header/2]).
 -export([with_branch/2, foldl_headers/4]).
 
 %%-----------------------------------------------------------------
@@ -60,7 +60,7 @@ is_response(Message) ->
 -spec method(#sip_message{}) -> sip_syntax:name().
 method(#sip_message{kind = #sip_request{method = Method}}) -> Method;
 method(#sip_message{kind = #sip_response{}} = Msg) ->
-    {ok, CSeq} = top_header(cseq, Msg),
+    CSeq = header_top_value(cseq, Msg),
     CSeq#sip_hdr_cseq.method.
 
 -spec to_binary(#sip_message{}) -> binary().
@@ -138,20 +138,6 @@ append_header(_HeaderName, [], Message) when is_record(Message, sip_message) ->
 append_header(HeaderName, Value, Message) when is_record(Message, sip_message) ->
     Message#sip_message{headers = Message#sip_message.headers ++ [{HeaderName, Value}]}.
 
-%% @doc
-%% Retrieve `branch' parameter of top via header or `undefined' if no such
-%% parameter present.
-%%
-%% This function parses the Via: header value if header is in binary form.
-%% @end
--spec top_via_branch(#sip_message{}) -> {ok, binary()} | error.
-top_via_branch(Message) when is_record(Message, sip_message) ->
-    {ok, Via} = top_header('via', Message#sip_message.headers),
-    case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
-        {branch, Branch} -> {ok, Branch};
-        false -> error
-    end.
-
 %% @doc Update top `Via:' header of given request with provided branch value
 %% @end
 -spec with_branch(binary(), #sip_message{}) -> #sip_message{}.
@@ -162,22 +148,6 @@ with_branch(Branch, #sip_message{kind = #sip_request{}} = Msg) when is_binary(Br
                  Via#sip_hdr_via{params = Params}
         end,
     update_top_header('via', UpdateBranch, Msg).
-
-%% @doc Retrieve `tag' parameter of From/To header
-%%
-%% Retrieve `tag' parameter of `From:'/`To:' header or `undefined' if no such
-%% parameter present.
-%%
-%% This function parses the header value if header is in binary form.
-%% @end
--spec tag('to' | 'from', #sip_message{}) -> {ok, binary()} | error.
-tag(Header, Message) when
-  is_record(Message, sip_message), (Header =:= 'to' orelse Header =:= 'from') ->
-    {ok, Value} = top_header(Header, Message#sip_message.headers),
-    case lists:keyfind(tag, 1, Value#sip_hdr_address.params) of
-        {tag, Tag} when is_binary(Tag) -> {ok, Tag};
-        false -> error
-    end.
 
 %% @doc Calls `Fun(Value, AccIn)' on all successive header values named `Name'
 %%
@@ -210,26 +180,27 @@ header_values(Name, Headers) when is_list(Headers) ->
     Parsed = lists:map(fun ({_Name, Value}) -> sip_headers:parse(Name, Value) end, Filtered),
     lists:flatten(Parsed).
 
-%% @doc
-%% Retrieve top value of given header. Accepts either full SIP message
-%% or list of headers.
+%% @doc Retrieve top value for given header name
 %%
+%% Fails if header with given name does not exist.
 %% <em>This function parses the header value if header is in binary form.</em>
 %% @end
--spec top_header(sip_syntax:name(), #sip_message{} | [{Name :: sip_syntax:name(), Value :: term()}]) ->
-          {ok, term()} | error.
-top_header(Name, Message) when is_record(Message, sip_message) ->
-    top_header(Name, Message#sip_message.headers);
-top_header(Name, Headers) when is_list(Headers) ->
-    case lists:keyfind(Name, 1, Headers) of
-        false -> error;
-        {Name, Value} ->
-            case sip_headers:parse(Name, Value) of
-                [Top | _] -> {ok, Top}; % support for multiple header values
-                Top -> {ok, Top}
-            end
+-spec header_top_value(sip_syntax:name(), #sip_message{}) -> term().
+header_top_value(Name, #sip_message{headers = Headers}) ->
+    {Name, Value} = lists:keyfind(Name, 1, Headers),
+    case sip_headers:parse(Name, Value) of
+        [Top | _] -> Top; % support for multiple header values
+        Top when not is_list(Top) -> Top
     end.
 
+%% @doc Check if SIP message has header
+%% @end
+-spec has_header(sip_syntax:name(), #sip_message{}) -> boolean().
+has_header(Name, #sip_message{headers = Headers}) ->
+    case lists:keyfind(Name, 1, Headers) of
+        {Name, _Value} -> true;
+        false -> false
+    end.
 
 %% @doc
 %% RFC 3261, 17.1.1.3 Construction of the ACK Request
@@ -253,10 +224,10 @@ create_ack(Request, Response) when is_record(Request, sip_message),
     ReqHeaders = lists:reverse(lists:foldl(FoldFun, [], Request#sip_message.headers)),
 
     % Via is taken from top Via of the original request
-    {ok, Via} = top_header('via', Request),
+    Via = header_top_value('via', Request),
 
     % To goes from the response
-    {ok, To} = top_header('to', Response),
+    To = header_top_value('to', Response),
 
     #sip_message{kind = #sip_request{method = 'ACK', uri = RequestURI},
                  body = <<>>,
@@ -343,7 +314,7 @@ parse_datagram(Datagram) ->
     Kind = parse_start_line(Start),
 
     % RFC 3261 18.3
-    case top_header('content-length', Headers) of
+    case content_length(Headers) of
         % Content-Length is present
         {ok, ContentLength} when ContentLength =< size(Body) ->
             <<Body2:ContentLength/binary, _/binary>> = Body,
@@ -351,7 +322,7 @@ parse_datagram(Datagram) ->
         {ok, _} ->
             {error, content_too_small, #sip_message{kind = Kind, headers = Headers, body = <<>>}};
         % Content-Length is not present
-        error ->
+        false ->
             {ok, #sip_message{kind = Kind, headers = Headers, body = Body}}
     end.
 
@@ -409,13 +380,13 @@ parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 
             Kind = parse_start_line(Start),
 
             % Check content length present
-            case top_header('content-length', Headers) of
+            case content_length(Headers) of
                 {ok, ContentLength} ->
                     % continue processing the message body
                     Msg = #sip_message{kind = Kind, headers = Headers},
                     NewState = {'BODY', Msg, ContentLength},
                     parse_stream_internal({NewState, Rest}, 0);
-                error ->
+                false ->
                     % return bad message
                     Msg = #sip_message{kind = Kind, headers = Headers, body = Rest},
                     {error, no_content_length, Msg, {'BEFORE', <<>>}}
@@ -430,6 +401,12 @@ parse_stream_internal({{'BODY', Msg, ContentLength}, Frame}, _)
 parse_stream_internal(State, _) ->
     % nothing to parse yet, return current state
     {ok, State}.
+
+content_length(Headers) ->
+    case lists:keyfind('content-length', 1, Headers) of
+        false -> false;
+        {_Name, Length} -> {ok, sip_binary:binary_to_integer(Length)}
+    end.
 
 %% Check if we have header-body delimiter in the received packet
 has_header_delimiter(Data, Offset) when Offset < 0 ->
@@ -728,17 +705,13 @@ helpers_test_() ->
     ValidRequest2 =
         InvalidRequest#sip_message{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_message.headers]},
     [% Header lookup functions
-     ?_assertEqual({ok, Via1}, top_header('via', [{'via', [Via1, Via2]}])),
+     ?_assertEqual(Via1, header_top_value('via', #sip_message{headers = [{'via', [Via1, Via2]}]})),
      ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
      % Fold Via's (extract hostnames in reverse order)
      ?_assertEqual(["localhost", "127.0.0.2", "127.0.0.1"],
                    foldl_headers(via, fun (#sip_hdr_via{host = Host}, Acc) -> [Host | Acc] end, [],
                                  #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
-
-     % Common parameters lookup functions
-     ?_assertEqual({ok, <<"fromtag">>}, tag(from, ValidRequest)),
-     ?_assertEqual(error, tag(to, ValidRequest)),
 
      % Validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
@@ -797,13 +770,7 @@ branch_helpers_test_() ->
     Via1 = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bK776asdhds">>}]),
     Via2 = sip_headers:via(tcp, {"127.0.0.2", 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {"127.0.0.1", 5060}, [{branch, <<"z9hG4bKkjshdyff">>}]),
-    [
-     ?_assertEqual({ok, <<"z9hG4bK776asdhds">>},
-                   top_via_branch(#sip_message{headers = [{via, [Via1, Via2]}]})),
-     ?_assertEqual(error,
-                   top_via_branch(#sip_message{headers = [{via, [Via2]}]})),
-
-     % updating branch
+    [% updating branch
      ?_assertEqual(#sip_message{kind = #sip_request{method = 'INVITE', uri = <<"sip@nowhere.invalid">>},
                                 headers = [{via, [Via1Up, Via2]}]},
                    with_branch(<<"z9hG4bKkjshdyff">>,

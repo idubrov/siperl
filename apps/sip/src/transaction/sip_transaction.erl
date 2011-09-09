@@ -59,7 +59,7 @@ start_server_tx(TU, Request)
   when is_record(Request, sip_message) ->
 
     % Check top via in received request to check transport reliability
-    {ok, Via} = sip_message:top_header('via', Request),
+    Via = sip_message:header_top_value('via', Request),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
     Key = tx_key(server, Request),
@@ -113,13 +113,17 @@ send_response(Msg) ->
 %% @end
 -spec is_loop_detected(#sip_message{}) -> boolean().
 is_loop_detected(Msg) ->
-    case sip_message:tag('to', Msg) of
-        error ->
+    To = sip_message:header_top_value(to, Msg),
+
+    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
+        false ->
             TxKey = sip_transaction:tx_key(server, Msg),
 
-            {ok, FromTag} = sip_message:tag('from', Msg),
-            {ok, CallId} = sip_message:top_header('call-id', Msg),
-            {ok, CSeq} = sip_message:top_header('cseq', Msg),
+            From = sip_message:header_top_value(from, Msg),
+            {tag, FromTag} = lists:keyfind(tag, 1, From#sip_hdr_address.params),
+
+            CallId = sip_message:header_top_value('call-id', Msg),
+            CSeq = sip_message:header_top_value('cseq', Msg),
             List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
             case List of
                 % either no transactions with same From: tag, Call-Id and CSeq
@@ -131,7 +135,7 @@ is_loop_detected(Msg) ->
                 _Other -> true
             end;
         % tag present, no loop
-        {ok, _Tag} -> false
+        {tag, _Tag} -> false
     end.
 
 %%-----------------------------------------------------------------
@@ -153,7 +157,8 @@ handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Method = sip_message:method(Msg),
-    {ok, Branch} = sip_message:top_via_branch(Msg),
+    Via = sip_message:header_top_value(via, Msg),
+    {branch, Branch} = lists:keyfind(branch, 1, Via#sip_hdr_via.params),
     #sip_tx_client{branch = Branch, method = Method};
 tx_key(server, Msg) ->
     % RFC 17.2.3
@@ -163,10 +168,11 @@ tx_key(server, Msg) ->
             'ACK' -> 'INVITE';
             M -> M
         end,
-    case sip_message:top_via_branch(Msg) of
+    Via = sip_message:header_top_value(via, Msg),
+    case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
         % Magic cookie
-        {ok, <<?MAGIC_COOKIE, _/binary>> = Branch} ->
-            {ok, Via} = sip_message:top_header('via', Msg),
+        {branch, <<?MAGIC_COOKIE, _/binary>> = Branch} ->
+            Via = sip_message:header_top_value('via', Msg),
             Host = Via#sip_hdr_via.host,
             Port = Via#sip_hdr_via.port,
             #sip_tx_server{host = Host, port = Port, branch = Branch, method = Method}

@@ -78,10 +78,10 @@ send_request_udp(#resource{udp_sock = UDP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {Hostname, 15060},
-    {ok, Branch} = sip_message:top_via_branch(Request),
-    Via = sip_headers:via(udp, SentBy, [{branch, Branch}]),
-    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
+
+    Via = sip_message:header_top_value(via, Request),
+    Via2 = Via#sip_hdr_via{host = Hostname, port = 15060},
+    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests
@@ -96,10 +96,9 @@ send_request_udp_fallback(#resource{tcp_sock = TCP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {Hostname, 15060},
-    {ok, Branch} = sip_message:top_via_branch(Request),
-    Via = sip_headers:via(tcp, SentBy, [{branch, Branch}]),
-    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
+    Via = sip_message:header_top_value(via, Request),
+    Via2 = Via#sip_hdr_via{transport = tcp, host = Hostname, port = 15060},
+    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests (falling back to congestion-controlled protocol)
@@ -117,10 +116,12 @@ send_request_udp_multicast(#resource{udp_sock = UDP}) ->
 
     % expect request with updated via
     {ok, Hostname} = inet:gethostname(),
-    SentBy = {Hostname, 15060},
-    {ok, Branch} = sip_message:top_via_branch(Request),
-    Via = sip_headers:via(udp, SentBy, [{branch, Branch}, {maddr, <<"239.0.0.100">>}, {ttl, 4}]),
-    ExpectedRequest = sip_message:replace_top_header('via', Via, Request),
+
+    Via = sip_message:header_top_value(via, Request),
+    Via2 = Via#sip_hdr_via{host = Hostname, port = 15060,
+                           params = Via#sip_hdr_via.params ++ [{maddr, <<"239.0.0.100">>}, {ttl, 4}]},
+
+    ExpectedRequest = sip_message:replace_top_header('via', Via2, Request),
     ExpectedRequestBin = sip_message:to_binary(ExpectedRequest),
 
     % RFC 3261, 18.1.1: Sending Requests (sending to multicast addr)
