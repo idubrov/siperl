@@ -116,10 +116,10 @@ send_response(Msg) ->
 -spec is_loop_detected(#sip_message{}) -> boolean().
 is_loop_detected(Msg) ->
     case sip_message:tag('to', Msg) of
-        false ->
+        error ->
             TxKey = sip_transaction:tx_key(server, Msg),
 
-            {value, FromTag} = sip_message:tag('from', Msg),
+            {ok, FromTag} = sip_message:tag('from', Msg),
             CallId = sip_message:top_header('call-id', Msg),
             CSeq = sip_message:top_header('cseq', Msg),
             List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
@@ -133,7 +133,7 @@ is_loop_detected(Msg) ->
                 _Other -> true
             end;
         % tag present, no loop
-        {value, _Tag} -> false
+        {ok, _Tag} -> false
     end.
 
 %%-----------------------------------------------------------------

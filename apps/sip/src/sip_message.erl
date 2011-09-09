@@ -62,7 +62,7 @@ is_response(Message) ->
 -spec method(#sip_message{}) -> atom() | binary().
 method(#sip_message{kind = #sip_request{method = Method}}) -> Method;
 method(#sip_message{kind = #sip_response{}} = Msg) ->
-    {ok, CSeq} = sip_message:top_header(cseq, Msg),
+    {ok, CSeq} = top_header(cseq, Msg),
     CSeq#sip_hdr_cseq.method.
 
 -spec to_binary(#sip_message{}) -> binary().
@@ -146,12 +146,12 @@ append_header(HeaderName, Value, Message) when is_record(Message, sip_message) -
 %%
 %% This function parses the Via: header value if header is in binary form.
 %% @end
--spec top_via_branch(#sip_message{}) -> {ok, binary()} | {error, not_found}.
+-spec top_via_branch(#sip_message{}) -> {ok, binary()} | error.
 top_via_branch(Message) when is_record(Message, sip_message) ->
     {ok, Via} = top_header('via', Message#sip_message.headers),
     case lists:keyfind(branch, 1, Via#sip_hdr_via.params) of
         {branch, Branch} -> {ok, Branch};
-        false -> {error, not_found}
+        false -> error
     end.
 
 %% @doc Update top `Via:' header of given request with provided branch value
@@ -172,13 +172,13 @@ with_branch(Branch, #sip_message{kind = #sip_request{}} = Msg) when is_binary(Br
 %%
 %% This function parses the header value if header is in binary form.
 %% @end
--spec tag('to' | 'from', #sip_message{}) -> {value, binary()} | false.
+-spec tag('to' | 'from', #sip_message{}) -> {ok, binary()} | error.
 tag(Header, Message) when
   is_record(Message, sip_message), (Header =:= 'to' orelse Header =:= 'from') ->
     {ok, Value} = top_header(Header, Message#sip_message.headers),
     case lists:keyfind(tag, 1, Value#sip_hdr_address.params) of
-        {tag, Tag} when is_binary(Tag) -> {value, Tag};
-        false -> false
+        {tag, Tag} when is_binary(Tag) -> {ok, Tag};
+        false -> error
     end.
 
 %% @doc Calls `Fun(Value, AccIn)' on all successive header values named `Name'
@@ -219,12 +219,12 @@ header_values(Name, Headers) when is_list(Headers) ->
 %% <em>This function parses the header value if header is in binary form.</em>
 %% @end
 -spec top_header(atom() | binary(), #sip_message{} | [{Name :: atom() | binary(), Value :: binary() | term()}]) ->
-          {ok, term()} | {error, not_found}.
+          {ok, term()} | error.
 top_header(Name, Message) when is_record(Message, sip_message) ->
     top_header(Name, Message#sip_message.headers);
 top_header(Name, Headers) when is_list(Headers) ->
     case lists:keyfind(Name, 1, Headers) of
-        false -> {error, not_found};
+        false -> error;
         {Name, Value} ->
             case sip_headers:parse(Name, Value) of
                 [Top | _] -> {ok, Top}; % support for multiple header values
@@ -232,146 +232,6 @@ top_header(Name, Headers) when is_list(Headers) ->
             end
     end.
 
-
-%% @doc
-%% Parses the datagram for SIP packet. The headers of the returned message are
-%% retained in binary form for performance reasons. Use {@link parse_whole/1}
-%% to parse the whole message or {@link sip_headers:parse/2} to parse
-%% single header.
-%% @end
--spec parse_datagram(Datagram :: binary()) ->
-          {ok, #sip_message{}}
-        | {error, content_too_small, #sip_message{}}.
-parse_datagram(Datagram) ->
-    {Pos, _Length} = binary:match(Datagram, <<"\r\n\r\n">>),
-    Pos2 = Pos + 2,
-    <<Top:Pos2/binary, "\r\n", Body/binary>> = Datagram,
-    [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
-    Headers = sip_headers:parse_headers(HeadersBin),
-    Kind = parse_start_line(Start),
-
-    % RFC 3261 18.3
-    case top_header('content-length', Headers) of
-        % Content-Length is present
-        {ok, ContentLength} when ContentLength =< size(Body) ->
-            <<Body2:ContentLength/binary, _/binary>> = Body,
-            {ok, #sip_message{kind = Kind, headers = Headers, body = Body2}};
-        {ok, _} ->
-            {error, content_too_small, #sip_message{kind = Kind, headers = Headers, body = <<>>}};
-        % Content-Length is not present
-        {error, not_found} ->
-            {ok, #sip_message{kind = Kind, headers = Headers, body = Body}}
-    end.
-
-%% @doc Parses the stream for complete SIP messages.
-
-%% Return new parser state and possibly a message extracted from the
-%% stream. The headers of the returned messages are retained in binary
-%% form for performance reasons. Use {@link parse_whole/1} to parse the
-%% whole message or {@link sip_headers:parse/2} to parse single header.
-%%
-%% <em>Note: caller is required to call this method with empty packet (<<>>)
-%% until no new messages are returned</em>
-%% @end
--spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
-          {ok, state()} |
-          {ok, #sip_message{}, state()} |
-          {error, no_content_length, #sip_message{}, state()}.
-parse_stream(Packet, none) -> parse_stream(Packet, {'BEFORE', <<>>});
-parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
-    NewFrame = <<Frame/binary, Packet/binary>>,
-    parse_stream_internal({State, NewFrame}, size(Frame)).
-
-%% @doc
-%% Parses all headers of the message.
-%% @end
--spec parse_all_headers(#sip_message{}) -> #sip_message{}.
-parse_all_headers(Msg) when is_record(Msg, sip_message) ->
-    Headers = [{Name, sip_headers:parse(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
-    Msg#sip_message{headers = Headers}.
-
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------
-
-parse_stream_internal({'BEFORE', <<"\r\n", Rest/binary>>}, _From) ->
-    % RFC 3261 7.5  Implementations processing SIP messages over
-    % stream-oriented transports MUST ignore any CRLF appearing before the
-    % start-line
-    parse_stream_internal({'BEFORE', Rest}, 0);
-parse_stream_internal({'BEFORE', Frame}, _From) when Frame =:= <<"\r">>; Frame =:= <<>> ->
-    % frame is empty or "\r" while ignoring \r\n, return same state
-    {ok, {'BEFORE', Frame}};
-parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 'BEFORE'->
-    % Search if header-body delimiter is present
-    % We need to look back 3 characters at most
-    % (last frame ends with \r\n\r, we have received \n)
-    case has_header_delimiter(Frame, From - 3) of
-        false -> {ok, {'HEADERS', Frame}};
-        Pos ->
-            % Split packet into headers and the rest
-            Pos2 = Pos + 2,
-            <<Top:Pos2/binary, "\r\n", Rest/binary>> = Frame,
-            % Get start line and headers
-            [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
-            Headers = sip_headers:parse_headers(HeadersBin),
-            Kind = parse_start_line(Start),
-
-            % Check content length present
-            case top_header('content-length', Headers) of
-                {ok, ContentLength} ->
-                    % continue processing the message body
-                    Msg = #sip_message{kind = Kind, headers = Headers},
-                    NewState = {'BODY', Msg, ContentLength},
-                    parse_stream_internal({NewState, Rest}, 0);
-                {error, not_found} ->
-                    % return bad message
-                    Msg = #sip_message{kind = Kind, headers = Headers, body = Rest},
-                    {error, no_content_length, Msg, {'BEFORE', <<>>}}
-            end
-    end;
-parse_stream_internal({{'BODY', Msg, ContentLength}, Frame}, _)
-  when size(Frame) >= ContentLength ->
-    % received the whole body
-    <<Body:ContentLength/binary, Rest/binary>> = Frame,
-    % return parsed message
-    {ok, Msg#sip_message{body = Body}, {'BEFORE', Rest}};
-parse_stream_internal(State, _) ->
-    % nothing to parse yet, return current state
-    {ok, State}.
-
-%% Check if we have header-body delimiter in the received packet
-has_header_delimiter(Data, Offset) when Offset < 0 ->
-    has_header_delimiter(Data, 0);
-
-has_header_delimiter(Data, Offset) ->
-    case binary:match(Data, <<"\r\n\r\n">>, [{scope, {Offset, size(Data) - Offset}}]) of
-        nomatch -> false;
-        {Pos, _} -> Pos
-    end.
-
-%% Request-Line   =  Method SP Request-URI SP SIP-Version CRLF
-%% Status-Line  =  SIP-Version SP Status-Code SP Reason-Phrase CRLF
-%% start-line   =  Request-Line / Status-Line
-%%
-%% RFC3261 7.1: The SIP-Version string is case-insensitive, but implementations MUST send upper-case.
--spec parse_start_line(binary()) -> #sip_request{} | #sip_response{}.
-parse_start_line(StartLine) when is_binary(StartLine) ->
-    % split on three parts
-    [First, Rest] = binary:split(StartLine, <<" ">>),
-    [Second, Third] = binary:split(Rest, <<" ">>),
-    case {First, Second, Third} of
-        {Method, RequestURI, <<?SIPVERSION>>} ->
-            #sip_request{method = sip_syntax:parse_name(sip_binary:to_upper(Method)),
-                         uri = RequestURI};
-
-        {<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase} when
-          $1 =< A andalso A =< $6 andalso % 1xx - 6xx
-          $0 =< B andalso B =< $9 andalso
-          $0 =< C andalso C =< $9 ->
-            #sip_response{status = list_to_integer([A, B, C]),
-                          reason = ReasonPhrase}
-    end.
 
 %% @doc
 %% RFC 3261, 17.1.1.3 Construction of the ACK Request
@@ -465,6 +325,145 @@ validate_request(Request) when is_record(Request, sip_message) ->
                (Method =/= 'INVITE' orelse element(7, C) =:= 1)
           -> ok;
         _ -> {error, invalid_headers}
+    end.
+
+%% @doc
+%% Parses the datagram for SIP packet. The headers of the returned message are
+%% retained in binary form for performance reasons. Use {@link parse_whole/1}
+%% to parse the whole message or {@link sip_headers:parse/2} to parse
+%% single header.
+%% @end
+-spec parse_datagram(Datagram :: binary()) ->
+          {ok, #sip_message{}}
+        | {error, content_too_small, #sip_message{}}.
+parse_datagram(Datagram) ->
+    {Pos, _Length} = binary:match(Datagram, <<"\r\n\r\n">>),
+    Pos2 = Pos + 2,
+    <<Top:Pos2/binary, "\r\n", Body/binary>> = Datagram,
+    [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
+    Headers = sip_headers:parse_headers(HeadersBin),
+    Kind = parse_start_line(Start),
+
+    % RFC 3261 18.3
+    case top_header('content-length', Headers) of
+        % Content-Length is present
+        {ok, ContentLength} when ContentLength =< size(Body) ->
+            <<Body2:ContentLength/binary, _/binary>> = Body,
+            {ok, #sip_message{kind = Kind, headers = Headers, body = Body2}};
+        {ok, _} ->
+            {error, content_too_small, #sip_message{kind = Kind, headers = Headers, body = <<>>}};
+        % Content-Length is not present
+        error ->
+            {ok, #sip_message{kind = Kind, headers = Headers, body = Body}}
+    end.
+
+%% @doc Parses the stream for complete SIP messages.
+
+%% Return new parser state and possibly a message extracted from the
+%% stream. The headers of the returned messages are retained in binary
+%% form for performance reasons. Use {@link parse_whole/1} to parse the
+%% whole message or {@link sip_headers:parse/2} to parse single header.
+%%
+%% <em>Note: caller is required to call this method with empty packet (<<>>)
+%% until no new messages are returned</em>
+%% @end
+-spec parse_stream(Packet :: binary(), State :: state() | 'none') ->
+          {ok, state()} |
+          {ok, #sip_message{}, state()} |
+          {error, no_content_length, #sip_message{}, state()}.
+parse_stream(Packet, none) -> parse_stream(Packet, {'BEFORE', <<>>});
+parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
+    NewFrame = <<Frame/binary, Packet/binary>>,
+    parse_stream_internal({State, NewFrame}, size(Frame)).
+
+%% @doc Parses all headers of the message.
+%% @end
+-spec parse_all_headers(#sip_message{}) -> #sip_message{}.
+parse_all_headers(Msg) when is_record(Msg, sip_message) ->
+    Headers = [{Name, sip_headers:parse(Name, Value)} || {Name, Value} <- Msg#sip_message.headers],
+    Msg#sip_message{headers = Headers}.
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+
+parse_stream_internal({'BEFORE', <<"\r\n", Rest/binary>>}, _From) ->
+    % RFC 3261 7.5  Implementations processing SIP messages over
+    % stream-oriented transports MUST ignore any CRLF appearing before the
+    % start-line
+    parse_stream_internal({'BEFORE', Rest}, 0);
+parse_stream_internal({'BEFORE', Frame}, _From) when Frame =:= <<"\r">>; Frame =:= <<>> ->
+    % frame is empty or "\r" while ignoring \r\n, return same state
+    {ok, {'BEFORE', Frame}};
+parse_stream_internal({State, Frame}, From) when State =:= 'HEADERS'; State =:= 'BEFORE'->
+    % Search if header-body delimiter is present
+    % We need to look back 3 characters at most
+    % (last frame ends with \r\n\r, we have received \n)
+    case has_header_delimiter(Frame, From - 3) of
+        false -> {ok, {'HEADERS', Frame}};
+        Pos ->
+            % Split packet into headers and the rest
+            Pos2 = Pos + 2,
+            <<Top:Pos2/binary, "\r\n", Rest/binary>> = Frame,
+            % Get start line and headers
+            [Start, HeadersBin] = binary:split(Top, <<"\r\n">>),
+            Headers = sip_headers:parse_headers(HeadersBin),
+            Kind = parse_start_line(Start),
+
+            % Check content length present
+            case top_header('content-length', Headers) of
+                {ok, ContentLength} ->
+                    % continue processing the message body
+                    Msg = #sip_message{kind = Kind, headers = Headers},
+                    NewState = {'BODY', Msg, ContentLength},
+                    parse_stream_internal({NewState, Rest}, 0);
+                error ->
+                    % return bad message
+                    Msg = #sip_message{kind = Kind, headers = Headers, body = Rest},
+                    {error, no_content_length, Msg, {'BEFORE', <<>>}}
+            end
+    end;
+parse_stream_internal({{'BODY', Msg, ContentLength}, Frame}, _)
+  when size(Frame) >= ContentLength ->
+    % received the whole body
+    <<Body:ContentLength/binary, Rest/binary>> = Frame,
+    % return parsed message
+    {ok, Msg#sip_message{body = Body}, {'BEFORE', Rest}};
+parse_stream_internal(State, _) ->
+    % nothing to parse yet, return current state
+    {ok, State}.
+
+%% Check if we have header-body delimiter in the received packet
+has_header_delimiter(Data, Offset) when Offset < 0 ->
+    has_header_delimiter(Data, 0);
+
+has_header_delimiter(Data, Offset) ->
+    case binary:match(Data, <<"\r\n\r\n">>, [{scope, {Offset, size(Data) - Offset}}]) of
+        nomatch -> false;
+        {Pos, _} -> Pos
+    end.
+
+%% Request-Line   =  Method SP Request-URI SP SIP-Version CRLF
+%% Status-Line  =  SIP-Version SP Status-Code SP Reason-Phrase CRLF
+%% start-line   =  Request-Line / Status-Line
+%%
+%% RFC3261 7.1: The SIP-Version string is case-insensitive, but implementations MUST send upper-case.
+-spec parse_start_line(binary()) -> #sip_request{} | #sip_response{}.
+parse_start_line(StartLine) when is_binary(StartLine) ->
+    % split on three parts
+    [First, Rest] = binary:split(StartLine, <<" ">>),
+    [Second, Third] = binary:split(Rest, <<" ">>),
+    case {First, Second, Third} of
+        {Method, RequestURI, <<?SIPVERSION>>} ->
+            #sip_request{method = sip_syntax:parse_name(sip_binary:to_upper(Method)),
+                         uri = RequestURI};
+
+        {<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase} when
+          $1 =< A andalso A =< $6 andalso % 1xx - 6xx
+          $0 =< B andalso B =< $9 andalso
+          $0 =< C andalso C =< $9 ->
+            #sip_response{status = list_to_integer([A, B, C]),
+                          reason = ReasonPhrase}
     end.
 
 default_reason(Status) ->
@@ -740,8 +739,8 @@ helpers_test_() ->
                                  #sip_message{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
 
      % Common parameters lookup functions
-     ?_assertEqual({value, <<"fromtag">>}, tag(from, ValidRequest)),
-     ?_assertEqual(false, tag(to, ValidRequest)),
+     ?_assertEqual({ok, <<"fromtag">>}, tag(from, ValidRequest)),
+     ?_assertEqual(error, tag(to, ValidRequest)),
 
      % Validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
@@ -803,9 +802,9 @@ branch_helpers_test_() ->
     [
      ?_assertEqual({ok, <<"z9hG4bK776asdhds">>},
                    top_via_branch(#sip_message{headers = [{via, [Via1, Via2]}]})),
-     ?_assertEqual({error, not_found},
+     ?_assertEqual(error,
                    top_via_branch(#sip_message{headers = [{via, [Via2]}]})),
-     
+
      % updating branch
      ?_assertEqual(#sip_message{kind = #sip_request{method = 'INVITE', uri = <<"sip@nowhere.invalid">>},
                                 headers = [{via, [Via1Up, Via2]}]},

@@ -40,7 +40,7 @@ setup() ->
     % Mocked modules
     meck:new(sip_config, [passthrough]),
     meck:new(sip_cores),
-    
+
     % start transport layer on port 15060
     meck:expect(sip_config, ports, fun (udp) -> [15060]; (tcp) -> [15060] end),
     % and use port 25060 for sockets, created by tests
@@ -54,7 +54,7 @@ setup() ->
                                {packet, raw},
                                {reuseaddr, true}]),
 
-    
+
     LookupFun =
         fun (Msg) ->
                  TestPid = sip_test:pid_from_message(Msg),

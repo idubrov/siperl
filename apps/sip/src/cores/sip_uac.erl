@@ -195,7 +195,7 @@ lookup_destinations(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
     URI =
         case sip_message:top_header('route', Request) of
-            {error, not_found} ->
+            error ->
                 RequestURI;
             {ok, #sip_hdr_address{uri = Route}} ->
                 % See RFC3261, 8.1.2

@@ -35,12 +35,12 @@ init(#tx_state{tx_key = Key, tx_user = TxUser, request = Msg} = TxState) ->
     case Key of
         #sip_tx_server{} ->
             case sip_message:tag('from', Msg) of
-                {value, FromTag} ->
+                {ok, FromTag} ->
                     CallId = sip_message:top_header('call-id', Msg),
                     CSeq = sip_message:top_header('cseq', Msg),
                     gproc:add_local_property({tx_loop, FromTag, CallId, CSeq}, Key),
                     ok;
-                false ->
+                error ->
                     ok
             end;
         #sip_tx_client{} ->
