@@ -1,5 +1,5 @@
 #!/usr/bin/make
-REBAR=`which rebar || ./rebar`
+REBAR=./rebar
 all: deps compile
 deps:
 	@$(REBAR) get-deps
