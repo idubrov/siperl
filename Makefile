@@ -1,5 +1,7 @@
 #!/usr/bin/make
 REBAR=./rebar
+
+.PHONY : all deps compile test clean
 all: deps compile
 deps:
 	@$(REBAR) get-deps
