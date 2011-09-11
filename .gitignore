@@ -6,3 +6,5 @@ deps
 apps/sip/ebin/sip.app
 apps/sip/doc
 apps/sip/logs
+apps/sip/*.coverdata
+apps/sip/*.coverage.xml

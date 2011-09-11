@@ -1,3 +1,3 @@
 {incl_app, sip, details}.
-{export, "all.coverdata"}.
+{export, "ct.coverdata"}.
 
