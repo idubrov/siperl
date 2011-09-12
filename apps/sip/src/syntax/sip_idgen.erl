@@ -14,7 +14,7 @@
 -export([generate_id/1]).
 
 %% Include files
--include("sip_common.hrl").
+-include("../sip_common.hrl").
 -include("sip.hrl").
 
 %%-----------------------------------------------------------------

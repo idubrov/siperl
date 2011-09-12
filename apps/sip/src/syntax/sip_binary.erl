@@ -15,7 +15,7 @@
 -export([parse_until/2, parse_while/2]).
 
 %% Include files
--include("sip_common.hrl").
+-include("../sip_common.hrl").
 
 
 %%-----------------------------------------------------------------
