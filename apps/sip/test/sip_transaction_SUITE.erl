@@ -7,19 +7,21 @@
 %%% @copyright 2011 Ivan Dubrov
 -module(sip_transaction_SUITE).
 
+%% Include files
 -include_lib("common_test/include/ct.hrl").
+-include("sip.hrl").
+-include("sip_test.hrl").
 
+% callbacks
 -export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2]).
 
+% test cases
 -export([client_invite_ok/1, client_invite_err/1, client_invite_timeout_calling/1, client_invite_timeout_proceeding/1]).
 -export([client_ok/1, client_timeout_trying/1, client_timeout_proceeding/1]).
 -export([server_invite_ok/1, server_invite_err/1, server_invite_timeout/1, server_invite_tu_down/1]).
 -export([server_ok/1, server_err/1, server_tu_down/1]).
 -export([server_loop/1]).
 
-%% Include files
--include("sip.hrl").
--include("sip_test.hrl").
 
 all() ->
     [{group, udp}, {group, tcp}].
