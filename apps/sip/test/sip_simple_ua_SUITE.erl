@@ -6,7 +6,7 @@
 
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
--export([options_200/1, options_302/1, options_501/1]).
+-export([options_200/1, options_302/1, options_302_failed/1, options_501/1]).
 
 %% Include files
 -include_lib("common_test/include/ct.hrl").
@@ -16,7 +16,7 @@
 
 %% Common tests
 all() ->
-    [options_200, options_302, options_501].
+    [options_200, options_302, options_302_failed, options_501].
 
 init_per_suite(Config) ->
     ok = application:start(gproc),
@@ -69,7 +69,6 @@ options_200(Config) ->
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
-
 options_302(Config) ->
     UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
@@ -105,7 +104,30 @@ options_302(Config) ->
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
+options_302_failed(Config) ->
+    UAC = ?config(uac, Config),
+    UAS = ?config(uas, Config),
 
+    % configure UAS to reply with "301 Moved Temporarily" for username "first" and
+    % to reply "200 Ok" on username "second".
+    Handler = fun(#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"first">>}}} = Request) ->
+                      Response = sip_message:create_response(Request, 302),
+                      Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
+                      Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
+                      sip_message:append_header(contact, [Contact1, Contact2], Response);
+                 (#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"second">>}}} = Request) ->
+                      sip_message:create_response(Request, 404);
+                 (#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"third">>}}} = Request) ->
+                      sip_message:create_response(Request, 200)
+              end,
+    sip_test_uas:set_handler(UAS, Handler),
+
+    RequestURI = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
+    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+
+    % Validate response code
+    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+    ok.
 
 options_501(Config) ->
     UAC = ?config(uac, Config),

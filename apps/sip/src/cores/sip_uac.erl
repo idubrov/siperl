@@ -60,7 +60,7 @@ send_request(Request, UserData, State) ->
     % Put Request URI into the target set
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
-    send_to_next(none, ReqInfo, State).
+    next_destination(none, ReqInfo, State).
 
 
 %% @private
@@ -70,6 +70,7 @@ send_request(Request, UserData, State) ->
 handle_info({response, Msg}, State) ->
     Mod = State#sip_ua_state.callback,
     do([pipeline_m ||
+        % FIXME: re-send if failed and have more destinations/target URIs.
         S1 <- validate_vias(Msg, State),
         S2 <- process_redirects(Msg, S1),
         S3 <- Mod:handle_response(user_data(Msg, S2), Msg, S2),
@@ -90,7 +91,8 @@ handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_
     State2 = State#sip_ua_state{requests = Dict},
 
     % transaction failure, let's retry with new transaction, see 8.1.2
-    {ok, State3} = send_to_next(Reason, ReqInfo, State2),
+    % FIXME: process as if response was received...
+    {ok, State3} = next_destination(Reason, ReqInfo, State2),
     pipeline_m:stop({noreply, State3});
 
 handle_info(_Info, State) ->
@@ -136,10 +138,25 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
     Transactions2 = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
 
     % try next destination, was redirected
-    {ok, State2} = send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}),
+    {ok, State2} = next_destination(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}),
     pipeline_m:stop({noreply, State2});
+process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request, State)
+  when Status > 399 ->
+    % 8.1.3.4, process failed responses
+    TxKey = sip_transaction:tx_key(client, Request),
+    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
+    case sip_priority_set:take(ReqInfo#req_info.target_set) of
+        false ->
+            % No more URIs in target set, go to the next step
+            pipeline_m:next(State);
+        _Other ->
+            % go to the next URI from target set
+            {ok, State2} = next_destination(no_more_destinations, ReqInfo#req_info{destinations = []}, State),
+            pipeline_m:stop({noreply, State2})
+    end;
 process_redirects(_Msg, State) ->
     pipeline_m:next(State).
+
 
 %% @doc Retrieve user data associated with given response
 %% @end
@@ -157,7 +174,7 @@ user_data(Response, State) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
+next_destination(Reason, #req_info{destinations = []} = ReqInfo, State) ->
     % no destination IPs -- resolve next URI from target_set
     case sip_priority_set:take(ReqInfo#req_info.target_set) of
         false ->
@@ -175,9 +192,9 @@ send_to_next(Reason, #req_info{destinations = []} = ReqInfo, State) ->
             Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
             Destinations = lookup_destinations(Request2),
             ReqInfo2 = ReqInfo#req_info{request = Request2, destinations = Destinations, target_set = TargetSet2},
-            send_to_next(Reason, ReqInfo2, State)
+            next_destination(Reason, ReqInfo2, State)
     end;
-send_to_next(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
+next_destination(_Reason, #req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, State) ->
     % send request to the top destination
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request),
 
