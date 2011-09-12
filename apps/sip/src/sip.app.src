@@ -1,10 +1,13 @@
-%% This is the application resource file (.app file) for the sip,
-%% application.
 {application, sip,
-  [{description, "SIP support"},
+  [{description, "SIP implementation"},
    {vsn, "0.1.0"},
-   {registered,[sip_sup]},
-   {applications, [kernel, stdlib, gproc]},
+   {registered, [
+                 sip_transport,
+                 sip_transport_udp_socket_sup,
+                 sip_transport_tcp_conn_sup,
+                 sip_transaction_tx_sup
+                 ]},
+   {applications, [siplib, kernel, stdlib, gproc]},
    {mod, {sip_app,[]}},
    {start_phases, []},
    {env, [

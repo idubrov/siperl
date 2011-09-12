@@ -21,12 +21,10 @@
 
 -include("../sip_sup_specs.hrl").
 
--define(SERVER, ?MODULE).
-
 %% API functions
 -spec start_link() -> 'ignore' | {'error', _} | {'ok', pid()}.
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
+    supervisor:start_link(?MODULE, {}).
 
 %% Supervisor callbacks
 

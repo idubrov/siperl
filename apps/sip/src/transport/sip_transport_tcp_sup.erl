@@ -23,12 +23,11 @@
 
 
 -include("../sip_sup_specs.hrl").
--define(SERVER, ?MODULE).
 
 %% API functions
 -spec start_link([integer()]) -> {ok, pid()} | ignore | {error, _}.
 start_link(Ports) when is_list(Ports) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, Ports).
+    supervisor:start_link(?MODULE, Ports).
 
 %% Supervisor callbacks
 

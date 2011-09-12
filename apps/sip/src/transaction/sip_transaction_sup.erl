@@ -13,8 +13,6 @@
 -export([init/1]).
 
 %% Macros
--define(SERVER, ?MODULE).
-
 -define(SUPERVISOR(Module, Args),
         {Module, {Module, start_link, Args},
          permanent, infinity, supervisor, [Module]}).
@@ -25,7 +23,7 @@
 
 -spec start_link() -> {ok, pid()} | ignore | {error, _}.
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
+    supervisor:start_link(?MODULE, {}).
 
 %% Supervisor callbacks
 

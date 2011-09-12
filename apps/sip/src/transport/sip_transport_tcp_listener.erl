@@ -20,8 +20,6 @@
 %% Types
 -record(state, {socket :: inet:socket()}).
 
--define(SERVER, ?MODULE).
-
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------
@@ -29,7 +27,7 @@
 %% @private
 -spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Port) when is_integer(Port) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Port, []).
+    gen_server:start_link(?MODULE, Port, []).
 
 %% @private
 -spec init(integer()) -> {ok, #state{}}.

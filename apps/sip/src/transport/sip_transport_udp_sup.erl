@@ -21,7 +21,6 @@
 -export([init/1]).
 
 -include("../sip_sup_specs.hrl").
--define(SERVER, ?MODULE).
 -define(LISTENER(Port),
         {{socket, Port}, {sip_transport_udp_socket, start_link, [Port]},
              permanent, 2000, worker, [sip_transport_udp_socket]}).
@@ -31,7 +30,7 @@
 %%-----------------------------------------------------------------
 -spec start_link([integer()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Ports) when is_list(Ports) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, Ports).
+    supervisor:start_link(?MODULE, Ports).
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks

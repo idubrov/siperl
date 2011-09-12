@@ -15,7 +15,6 @@
 
 -include("sip_common.hrl").
 
--define(SERVER, ?MODULE).
 -define(SUPERVISOR(Module, Args),
         {Module, {Module, start_link, Args},
          permanent, infinity, supervisor, [Module]}).
@@ -23,7 +22,7 @@
 %% API
 -spec start_link() -> {ok, pid()} | any().
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    supervisor:start_link(?MODULE, []).
 
 %% Supervisor callbacks
 
