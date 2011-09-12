@@ -13,11 +13,8 @@
 -export([init/1]).
 
 %% Macros
--define(SUPERVISOR(Module, Args),
-        {Module, {Module, start_link, Args},
-         permanent, infinity, supervisor, [Module]}).
-
 -include("../sip_common.hrl").
+-include("../sip_sup_specs.hrl").
 
 %% API functions
 

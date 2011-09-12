@@ -14,10 +14,7 @@
 -export([init/1]).
 
 -include("sip_common.hrl").
-
--define(SUPERVISOR(Module, Args),
-        {Module, {Module, start_link, Args},
-         permanent, infinity, supervisor, [Module]}).
+-include("sip_sup_specs.hrl").
 
 %% API
 -spec start_link() -> {ok, pid()} | any().

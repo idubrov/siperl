@@ -7,7 +7,7 @@
                  sip_transport_tcp_conn_sup,
                  sip_transaction_tx_sup
                  ]},
-   {applications, [siplib, kernel, stdlib, gproc]},
+   {applications, [kernel, stdlib, gproc]},
    {mod, {sip_app,[]}},
    {start_phases, []},
    {env, [

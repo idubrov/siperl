@@ -15,7 +15,7 @@
 -export([parse/1, format/1]).
 
 %% Include files
--include("../sip_common.hrl").
+-include("sip_common.hrl").
 -include("sip.hrl").
 
 %%-----------------------------------------------------------------

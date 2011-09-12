@@ -21,7 +21,6 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-
 -include("../sip_sup_specs.hrl").
 
 %% API functions

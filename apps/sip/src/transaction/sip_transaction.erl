@@ -22,7 +22,6 @@
 
 %% Macros
 -define(SERVER, ?MODULE).
--define(TX_SUP(Name, TxModule), ?SPEC(Name, sip_transaction_tx_sup, supervisor, [TxModule])).
 
 %%-----------------------------------------------------------------
 %% API functions

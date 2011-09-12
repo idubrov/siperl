@@ -21,9 +21,6 @@
 -export([init/1]).
 
 -include("../sip_sup_specs.hrl").
--define(LISTENER(Port),
-        {{socket, Port}, {sip_transport_udp_socket, start_link, [Port]},
-             permanent, 2000, worker, [sip_transport_udp_socket]}).
 
 %%-----------------------------------------------------------------
 %% API functions
