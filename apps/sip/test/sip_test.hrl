@@ -6,12 +6,6 @@
 %%% @copyright 2011 Ivan Dubrov
 %%%----------------------------------------------------------------
 
-%% Includes
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--spec test() -> term().
--endif.
-
 %% Macros
 -define(TIMEOUT, 500).
 -define(_fail(Msg),

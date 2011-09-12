@@ -9,6 +9,7 @@
 
 %% Include files
 -include("sip.hrl").
+-include("../src/sip_common.hrl").
 -include("sip_test.hrl").
 
 %%-----------------------------------------------------------------
