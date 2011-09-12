@@ -153,6 +153,7 @@
                        callback :: module(),        % Callback module
                        allow = [] :: [atom()],      % List of allowed methods
                        supported = [] :: [atom()],  % List of supported extensions
+                       detect_loops = true :: boolean(), % Enable loop detection (8.2.2.2)
                        state}).                     % Callback module state
 
 -define(CORE_PROPERTY, core_registration).

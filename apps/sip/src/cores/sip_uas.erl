@@ -40,14 +40,19 @@ handle_info({request, Msg}, State) ->
     % first, we start server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
+    % parse the URI
+    Req = Msg#sip_message.kind,
+    URI = sip_uri:parse(Req#sip_request.uri),
+    Msg2 = Msg#sip_message{kind = Req#sip_request{uri = URI}},
+
     % then we apply our standard valves to the message and state
     Result =
         do([pipeline_m ||
-            S1 <- validate_allowed(Msg, State),
-            S2 <- validate_loop(Msg, S1),
-            S3 <- validate_required(Msg, S2),
-            S4 <- Mod:handle_request(sip_message:method(Msg), Msg, S3),
-            S5 <- fail({reply, sip_message:create_response(Msg, 500), S4}),
+            S1 <- validate_allowed(Msg2, State),
+            S2 <- validate_loop(Msg2, S1),
+            S3 <- validate_required(Msg2, S2),
+            S4 <- Mod:handle_request(sip_message:method(Msg2), Msg2, S3),
+            S5 <- fail({reply, sip_message:create_response(Msg2, 500), S4}),
             S5]),
 
     case Result of
@@ -77,6 +82,8 @@ validate_allowed(Request, State) ->
 
 %% Validate message according to the 8.2.2.2
 -spec validate_loop(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
+validate_loop(Request, #sip_ua_state{detect_loops = false} = State) ->
+    pipeline_m:next(State);
 validate_loop(Request, State) ->
     case sip_transaction:is_loop_detected(Request) of
         false ->

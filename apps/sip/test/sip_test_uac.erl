@@ -1,11 +1,9 @@
-%%%----------------------------------------------------------------
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Pinger UAC implementations. Sends OPTIONS request to the
 %%% given destination.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
-%%%----------------------------------------------------------------
--module(sip_pinger).
+-module(sip_test_uac).
 -extends(sip_ua).
 
 %% Exports
@@ -15,7 +13,7 @@
 -include("sip_test.hrl").
 
 %% API
--export([start_link/0, ping/2, stop/1]).
+-export([start_link/0, request/3, stop/1]).
 
 %% Server callbacks
 -export([init/1]).
@@ -27,8 +25,8 @@
 start_link() ->
     gen_server:start_link(?MODULE, {}, []).
 
-ping(Pid, To) ->
-    gen_server:call(Pid, {ping, To}, 100000).
+request(Pid, Method, RequestURI) ->
+    gen_server:call(Pid, {request, Method, RequestURI}).
 
 stop(Pid) ->
     gen_server:cast(Pid, stop).
@@ -41,14 +39,9 @@ init({}) ->
     {ok, #sip_ua_state{callback = ?MODULE}}.
 
 %% @private
-handle_call({ping, To}, Client, State) ->
-    From = sip_headers:address(<<"Mr. Pinger">>, <<"sip:pinger@127.0.0.1">>, []),
-    Request = sip_uac:create_request('OPTIONS', To, From),
-    Request2 = sip_message:update_top_header('content-length', fun (_) -> 0 end, Request),
-    %Request3 = sip_message:append_header('via', sip_headers:via(tcp, {127,0,0,1}, []), Request2),
-    %Request3 = sip_message:append_header('require', [foo], Request2),
-    Request3 = Request2,
-    {ok, State2} = sip_uac:send_request(Request3, Client, State),
+handle_call({request, Method, RequestURI}, Client, State) ->
+    Request = sip_uac:create_request(Method, RequestURI),
+    {ok, State2} = sip_uac:send_request(Request, Client, State),
     {noreply, State2};
 handle_call(Req, From, State) ->
     sip_ua:handle_call(Req, From, State).

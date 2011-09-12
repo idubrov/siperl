@@ -9,7 +9,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([create_request/3, send_request/3, handle_info/2, user_data/2]).
+-export([create_request/2, send_request/3, handle_info/2, user_data/2]).
 
 %% Response processing
 -export([validate_vias/2, process_redirects/2]).
@@ -22,12 +22,12 @@
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
 %% Creates all required headers of the SIP message: `Via:', `Max-Forwards:',
-%% `From:', `To:', `CSeq:', `Call-Id', `Contact:'. Also, adds `Route:' headers
+%% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(atom() | binary(), #sip_hdr_address{}, #sip_hdr_address{}) -> #sip_message{}.
-create_request(Method, ToValue, ContactValue) when
-  is_record(ToValue, sip_hdr_address), is_record(ContactValue, sip_hdr_address) ->
+-spec create_request(atom() | binary(), #sip_hdr_address{}) -> #sip_message{}.
+create_request(Method, ToValue) when
+  is_record(ToValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
     RequestURI = ToValue#sip_hdr_address.uri,
@@ -43,15 +43,15 @@ create_request(Method, ToValue, ContactValue) when
     % FIXME: for REGISTER requests CSeqs are not arbitrary...
     CSeq = {'cseq', sip_headers:cseq(sip_idgen:generate_cseq(), Method)},
     CallId = {'call-id', sip_idgen:generate_call_id()},
-    Contact = {'contact', ContactValue},
 
     % configure pre-existing route set
     Routes = [{'route', sip_headers:address(<<>>, sip_uri:parse(RouteBin), [])} || RouteBin <- sip_config:routes()],
 
     #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
-                 headers = [Via, MaxForwards, From, To, CSeq, CallId, Contact] ++ Routes}.
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId] ++ Routes}.
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
+%% FIXME: Must have Contact: header if request can establish dialog (INVITE)
 %% @end
 -spec send_request(#sip_message{}, term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
 send_request(Request, UserData, State) ->
@@ -137,7 +137,7 @@ process_redirects(#sip_message{kind = #sip_response{status = Status}} = Request,
 
     % try next destination, was redirected
     {ok, State2} = send_to_next(no_more_destinations, ReqInfo2, State#sip_ua_state{requests = Transactions2}),
-    pipeline_m:stop(State2);
+    pipeline_m:stop({noreply, State2});
 process_redirects(_Msg, State) ->
     pipeline_m:next(State).
 
