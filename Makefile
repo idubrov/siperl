@@ -4,7 +4,7 @@ REBAR=./rebar
 .PHONY : all deps compile test clean
 all: deps compile
 deps:
-	@$(REBAR) get-deps
+	@$(REBAR) get-deps update-deps
 compile:
 	@$(REBAR) compile
 test:
