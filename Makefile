@@ -11,4 +11,5 @@ test: deps
 	@$(REBAR) skip_deps=true eunit ct
 clean:
 	@$(REBAR) clean
-
+check: compile
+	@dialyzer apps/sip/ebin --verbose -Wunmatched_returns -Werror_handling -Wrace_conditions
