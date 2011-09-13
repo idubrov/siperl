@@ -62,6 +62,10 @@ handle_info({request, Msg}, State) ->
         Other -> Other
     end;
 
+handle_info({tx, TxKey, {terminated, _Reason}}, State) when is_record(TxKey, sip_tx_server) ->
+    % Ignore transaction termination events
+    pipeline_m:stop({noreply, State});
+
 handle_info(_Info, State) ->
     pipeline_m:next(State).
 
