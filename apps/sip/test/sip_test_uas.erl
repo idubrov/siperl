@@ -51,7 +51,7 @@ handle_call({set_handler, Handler}, _Client, #sip_ua_state{} = State) ->
     {reply, ok, State#sip_ua_state{state = UserState#state{handler = Handler}}}.
 
 %% @private
-handle_request(Method, Request, #sip_ua_state{state = #state{handler = Handler}} = State) ->
+handle_request(_Method, Request, #sip_ua_state{state = #state{handler = Handler}} = State) ->
     Response = Handler(Request),
     pipeline_m:stop({reply, Response, State}).
 
