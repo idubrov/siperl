@@ -9,21 +9,17 @@
 -compile({parse_transform, do}).
 
 %% API
--export([new/3, send_response/2, process_request/2]).
+-export([new/1, send_response/2, process_request/2]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(uas, {callback :: module(), % Client callback module
-                allow = [] :: [atom()],      % List of allowed methods
-                supported = [] :: [atom()],  % List of supported extensions
-                detect_loops = false :: boolean() % Enable loop detection (8.2.2.2)
-               }).
+-record(uas, {options = [] :: [{atom(), any()}]}).
 
--spec new(module, [atom()], [atom()]) -> #uas{}.
-new(Callback, Allow, Supported) ->
-    #uas{callback = Callback, allow = Allow, supported = Supported}.
+-spec new([{atom(), any()}]) -> #uas{}.
+new(Options) when is_list(Options) ->
+    #uas{options = Options}.
 
 
 %% @doc Send response
@@ -31,11 +27,11 @@ new(Callback, Allow, Supported) ->
 %% Automatically adds `Allow:' and `Supported:' headers for every reply.
 %% @end
 -spec send_response(#uas{}, sip_message()) -> ok.
-send_response(#uas{allow = Allow, supported = Supported}, Response)
+send_response(#uas{options = Options}, Response)
   when is_record(Response, sip_response) ->
     % Append Supported and Allow headers
-    Resp2 = sip_message:append_header('allow', Allow, Response),
-    Resp3 = sip_message:append_header('supported', Supported, Resp2),
+    Resp2 = sip_message:append_header(allow, proplists:get_value(allow, Options, []), Response),
+    Resp3 = sip_message:append_header(supported, proplists:get_value(supported, Options, []), Resp2),
     sip_transaction:send_response(Resp3),
     ok.
 
@@ -55,10 +51,10 @@ process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_request) 
 
 %% Validate message according to the 8.2.1
 -spec validate_allowed(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_allowed(Request, UAS) ->
+validate_allowed(Request, #uas{options = Options} = UAS) ->
     Method = Request#sip_request.method,
-    Allow = UAS#uas.allow,
-    Contains = lists:any(fun (V) -> V =:= Method end, Allow),
+    Allow = proplists:get_value(allow, Options, []),
+    Contains = lists:member(Method, Allow),
     case Contains of
         true ->
             error_m:return(ok);
@@ -71,12 +67,12 @@ validate_allowed(Request, UAS) ->
 
 %% Validate message according to the 8.2.2.2
 -spec validate_loop(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_loop(_Request, #uas{detect_loops = false}) ->
-    error_m:return(ok);
-validate_loop(Request, UAS) ->
-    case sip_transaction:is_loop_detected(Request) of
+validate_loop(Request, #uas{options = Options} = UAS) ->
+    IsLoop = (not proplists:get_bool(no_detect_loops, Options)) andalso
+             sip_transaction:is_loop_detected(Request),
+    case IsLoop of
         false ->
-            error_m:return(UAS);
+            error_m:return(ok);
         true ->
             % Send "482 Loop Detected"
             Response = sip_message:create_response(Request, 482),
@@ -86,9 +82,9 @@ validate_loop(Request, UAS) ->
 
 %% Validate message according to the 8.2.2.3
 -spec validate_required(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_required(Request, UAS) ->
-    Supported = UAS#uas.supported,
-    IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,
+validate_required(Request, #uas{options = Options} = UAS) ->
+    Supported = proplists:get_value(supported, Options, []),
+    IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
 
     %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
     Require = sip_message:header_values('require', Request),

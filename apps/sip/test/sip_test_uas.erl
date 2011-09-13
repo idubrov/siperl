@@ -39,7 +39,8 @@ stop(Pid) ->
 %% @private
 init({}) ->
     sip_cores:register_core(#sip_core_info{is_applicable = fun is_applicable/1}),
-    {ok, #state{uas = sip_uas:new(?MODULE, ['OPTIONS'], [])}}.
+    UAS = sip_uas:new([{allow, ['OPTIONS']}, no_detect_loops]),
+    {ok, #state{uas = UAS}}.
 
 %% @private
 handle_call({set_handler, Handler}, _Client, #state{} = State) ->
