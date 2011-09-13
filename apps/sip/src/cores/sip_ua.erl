@@ -56,7 +56,7 @@ handle_info(Info, State) ->
             S1 <- sip_uas:handle_info(Info, State),
             S2 <- sip_uac:handle_info(Info, S1),
             % terminate process with `unexpected' reason
-            S3 <- fail({stop, unexpected, S2}),
+            S3 <- fail({stop, {unexpected, Info}, S2}),
             S3]),
     Result.
 

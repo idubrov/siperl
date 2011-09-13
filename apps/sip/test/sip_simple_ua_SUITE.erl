@@ -6,7 +6,7 @@
 
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
--export([options_200/1, options_302/1, options_302_failed/1, options_501/1]).
+-export([options_200/1, options_302/1, options_302_failed/1, options_501/1, options_503_next_200/1]).
 
 %% Include files
 -include_lib("common_test/include/ct.hrl").
@@ -16,7 +16,7 @@
 
 %% Common tests
 all() ->
-    [options_200, options_302, options_302_failed, options_501].
+    [options_200, options_302, options_302_failed, options_501, options_503_next_200].
 
 init_per_suite(Config) ->
     ok = application:start(gproc),
@@ -157,4 +157,39 @@ options_501(Config) ->
     ['OPTIONS'] = sip_message:header_values(allow, Response),
 
     _Bin = sip_message:header_top_value('call-id', Response),
+    ok.
+
+%% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
+options_503_next_200(Config) ->
+    % Mock sip_resolve to return two destinations for fake URI
+    % Both destinations point to 127.0.0.1, but have different transports
+    ok = meck:new(sip_resolve, [passthrough]),
+    ok = meck:expect(sip_resolve, client_resolve,
+                     fun(#sip_uri{host = "example.test"}) ->
+                             [#sip_destination{address = {127, 0, 0, 1}, transport = udp},
+                              #sip_destination{address = {127, 0, 0, 1}, transport = tcp}]
+                     end),
+
+    UAC = ?config(uac, Config),
+    UAS = ?config(uas, Config),
+
+    % configure UAS to reply with 503 Service Unavailable for UDP transport
+    Handler = fun (Request) ->
+                       Via = sip_message:header_top_value(via, Request),
+                       case Via#sip_hdr_via.transport of
+                           udp ->
+                               sip_message:create_response(Request, 503);
+                           tcp ->
+                               sip_message:create_response(Request, 200)
+                       end
+              end,
+    sip_test_uas:set_handler(UAS, Handler),
+
+    RequestURI = sip_headers:address(<<>>, <<"sip:example.test">>, []),
+    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+
+    % Validate response
+    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+
+    meck:unload(sip_resolve),
     ok.
