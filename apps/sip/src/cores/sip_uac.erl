@@ -2,6 +2,23 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UAC response processing behaviour
 %%%
+%%% The response handling uses `do' parse transformer from
+%%% <a href="https://github.com/rabbitmq/erlando">Erlando</a>. Each step
+%%% of the request processing is "valve" function that returns value in
+%%% the `pipeline_m' monad. The return is either `{next, State}' (apply
+%%% next valve) or `{stop, Result}' (stop message processing and return Result).
+%%%
+%%% Automatic response handling:
+%%% <ul>
+%%% <li>If response is redirect (3xx), populate target set with values from
+%%% Contact header(s) and send request to next URI from the target set.</li>
+%%% <li>If response is 503 (Service Unavailable) or 408 (Request Timeout), try
+%%% next IP address (RFC 3263). If no such destinations, try next URI from the
+%%% target set. If no URIs in target set, let callback handle the response.</li>
+%%% <li>If another failed response is detected, try next URI from target set.
+%%% If target set is empty, let callback handle the response.</li>
+%%% <li>Otherwise, let UAC callback handle the response.</li>
+%%% </ul>
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
@@ -75,23 +92,10 @@ handle_info({response, Response}, State) ->
 
 %% @doc Process terminated client transactions
 %% @end
-handle_info({tx, TxKey, {terminated, normal}}, State) when is_record(TxKey, sip_tx_client) ->
+handle_info({tx, TxKey, {terminated, _Reason}}, State) when is_record(TxKey, sip_tx_client) ->
     % remove transaction from the list
     Dict = dict:erase(TxKey, State#sip_ua_state.requests),
     pipeline_m:stop({noreply, State#sip_ua_state{requests = Dict}});
-
-handle_info({tx, TxKey, {terminated, Reason}}, State) when is_record(TxKey, sip_tx_client) ->
-    % transaction failure, let's retry with new transaction, see 8.1.2
-    % process as if response was received
-    % FIXME: Move to transaction layer?
-    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
-    Status =
-        case Reason of
-            timeout -> 408; % Request Timeout
-            _Other -> 503 % Service Unavailable
-        end,
-    Response = sip_message:create_response(ReqInfo#req_info.request, Status),
-    do_process_response(Response, State);
 
 handle_info(_Info, State) ->
     pipeline_m:next(State).
@@ -122,7 +126,7 @@ process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = 
     next_uri(ReqInfo2, Response, State);
 process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response, State)
   when Status =:= 503; Status =:= 408 ->
-    % RFC 3263, 4.3. Processing failed responses
+    % RFC 3263, 4.3. Processing failed responses, try next IP address
     next_destination(ReqInfo, Response, State);
 process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response, State)
   when Status > 399 ->

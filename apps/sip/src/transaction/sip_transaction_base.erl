@@ -138,8 +138,31 @@ handle_info(Info, _State, TxState) ->
 %% @end
 -spec terminate(term(), atom(), #tx_state{}) -> ok.
 terminate(Reason, _State, TxState) ->
-    notify_tu(TxState, {tx, TxState#tx_state.tx_key, {terminated, Reason}}),
+    TxKey = TxState#tx_state.tx_key,
+
+    % For client transactions, handle failure as response message
+    % See 8.1.3.1
+    TxState2 =
+        case failed_status(TxState#tx_state.tx_key, Reason) of
+            false -> TxState;
+            Status ->
+                % Send failure as response to the TU
+                Response = sip_message:create_response(TxState#tx_state.request, Status),
+                pass_to_tu(Response, TxState)
+        end,
+    notify_tu(TxState2, {tx, TxKey, {terminated, Reason}}),
     ok.
+
+%% @doc Determine if response should be sent to TU
+%%
+%% Syntetic response is sent when client transaction terminated abnormally.
+%% If reason is timeout, "408 Request Timeout" is sent. Otherwise, "503 Service Unavailable"
+%% is sent.
+%% @end
+failed_status(#sip_tx_server{}, _Reason) -> false;
+failed_status(#sip_tx_client{}, normal) -> false;
+failed_status(#sip_tx_client{}, {timeout, _Timer}) -> 408;
+failed_status(#sip_tx_client{}, _Reason) -> 503.
 
 %% @private
 -spec code_change(term(), atom(), #tx_state{}, term()) -> {ok, atom(), #tx_state{}}.
