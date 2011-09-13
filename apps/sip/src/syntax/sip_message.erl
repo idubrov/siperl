@@ -70,7 +70,7 @@ to_binary(Message) ->
                   URIBin = sip_uri:format(URI),
                   <<(sip_syntax:format_name(Method))/binary, " ", URIBin/binary, " ", ?SIPVERSION>>;
               #sip_response{status = Status, reason = Reason} ->
-                  StatusStr = list_to_binary(integer_to_list(Status)),
+                  StatusStr = sip_binary:integer_to_binary(Status),
                   <<?SIPVERSION, " ", StatusStr/binary, " ", Reason/binary>>
           end,
     Headers = sip_headers:format_headers(Message#sip_message.headers),
