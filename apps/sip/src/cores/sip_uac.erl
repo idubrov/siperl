@@ -43,7 +43,7 @@ new([]) ->
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(#uac{}, sip_name(), #sip_hdr_address{}) -> sip_message().
+-spec create_request(#uac{}, sip_name(), #sip_hdr_address{}) -> #sip_request{}.
 create_request(UAC, Method, ToValue) when
   is_record(UAC, uac), is_record(ToValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
@@ -157,7 +157,7 @@ next_destination(#req_info{destinations = []}, _Response) ->
 next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response) ->
     % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-    sip_transaction:start_client_tx(self(), Top, Request, ReqInfo2),
+    {ok, _TxKey} = sip_transaction:start_client_tx(self(), Top, Request, ReqInfo2),
     % stop processing
     error_m:fail(processed).
 

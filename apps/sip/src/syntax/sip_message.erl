@@ -10,7 +10,7 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([method/1, headers/1, set_headers/2, body/1, set_body/2]).
+-export([method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1]).
@@ -39,33 +39,6 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
-
-%% @doc Retrieve headers from SIP request/response
-%% @end
--spec headers(sip_message()) -> sip_headers().
-headers(#sip_request{headers = Headers}) -> Headers;
-headers(#sip_response{headers = Headers}) -> Headers.
-
-%% @doc Set headers to SIP request/response
-%% @end
--spec set_headers(sip_message(), sip_headers()) -> sip_message().
-set_headers(#sip_request{} = Msg, Headers) -> Msg#sip_request{headers = Headers};
-set_headers(#sip_response{} = Msg, Headers) -> Msg#sip_response{headers = Headers}.
-
-%% @doc Retrieve body from SIP request/response
-%% @end
--spec body(sip_message()) -> binary().
-body(#sip_request{body = Body}) -> Body;
-body(#sip_response{body = Body}) -> Body.
-
-%% @doc Set body to SIP request/response
-%% @end
--spec set_body(sip_message(), sip_headers()) -> sip_message().
-set_body(#sip_request{} = Msg, Body)
-  when is_binary(Body) -> Msg#sip_request{body = Body};
-set_body(#sip_response{} = Msg, Body)
-  when is_binary(Body) -> Msg#sip_response{body = Body}.
-
 
 %% @doc Retrieve method of SIP message
 %%
@@ -224,7 +197,7 @@ has_header(Name, Msg) when is_record(Msg, sip_request); is_record(Msg, sip_respo
 %% @doc
 %% RFC 3261, 17.1.1.3 Construction of the ACK Request
 %% @end
--spec create_ack(sip_message(), sip_message()) -> sip_message().
+-spec create_ack(#sip_request{}, #sip_response{}) -> #sip_request{}.
 create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
            #sip_response{} = Response) ->
     % Call-Id, From, CSeq (with method changed to 'ACK') and Route (for 'INVITE'
@@ -253,7 +226,7 @@ create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
 
 %% @doc Create response for given request
 %% @end
--spec create_response(#sip_request{}, integer(), binary()) -> sip_message().
+-spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
     Headers = [{Name, Value} || {Name, Value} <- ReqHeaders,
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
@@ -266,7 +239,7 @@ create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
 
 %% @doc Create response for given request (with default Reason)
 %% @end
--spec create_response(sip_message(), integer()) -> sip_message().
+-spec create_response(sip_message(), integer()) -> #sip_response{}.
 create_response(Request, Status) ->
     create_response(Request, Status, default_reason(Status)).
 
@@ -512,6 +485,32 @@ default_reason(Status) ->
         604 -> <<"Does Not Exist Anywhere">>;
         606 -> <<"Not Acceptable">>
     end.
+
+%% @doc Retrieve headers from SIP request/response
+%% @end
+-spec headers(sip_message()) -> sip_headers().
+headers(#sip_request{headers = Headers}) -> Headers;
+headers(#sip_response{headers = Headers}) -> Headers.
+
+%% @doc Set headers to SIP request/response
+%% @end
+-spec set_headers(sip_message(), sip_headers()) -> sip_message().
+set_headers(#sip_request{} = Msg, Headers) -> Msg#sip_request{headers = Headers};
+set_headers(#sip_response{} = Msg, Headers) -> Msg#sip_response{headers = Headers}.
+
+%% @doc Retrieve body from SIP request/response
+%% @end
+-spec body(sip_message()) -> binary().
+body(#sip_request{body = Body}) -> Body;
+body(#sip_response{body = Body}) -> Body.
+
+%% @doc Set body to SIP request/response
+%% @end
+-spec set_body(sip_message(), binary()) -> sip_message().
+set_body(#sip_request{} = Msg, Body)
+  when is_binary(Body) -> Msg#sip_request{body = Body};
+set_body(#sip_response{} = Msg, Body)
+  when is_binary(Body) -> Msg#sip_response{body = Body}.
 
 %%-----------------------------------------------------------------
 %% Tests

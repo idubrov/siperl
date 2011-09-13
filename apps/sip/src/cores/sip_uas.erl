@@ -31,14 +31,14 @@ send_response(#uas{options = Options}, Response)
     % Append Supported and Allow headers
     Resp2 = sip_message:append_header(allow, proplists:get_value(allow, Options, []), Response),
     Resp3 = sip_message:append_header(supported, proplists:get_value(supported, Options, []), Resp2),
-    sip_transaction:send_response(Resp3),
+    {ok, _TxKey} = sip_transaction:send_response(Resp3),
     ok.
 
 % @private
 -spec process_request(#uas{}, sip_message()) -> ok | {error, Reason :: term()}.
 process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_request) ->
     % start server transaction
-    sip_transaction:start_server_tx(self(), Msg),
+    {ok, _TxKey} = sip_transaction:start_server_tx(self(), Msg),
 
     % validate message
     do([error_m ||
@@ -60,7 +60,7 @@ validate_allowed(Request, #uas{options = Options} = UAS) ->
         false ->
             % Send "405 Method Not Allowed"
             Response = sip_message:create_response(Request, 405),
-            send_response(Response, UAS),
+            ok = send_response(UAS, Response),
             error_m:fail(not_allowed)
     end.
 
@@ -75,7 +75,7 @@ validate_loop(Request, #uas{options = Options} = UAS) ->
         true ->
             % Send "482 Loop Detected"
             Response = sip_message:create_response(Request, 482),
-            send_response(Response, UAS),
+            ok = send_response(UAS, Response),
             error_m:fail(loop_detected)
     end.
 
@@ -94,6 +94,6 @@ validate_required(Request, #uas{options = Options} = UAS) ->
             % Send "420 Bad Extension"
             Response = sip_message:create_response(Request, 420),
             Response2 = sip_message:append_header('unsupported', Unsupported, Response),
-            send_response(Response2, UAS),
+            ok = send_response(UAS, Response2),
             error_m:fail(bad_extension)
     end.

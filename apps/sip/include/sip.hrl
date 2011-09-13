@@ -28,7 +28,7 @@
 -export_type([sip_name/0]).
 
 -type sip_headers() :: [{Name :: sip_name(), Value :: any()}].
--type sip_params()  :: [{Name :: sip_name(), Value :: any()}].
+-type sip_params()  :: [{Name :: sip_name(), Value :: any()} | sip_name()].
 
 %% Parsed SIP URI representation
 %%
