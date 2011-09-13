@@ -149,8 +149,7 @@
                    target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
--record(sip_ua_state, {requests = dict:new(),       % Requests being sent by UAC
-                       callback :: module(),        % Callback module
+-record(sip_ua_state, {callback :: module(),        % Callback module
                        allow = [] :: [atom()],      % List of allowed methods
                        supported = [] :: [atom()],  % List of supported extensions
                        detect_loops = true :: boolean(), % Enable loop detection (8.2.2.2)

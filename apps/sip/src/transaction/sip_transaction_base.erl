@@ -102,7 +102,8 @@ send_response(Msg, TxState) ->
 
 -spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
 pass_to_tu(#sip_message{kind = #sip_response{}} = Msg, TxState) ->
-    notify_tu(TxState, {response, Msg}),
+    TxKey = TxState#tx_state.tx_key,
+    notify_tu(TxState, {tx, TxKey, {response, Msg, TxState#tx_state.user_data}}),
     TxState.
 
 %% @private

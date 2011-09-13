@@ -24,7 +24,8 @@
          provisional,   % Most recent provisional response
          response,      % Final response
          to,            % Address to send request to
-         reliable       % If request was made via reliable connection
+         reliable,      % If request was made via reliable connection
+         user_data      % Transaction user custom data
         }).
 
 -define(CANCEL(Timer, TxState), sip_transaction_base:cancel_timer(#tx_state.Timer, TxState)).

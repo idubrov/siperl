@@ -85,17 +85,19 @@ send_request(Request, UserData, State) ->
 
 %% @private
 -spec handle_info(term(), #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
+handle_info({response, _Response}, State) ->
+    % XXX: What do we do with responses, not associated with transactions?
+    pipeline_m:next(State);
+
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
-handle_info({response, Response}, State) ->
-    do_process_response(Response, State);
+handle_info({tx, _TxKey, {response, Response, ReqInfo}}, State) ->
+    do_process_response(Response, ReqInfo, State);
 
 %% @doc Process terminated client transactions
 %% @end
 handle_info({tx, TxKey, {terminated, _Reason}}, State) when is_record(TxKey, sip_tx_client) ->
-    % remove transaction from the list
-    Dict = dict:erase(TxKey, State#sip_ua_state.requests),
-    pipeline_m:stop({noreply, State#sip_ua_state{requests = Dict}});
+    pipeline_m:stop({noreply, State});
 
 handle_info(_Info, State) ->
     pipeline_m:next(State).
@@ -136,20 +138,11 @@ process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = 
 process_response(_ReqInfo, _Msg, State) ->
     pipeline_m:next(State).
 
-do_process_response(Response, State) ->
-    % fetch request info
-    TxKey = sip_transaction:tx_key(client, Response),
-    ReqInfo = dict:fetch(TxKey, State#sip_ua_state.requests),
-
-    % remove request info
-    Dict = dict:erase(TxKey, State#sip_ua_state.requests),
-    State2 = State#sip_ua_state{requests = Dict},
-
-
-    Mod = State2#sip_ua_state.callback,
+do_process_response(Response, ReqInfo, State) ->
+    Mod = State#sip_ua_state.callback,
     do([pipeline_m ||
         % FIXME: re-send if failed and have more destinations/target URIs.
-        S1 <- validate_vias(Response, State2),
+        S1 <- validate_vias(Response, State),
         S2 <- process_response(ReqInfo, Response, S1),
         S3 <- Mod:handle_response(ReqInfo#req_info.user_data, Response, S2),
         % TODO: log unhandled requests?
@@ -185,15 +178,10 @@ next_destination(#req_info{destinations = []}, _Response, State) ->
     % no destination IPs to try, continue with last response
     pipeline_m:next(State);
 next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
-    % send request to the top destination
-    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request),
-
-    % store tx id to {user data, fallback destinations, request} mapping
+    % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-    Dict = dict:store(TxKey, ReqInfo2, State#sip_ua_state.requests),
-
-    State2 = State#sip_ua_state{requests = Dict},
-    pipeline_m:stop({noreply, State2}).
+    sip_transaction:start_client_tx(self(), Top, Request, ReqInfo2),
+    pipeline_m:stop({noreply, State}).
 
 lookup_destinations(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,

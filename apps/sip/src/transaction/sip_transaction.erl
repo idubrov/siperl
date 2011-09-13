@@ -14,7 +14,7 @@
 -include("sip_transaction.hrl").
 
 % Client API
--export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2]).
+-export([start_client_tx/3, start_client_tx/4, start_server_tx/2, send_response/1, tx_key/2]).
 -export([list_tx/0, is_loop_detected/1]).
 
 % Internal API for transport layer
@@ -29,7 +29,13 @@
 %% @doc Start new client transaction.
 %% @end
 -spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, #sip_tx_client{}}.
-start_client_tx(TU, To, Request)
+start_client_tx(TU, To, Request) ->
+  start_client_tx(TU, To, Request, undefined).
+
+%% @doc Start new client transaction with user data associated with it.
+%% @end
+-spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}, term()) -> {ok, #sip_tx_client{}}.
+start_client_tx(TU, To, Request, UserData)
   when is_record(To, sip_destination),
        is_record(Request, sip_message) ->
 
@@ -46,7 +52,8 @@ start_client_tx(TU, To, Request)
                         tx_key = Key,
                         tx_user = TU,
                         request = Request2,
-                        reliable = Reliable},
+                        reliable = Reliable,
+                        user_data = UserData},
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
