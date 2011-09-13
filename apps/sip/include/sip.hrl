@@ -7,31 +7,57 @@
 %%%----------------------------------------------------------------
 
 %%-----------------------------------------------------------------
-%% SIP core messages
+%% SIP core data types
 %%-----------------------------------------------------------------
 
+-type sip_name() :: atom() | binary().
+%% Optimized representation of entity name. When name is constructed
+%% from the binary, a check is made if matching atom exists. If such atom
+%% exists, it is used to represent the name of the entity. Otherwise,
+%% binary is used.
+%%
+%% This ensures both optimal representation of name at runtime without
+%% the danger of overloading atom table by malicious requests.
+%%
+%% Note that client code can always safely match such name against atom,
+%% since matching against atom ensures atom is loaded and therefore, atom
+%% representation will be chosen by SIP libary. The opposite is not true,
+%% though. Client code should never assume that name is binary, even if
+%% client code itself does not contain an atom (because this atom could
+%% be in fact referenced by another module).
+-export_type([sip_name/0]).
+
+-type sip_headers() :: [{Name :: sip_name(), Value :: any()}].
+-type sip_params()  :: [{Name :: sip_name(), Value :: any()}].
 
 %% Parsed SIP URI representation
 %%
 %% <em>Note that `user' can have escape sequences in it. It is not
 %% unescaped, so the original URI can be always reconstructed from
 %% the parts</em>.
--record(sip_uri, {scheme = sip      :: 'sip' | 'sips',
+-record(sip_uri, {scheme = sip      :: sip | sips,
                   user = <<>>       :: binary(),
                   password = <<>>   :: binary(),
-                  host = <<>>       :: inet:ip_address() | string(),
-                  port = undefined  :: integer() | 'undefined',
-                  params = [],
-                  headers = []}).
+                  host = undefined  :: inet:ip_address() | string(),
+                  port = undefined  :: undefined | inet:ip_port(),
+                  params = []       :: sip_params(),
+                  headers = []      :: sip_headers()}).
 -record(tel_uri, {phone = <<>> :: binary()}).
+-type sip_uri() :: #sip_uri{} | #tel_uri{} | binary().
+
 
 %% SIP message types.
-%% FIXME: note about header values (binary -- non-parsed, list -- multi-line header, etc)
--record(sip_request, {method :: binary() | atom(), uri :: #sip_uri{} | #tel_uri{} | term()}).
--record(sip_response, {status :: integer(), reason :: binary()}).
--record(sip_message, {kind :: #sip_request{} | #sip_response{},
-                      headers = [] :: [{Name :: atom() | binary(), Value :: binary() | term()}],
-                      body = <<"">> :: binary()}).
+
+-record(sip_request, {method        :: sip_name(),
+                      uri           :: sip_uri(),
+                      headers = []  :: sip_headers(),
+                      body = <<>>   :: binary()}).
+-record(sip_response, {status       :: integer(),
+                       reason       :: binary(),
+                       headers = [] :: sip_headers(),
+                       body = <<>>  :: binary()}).
+
+-type sip_message() :: #sip_request{} | #sip_response{}.
 
 %% Headers
 
@@ -144,4 +170,4 @@
 %%-----------------------------------------------------------------
 
 -define(CORE_PROPERTY, core_registration).
--record(sip_core_info, {is_applicable :: fun((#sip_message{}) -> boolean())}). % check if message is applicable
+-record(sip_core_info, {is_applicable :: fun((sip_message()) -> boolean())}). % check if message is applicable

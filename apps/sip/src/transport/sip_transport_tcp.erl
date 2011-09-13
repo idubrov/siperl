@@ -22,7 +22,7 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec send(#sip_destination{} | #sip_connection{}, #sip_message{}) -> ok | {error, Reason :: term()}.
+-spec send(#sip_destination{} | #sip_connection{}, sip_message()) -> ok | {error, Reason :: term()}.
 send(To, Message) when is_record(To, sip_destination) ->
     case sip_transport_tcp_conn_sup:start_connection(To) of
         {ok, Pid} ->
@@ -30,6 +30,7 @@ send(To, Message) when is_record(To, sip_destination) ->
         {error, Reason} ->
             {error, Reason}
     end;
-send(Conn, Message) when is_record(Conn, sip_connection),
-                         is_record(Message, sip_message) ->
+send(Conn, Message) when
+  is_record(Conn, sip_connection),
+  (is_record(Message, sip_request) orelse is_record(Message, sip_response)) ->
     sip_transport_tcp_conn:send(Conn#sip_connection.connection, Message).

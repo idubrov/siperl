@@ -33,13 +33,14 @@ request(Method, Transport) ->
                {'call-id', list_to_binary(pid_to_list(self()))}, % encode PID in header for testing purposes
                {'max-forwards', 70},
                {'content-length', 6}],
-    Msg = #sip_message{kind = #sip_request{method = Method, uri = <<"sip:127.0.0.1/test">>},
+    Msg = #sip_request{method = Method,
+                       uri = <<"sip:127.0.0.1/test">>,
                        body = <<"Hello!">>,
                        headers = Headers},
     Msg.
 
 %% Extract test process pid from the top branch
-pid_from_message(Msg) when is_record(Msg, sip_message)->
+pid_from_message(Msg) when is_record(Msg, sip_request); is_record(Msg, sip_response) ->
     PidBinary = sip_message:header_top_value('call-id', Msg),
     list_to_pid(binary_to_list(PidBinary)).
 

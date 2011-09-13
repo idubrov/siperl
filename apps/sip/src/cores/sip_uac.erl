@@ -26,7 +26,7 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(req_info, {request :: #sip_message{},                 % SIP request message
+-record(req_info, {request :: #sip_request{},                 % SIP request message
                    destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
                    target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
@@ -43,7 +43,7 @@ new(Module) ->
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(#uac{}, sip_syntax:name(), #sip_hdr_address{}) -> #sip_message{}.
+-spec create_request(#uac{}, sip_syntax:name(), #sip_hdr_address{}) -> sip_message().
 create_request(UAC, Method, ToValue) when
   is_record(UAC, uac), is_record(ToValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
@@ -65,15 +65,16 @@ create_request(UAC, Method, ToValue) when
     % configure pre-existing route set
     Routes = [{'route', sip_headers:address(<<>>, sip_uri:parse(RouteBin), [])} || RouteBin <- sip_config:routes()],
 
-    #sip_message{kind = #sip_request{method = Method, uri = RequestURI},
+    #sip_request{method = Method,
+                 uri = RequestURI,
                  headers = [Via, MaxForwards, From, To, CSeq, CallId] ++ Routes}.
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% FIXME: Must have Contact: header if request can establish dialog (INVITE)
 %% @end
--spec send_request(#uac{}, #sip_message{}, term()) -> ok | {error, Reason :: term()}.
+-spec send_request(#uac{}, sip_message(), term()) -> ok | {error, Reason :: term()}.
 send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
-    RequestURI = Request#sip_message.kind#sip_request.uri,
+    RequestURI = Request#sip_request.uri,
 
     % Put Request URI into the target set
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
@@ -85,7 +86,7 @@ send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
     end.
 
 
--spec process_response(#uac{}, #sip_message{}, #req_info{}) -> {ok, UserData :: term()} | {error, Reason :: term()}.
+-spec process_response(#uac{}, sip_message(), #req_info{}) -> {ok, UserData :: term()} | {error, Reason :: term()}.
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
 process_response(UAC, Response, ReqInfo) when is_record(UAC, uac) ->
@@ -97,7 +98,7 @@ process_response(UAC, Response, ReqInfo) when is_record(UAC, uac) ->
 %% Internal functions
 
 %% Validate message according to the 8.1.3.3
--spec validate_vias(#sip_message{}) -> error_m:monad(ok).
+-spec validate_vias(sip_message()) -> error_m:monad(ok).
 validate_vias(Msg) ->
     Count = length(sip_message:header_values('via', Msg)),
     case Count of
@@ -113,17 +114,17 @@ validate_vias(Msg) ->
 
 %% @doc Automatic handling of 3xx-6xx responses valve
 %% @end
--spec handle_response(#req_info{}, #sip_message{}) -> error_m:monad(ok).
-handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response)
+-spec handle_response(#req_info{}, sip_message()) -> error_m:monad(ok).
+handle_response(ReqInfo, #sip_response{status = Status} = Response)
   when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
 
     % try next URI, was redirected
     next_uri(ReqInfo2, Response);
-handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response) when Status =:= 503; Status =:= 408 ->
+handle_response(ReqInfo, #sip_response{status = Status} = Response) when Status =:= 503; Status =:= 408 ->
     % failed with 408 or 503, try next IP address
     next_destination(ReqInfo, Response);
-handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response) when Status > 399 ->
+handle_response(ReqInfo, #sip_response{status = Status} = Response) when Status > 399 ->
     % failed, try next URI
     next_uri(ReqInfo, Response);
 handle_response(_ReqInfo, _Msg) ->
@@ -138,8 +139,7 @@ next_uri(ReqInfo, Response) ->
             % Update Request-URI
             % FIXME: Update headers as well!
             Request = ReqInfo#req_info.request,
-            Kind = Request#sip_message.kind,
-            Request2 = Request#sip_message{kind = Kind#sip_request{uri = URI}},
+            Request2 = Request#sip_request{uri = URI},
             ReqInfo2 = ReqInfo#req_info{request = Request2,
                                         destinations = lookup_destinations(Request2),
                                         target_set = TargetSet2},
@@ -162,7 +162,7 @@ next_destination(#req_info{request = Request, destinations = [Top | Fallback]} =
     error_m:fail(processed).
 
 lookup_destinations(Request) ->
-    RequestURI = Request#sip_message.kind#sip_request.uri,
+    RequestURI = Request#sip_request.uri,
     URI =
         case sip_message:has_header(route, Request) of
             false -> RequestURI;

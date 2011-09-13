@@ -53,7 +53,7 @@ options_200(Config) ->
     {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
 
     % Validate response
-    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
 
     0 = sip_message:header_top_value('content-length', Response),
 
@@ -75,11 +75,11 @@ options_302(Config) ->
 
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
-    Handler = fun(#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"first">>}}} = Request) ->
+    Handler = fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
                       Response = sip_message:create_response(Request, 302),
                       Contact = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, []),
                       sip_message:append_header(contact, Contact, Response);
-                 (#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"second">>}}} = Request) ->
+                 (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
                       sip_message:create_response(Request, 200)
               end,
     sip_test_uas:set_handler(UAS, Handler),
@@ -88,7 +88,7 @@ options_302(Config) ->
     {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
 
     % Validate response
-    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
 
     0 = sip_message:header_top_value('content-length', Response),
 
@@ -110,14 +110,14 @@ options_302_failed(Config) ->
 
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
-    Handler = fun(#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"first">>}}} = Request) ->
+    Handler = fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
                       Response = sip_message:create_response(Request, 302),
                       Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
                       Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
                       sip_message:append_header(contact, [Contact1, Contact2], Response);
-                 (#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"second">>}}} = Request) ->
+                 (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
                       sip_message:create_response(Request, 404);
-                 (#sip_message{kind = #sip_request{uri = #sip_uri{user = <<"third">>}}} = Request) ->
+                 (#sip_request{uri = #sip_uri{user = <<"third">>}} = Request) ->
                       sip_message:create_response(Request, 200)
               end,
     sip_test_uas:set_handler(UAS, Handler),
@@ -126,7 +126,7 @@ options_302_failed(Config) ->
     {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
 
     % Validate response code
-    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
 options_501(Config) ->
@@ -143,7 +143,7 @@ options_501(Config) ->
     {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
 
     % Validate response
-    #sip_response{status = 501, reason = <<"Not Implemented">>} = Response#sip_message.kind,
+    #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
 
     0 = sip_message:header_top_value('content-length', Response),
 
@@ -189,7 +189,7 @@ options_503_next_200(Config) ->
     {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
 
     % Validate response
-    #sip_response{status = 200, reason = <<"Ok">>} = Response#sip_message.kind,
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
 
     meck:unload(sip_resolve),
     ok.

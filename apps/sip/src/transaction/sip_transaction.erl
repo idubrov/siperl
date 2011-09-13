@@ -28,16 +28,16 @@
 %%-----------------------------------------------------------------
 %% @doc Start new client transaction.
 %% @end
--spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}) -> {ok, #sip_tx_client{}}.
+-spec start_client_tx(pid() | term(), #sip_destination{}, #sip_request{}) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, To, Request) ->
   start_client_tx(TU, To, Request, undefined).
 
 %% @doc Start new client transaction with user data associated with it.
 %% @end
--spec start_client_tx(pid() | term(), #sip_destination{}, #sip_message{}, term()) -> {ok, #sip_tx_client{}}.
+-spec start_client_tx(pid() | term(), #sip_destination{}, #sip_request{}, term()) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, To, Request, UserData)
   when is_record(To, sip_destination),
-       is_record(Request, sip_message) ->
+       is_record(Request, sip_request) ->
 
     % Every new client transaction has its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
@@ -60,9 +60,9 @@ start_client_tx(TU, To, Request, UserData)
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(term(), #sip_message{}) -> {ok, #sip_tx_server{}}.
+-spec start_server_tx(term(), #sip_request{}) -> {ok, #sip_tx_server{}}.
 start_server_tx(TU, Request)
-  when is_record(Request, sip_message) ->
+  when is_record(Request, sip_request) ->
 
     % Check top via in received request to check transport reliability
     Via = sip_message:header_top_value('via', Request),
@@ -91,9 +91,8 @@ list_tx() ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_request(#sip_message{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
-handle_request(Msg) when is_record(Msg, sip_message) ->
-    true = sip_message:is_request(Msg),
+-spec handle_request(#sip_request{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
+handle_request(Msg) when is_record(Msg, sip_request) ->
     handle_internal(server, Msg).
 
 %% @doc
@@ -101,24 +100,22 @@ handle_request(Msg) when is_record(Msg, sip_message) ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_response(#sip_message{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
+-spec handle_response(#sip_response{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
 handle_response(Msg) ->
-    true = sip_message:is_response(Msg),
     handle_internal(client, Msg).
 
 %% @doc Pass given response from the TU to the server transaction.
 %% @end
--spec send_response(#sip_message{}) -> {ok, #sip_tx_server{}}.
+-spec send_response(#sip_response{}) -> {ok, #sip_tx_server{}}.
 send_response(Msg) ->
-    true = sip_message:is_response(Msg),
     handle_internal(server, Msg).
 
 %% @doc Check message against loop conditions
 %%
 %% Check if loop is detected by by following procedures from 8.2.2.2
 %% @end
--spec is_loop_detected(#sip_message{}) -> boolean().
-is_loop_detected(Msg) ->
+-spec is_loop_detected(#sip_request{}) -> boolean().
+is_loop_detected(#sip_request{} = Msg) ->
     To = sip_message:header_top_value(to, Msg),
 
     case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
@@ -152,14 +149,14 @@ is_loop_detected(Msg) ->
 %% Handle the given request/response on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
 %% @end
-handle_internal(Kind, Msg) when is_record(Msg, sip_message) ->
+handle_internal(Kind, Msg) ->
     % lookup transaction by key
     Key = tx_key(Kind, Msg),
     tx_send(Key, Msg).
 
 %% @doc Determine transaction unique key
 %% @end
--spec tx_key(client | server, #sip_message{}) -> #sip_tx_client{} | #sip_tx_server{}.
+-spec tx_key(client | server, sip_message()) -> #sip_tx_client{} | #sip_tx_server{}.
 tx_key(client, Msg) ->
     % RFC 17.1.3
     Method = sip_message:method(Msg),
@@ -192,21 +189,15 @@ tx_key(server, Msg) ->
 %% @doc
 %% Get transaction module based on the transaction type and method.
 %% @end
-tx_module(client, Request) ->
-    case Request#sip_message.kind#sip_request.method of
-        'INVITE' -> sip_transaction_client_invite;
-        _Method -> sip_transaction_client
-    end;
-tx_module(server, Request) ->
-    case Request#sip_message.kind#sip_request.method of
-        'INVITE' -> sip_transaction_server_invite;
-        'ACK' -> sip_transaction_server_invite;
-        _Method -> sip_transaction_server
-     end.
+tx_module(client, #sip_request{method = 'INVITE'}) ->sip_transaction_client_invite;
+tx_module(client, #sip_request{}) -> sip_transaction_client;
+tx_module(server, #sip_request{method = 'INVITE'}) -> sip_transaction_server_invite;
+tx_module(server, #sip_request{method = 'ACK'}) -> sip_transaction_server_invite;
+tx_module(server, #sip_request{}) -> sip_transaction_server.
 
-tx_send(Key, Msg) when is_record(Msg, sip_message) ->
+tx_send(Key, Msg) ->
     {Kind, Param} =
-        case Msg#sip_message.kind of
+        case Msg of
             #sip_request{method = Method} -> {request, Method};
             #sip_response{status = Status} -> {response, Status}
         end,

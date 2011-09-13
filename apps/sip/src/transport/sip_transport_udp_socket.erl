@@ -66,10 +66,11 @@
 %% @doc
 %% Send SIP message through the given socket.
 %% @end
--spec send(pid(), #sip_destination{}, #sip_message{}) -> ok | {error, Reason :: term()}.
-send(Pid, To, Message) when is_pid(Pid),
-                                 is_record(To, sip_destination),
-                                 is_record(Message, sip_message) ->
+-spec send(pid(), #sip_destination{}, sip_message()) -> ok | {error, Reason :: term()}.
+send(Pid, To, Message) when
+  is_pid(Pid),
+  is_record(To, sip_destination),
+  (is_record(Message, sip_request) orelse is_record(Message, sip_response)) ->
     gen_server:call(Pid, {send, To, Message}).
 
 %%-----------------------------------------------------------------
@@ -126,7 +127,7 @@ handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
 %% @private
--spec handle_call({send, #sip_destination{}, #sip_message{}}, _, #state{}) ->
+-spec handle_call({send, #sip_destination{}, sip_message()}, _, #state{}) ->
           {reply, {error, too_big}, #state{}, integer() | infinity} |
           {reply, {ok, #sip_destination{}}, #state{}, integer() | infinity}.
 handle_call(_Req, _From, #state{error = Reason} = State)

@@ -50,9 +50,8 @@ handle_call({set_handler, Handler}, _Client, #state{} = State) ->
 handle_info({request, Msg}, State) ->
     % parse the URI
     % FIXME: should be done by transport layer?
-    Req = Msg#sip_message.kind,
-    URI = sip_uri:parse(Req#sip_request.uri),
-    Msg2 = Msg#sip_message{kind = Req#sip_request{uri = URI}},
+    URI = sip_uri:parse(Msg#sip_request.uri),
+    Msg2 = Msg#sip_request{uri = URI},
 
     case sip_uas:process_request(State#state.uas, Msg2) of
         ok ->

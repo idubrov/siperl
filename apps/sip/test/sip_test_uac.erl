@@ -65,7 +65,7 @@ handle_info({tx, _TxKey, {response, Response, ReqInfo}}, State) ->
 handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
     {noreply, State}.
 
--spec handle_response(#sip_message{}, term()) -> ok.
+-spec handle_response(#sip_response{}, term()) -> ok.
 handle_response(Response, Client) ->
     Response2 = sip_message:parse_all_headers(Response),
     gen_server:reply(Client, {ok, Response2}),

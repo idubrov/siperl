@@ -30,9 +30,9 @@ new(Callback, Allow, Supported) ->
 %%
 %% Automatically adds `Allow:' and `Supported:' headers for every reply.
 %% @end
--spec send_response(#uas{}, #sip_message{}) -> ok.
-send_response(#uas{allow = Allow, supported = Supported},
-              #sip_message{kind = #sip_response{}} = Response) ->
+-spec send_response(#uas{}, sip_message()) -> ok.
+send_response(#uas{allow = Allow, supported = Supported}, Response)
+  when is_record(Response, sip_response) ->
     % Append Supported and Allow headers
     Resp2 = sip_message:append_header('allow', Allow, Response),
     Resp3 = sip_message:append_header('supported', Supported, Resp2),
@@ -40,8 +40,8 @@ send_response(#uas{allow = Allow, supported = Supported},
     ok.
 
 % @private
--spec process_request(#uas{}, #sip_message{}) -> ok | {error, Reason :: term()}.
-process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_message) ->
+-spec process_request(#uas{}, sip_message()) -> ok | {error, Reason :: term()}.
+process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_request) ->
     % start server transaction
     sip_transaction:start_server_tx(self(), Msg),
 
@@ -54,9 +54,9 @@ process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_message) 
 %% Internal functions
 
 %% Validate message according to the 8.2.1
--spec validate_allowed(#sip_message{}, #uas{}) -> error_m:monad(ok).
+-spec validate_allowed(sip_message(), #uas{}) -> error_m:monad(ok).
 validate_allowed(Request, UAS) ->
-    Method = Request#sip_message.kind#sip_request.method,
+    Method = Request#sip_request.method,
     Allow = UAS#uas.allow,
     Contains = lists:any(fun (V) -> V =:= Method end, Allow),
     case Contains of
@@ -70,7 +70,7 @@ validate_allowed(Request, UAS) ->
     end.
 
 %% Validate message according to the 8.2.2.2
--spec validate_loop(#sip_message{}, #uas{}) -> error_m:monad(ok).
+-spec validate_loop(sip_message(), #uas{}) -> error_m:monad(ok).
 validate_loop(_Request, #uas{detect_loops = false}) ->
     error_m:return(ok);
 validate_loop(Request, UAS) ->
@@ -85,7 +85,7 @@ validate_loop(Request, UAS) ->
     end.
 
 %% Validate message according to the 8.2.2.3
--spec validate_required(#sip_message{}, #uas{}) -> error_m:monad(ok).
+-spec validate_required(sip_message(), #uas{}) -> error_m:monad(ok).
 validate_required(Request, UAS) ->
     Supported = UAS#uas.supported,
     IsNotSupported = fun (Ext) -> lists:all(fun (V) -> V =/= Ext end, Supported) end,

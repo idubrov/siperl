@@ -18,10 +18,10 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec send(#sip_destination{}, #sip_message{}) -> ok | {error, Reason :: term()}.
+-spec send(#sip_destination{}, sip_message()) -> ok | {error, Reason :: term()}.
 send(To, Message) when
   is_record(To, sip_destination),
-  is_record(Message, sip_message) ->
+  (is_record(Message, sip_request) orelse is_record(Message, sip_response)) ->
     Pid = lookup_socket(To),
     sip_transport_udp_socket:send(Pid, To, Message).
 

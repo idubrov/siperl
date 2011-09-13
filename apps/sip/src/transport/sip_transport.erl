@@ -56,10 +56,9 @@ is_reliable(tcp) -> true.
 %% Opts = [term()]. The only supported option is {ttl, TTL} used
 %% for sending multicast requests.
 %% @end
--spec send_request(#sip_destination{}, #sip_message{}, [term()]) -> ok | {error, Reason :: term()}.
+-spec send_request(#sip_destination{}, #sip_request{}, [term()]) -> ok | {error, Reason :: term()}.
 send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     % Validate request
-    true = sip_message:is_request(Request),
     ok = sip_message:validate_request(Request),
 
     % Update top Via header
@@ -67,7 +66,7 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     Request2 = add_via_sentby(Request, To, TTL),
 
     % Add Content-Length, if not present
-    Fun = fun(undefined) -> size(Request#sip_message.body);
+    Fun = fun(undefined) -> size(Request#sip_request.body);
              (Value) -> Value
           end,
     Request3 = sip_message:update_top_header('content-length', Fun, Request2),
@@ -85,9 +84,9 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 
 %% @doc Send response by following RFC 3261 18.2.2
 %% @end
--spec send_response(#sip_message{}) -> ok | {error, Reason :: term()}.
-send_response(Response) ->
-    Via = sip_message:header_top_value('via', Response),
+-spec send_response(#sip_response{}) -> ok | {error, Reason :: term()}.
+send_response(Response) when is_record(Response, sip_response) ->
+    Via = sip_message:header_top_value(via, Response),
     case is_reliable(Via#sip_hdr_via.transport) of
         true ->
             % try to lookup the connection
@@ -159,15 +158,15 @@ send_response_fallback([To|Rest], Response) ->
 %% Dispatch request/response received through given connection. This function
 %% is called by concrete transport implementations.
 %%
-%% <em>`{reply, #sip_message{}}' is used for sending reply immediately,
+%% <em>`{reply, sip_message()}' is used for sending reply immediately,
 %% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
 %% FIXME: Remove connection...
 -spec dispatch(#sip_destination{},
-               {message, #sip_message{}} | {error, Reason :: term(), #sip_message{}}) ->
-          ok | {reply, #sip_message{}}.
-dispatch(From, {message, #sip_message{kind = #sip_request{}} = Msg}) ->
+               {message, sip_message()} | {error, Reason :: term(), sip_message()}) ->
+          ok | {reply, sip_message()}.
+dispatch(From, {message, Msg}) when is_record(Msg, sip_request) ->
     Msg2 = add_via_received(From, Msg),
     % 18.2.1: route to server transaction or to core
     case sip_transaction:handle_request(Msg2) of
@@ -175,7 +174,7 @@ dispatch(From, {message, #sip_message{kind = #sip_request{}} = Msg}) ->
         {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, {message, #sip_message{kind = #sip_response{}} = Msg}) ->
+dispatch(From, {message, Msg}) when is_record(Msg, sip_response) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -196,7 +195,7 @@ dispatch(From, {message, #sip_message{kind = #sip_response{}} = Msg}) ->
                                          {msg, Msg}])
     end,
     ok;
-dispatch(From, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
+dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_request) ->
     % reply with 400 Bad Request
     error_logger:warning_report(['bad_request',
                                  {reason, Reason},
@@ -208,7 +207,7 @@ dispatch(From, {error, Reason, #sip_message{kind = #sip_request{}} = Msg}) ->
     % we are not going to go through whole procedures for sending response, just try to send
     % via the same transport
     {reply, Response};
-dispatch(From, {error, Reason, #sip_message{kind = #sip_response{}} = Msg}) ->
+dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_response) ->
     % discard malformed responses
     error_logger:warning_report(['message_discarded',
                                  {reason, Reason},
@@ -219,7 +218,7 @@ dispatch(From, {error, Reason, #sip_message{kind = #sip_response{}} = Msg}) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
--spec add_via_sentby(#sip_message{}, #sip_destination{}, integer()) -> #sip_message{}.
+-spec add_via_sentby(sip_message(), #sip_destination{}, integer()) -> sip_message().
 add_via_sentby(Message, #sip_destination{address = To, transport = Transport}, TTL) ->
     {Host, Port} = sent_by(Transport),
     Fun = fun (Via) ->
@@ -238,7 +237,7 @@ add_via_sentby(Message, #sip_destination{address = To, transport = Transport}, T
           end,
     sip_message:update_top_header('via', Fun, Message).
 
--spec check_sent_by(atom(), #sip_message{}) -> true | {Expected :: term(), Actual :: term()}.
+-spec check_sent_by(atom(), sip_message()) -> true | {Expected :: term(), Actual :: term()}.
 %% Check message sent by matches one inserted by the transport layer
 check_sent_by(Transport, Msg) ->
     % port is explicit in expected sent-by

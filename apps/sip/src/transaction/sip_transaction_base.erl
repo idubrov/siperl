@@ -71,30 +71,31 @@ start_timer(TimerName, TimerIdx, Interval, TxState) ->
     Timer = gen_fsm:start_timer(Interval, {TimerName, Interval}),
     setelement(TimerIdx, TxState, Timer).
 
--spec send_ack(#sip_message{}, #tx_state{}) -> #tx_state{}.
+-spec send_ack(#sip_response{}, #tx_state{}) -> #tx_state{}.
 send_ack(Response, TxState) ->
     ACK = sip_message:create_ack(TxState#tx_state.request, Response),
     send_request(ACK, TxState).
 
--spec send_request(#sip_message{}, #tx_state{}) -> #tx_state{}.
-send_request(Msg, TxState) ->
+-spec send_request(#sip_request{}, #tx_state{}) -> #tx_state{}.
+send_request(Request, TxState) ->
     % Send request to the given destination address
-    case sip_transport:send_request(TxState#tx_state.to, Msg, []) of
+    % FIXME: Options!
+    case sip_transport:send_request(TxState#tx_state.to, Request, []) of
         ok -> ok;
         {error, Reason} -> erlang:error(Reason)
     end,
     TxState.
 
--spec send_response(#sip_message{}, #tx_state{}) -> #tx_state{}.
-send_response(Msg, TxState) ->
-    case sip_transport:send_response(Msg) of
+-spec send_response(#sip_response{}, #tx_state{}) -> #tx_state{}.
+send_response(Response, TxState) ->
+    case sip_transport:send_response(Response) of
         ok -> ok;
         {error, Reason} -> erlang:error(Reason)
     end,
     TxState.
 
--spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
-pass_to_tu(#sip_message{kind = #sip_response{}} = Msg, TxState) ->
+-spec pass_to_tu(#sip_response{}, #tx_state{}) -> term().
+pass_to_tu(#sip_response{} = Msg, TxState) ->
     TxKey = TxState#tx_state.tx_key,
     notify_tu(TxState, {tx, TxKey, {response, Msg, TxState#tx_state.user_data}}),
     TxState.

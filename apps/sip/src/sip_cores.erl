@@ -19,8 +19,8 @@ register_core(Info) ->
     gproc:add_local_property(?CORE_PROPERTY, Info),
     ok.
 
--spec lookup_core(#sip_message{}) -> {ok, pid(), #sip_core_info{}} | undefined.
-lookup_core(Msg) when is_record(Msg, sip_message) ->
+-spec lookup_core(sip_message()) -> {ok, pid(), #sip_core_info{}} | undefined.
+lookup_core(Msg) when is_record(Msg, sip_request); is_record(Msg, sip_response) ->
     % SIP core is any process with `core_registration' property registered
     % value of the property is `sip_core_info' record
     Regs = gproc:lookup_local_properties(?CORE_PROPERTY),

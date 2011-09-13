@@ -38,11 +38,12 @@
 start_link(Remote) ->
     gen_server:start_link(?MODULE, Remote, []).
 
-%% @doc
-%% Send SIP message through given connection.
+%% @doc Send SIP message through given connection.
 %% @end
--spec send(pid(), #sip_message{}) -> ok | {error, Reason :: term()}.
-send(Pid, Message) when is_pid(Pid), is_record(Message, sip_message) ->
+-spec send(pid(), sip_message()) -> ok | {error, Reason :: term()}.
+send(Pid, Message) when
+  is_pid(Pid),
+  (is_record(Message, sip_request) orelse is_record(Message, sip_response)) ->
     try gen_server:call(Pid, {send, Message})
     catch exit:{noproc, _Reason} -> {error, not_connected}
     end.
@@ -96,7 +97,7 @@ handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.
 
 %% @private
--spec handle_call({send, #sip_message{}}, _, #state{}) ->
+-spec handle_call({send, sip_message()}, _, #state{}) ->
           {reply, ok | {error, Reason :: term()}, #state{}, integer()} | {stop, {unexpected, _}, #state{}}.
 handle_call({send, Message}, _From, State) ->
     Socket = State#state.socket,
@@ -140,11 +141,11 @@ process_stream(Packet, State, Props) ->
             % connection when sending responses
             % FIXME: What about terminated transactions?
             NewProps =
-                case sip_message:is_request(Msg) of
-                    true ->
+                case Msg of
+                    #sip_request{} ->
                         Prop = {{connection, sip_transaction:tx_key(server, Msg)}, true},
                         [Prop | Props];
-                    false -> Props
+                    #sip_response{} -> Props
                 end,
 
             % there could be more messages to parse, recurse

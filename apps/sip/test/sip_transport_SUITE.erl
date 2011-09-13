@@ -269,7 +269,7 @@ send_response_udp_maddr(Config) ->
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
     Via3 = #sip_hdr_via{host = "localhost", port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
-    Response3 = #sip_message{kind = #sip_response{status = 200, reason = <<"Ok">>},
+    Response3 = #sip_response{status = 200, reason = <<"Ok">>,
                              headers = [{'via', [Via3]}]},
     ExpectedResponseBin2 = sip_message:to_binary(Response3),
 
@@ -378,7 +378,7 @@ send_request_udp_fallback_tcp(Config) ->
     TCP = ?config(tcp, Config),
 
     LongBody = sip_test:generate_body(<<$A>>, 1300),
-    Request = (sip_test:invite(tcp))#sip_message{body = LongBody},
+    Request = (sip_test:invite(tcp))#sip_request{body = LongBody},
     To = #sip_destination{address = {127, 0, 0, 1}, port = 25060, transport = udp},
 
     % expect request with updated via
