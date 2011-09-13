@@ -17,10 +17,9 @@
 
 -record(uas, {options = [] :: [{atom(), any()}]}).
 
--spec new([{atom(), any()}]) -> #uas{}.
+-spec new([{'ALLOW', [sip_name()]} | {'OPTIONS', [sip_name()]} | no_detect_loops]) -> #uas{}.
 new(Options) when is_list(Options) ->
     #uas{options = Options}.
-
 
 %% @doc Send response
 %%
