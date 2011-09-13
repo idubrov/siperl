@@ -15,7 +15,7 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(uas, {options = [] :: [{atom(), any()}]}).
+-record(uas, {options = [] :: [{atom(), any()} | atom()]}).
 
 -spec new([{'ALLOW', [sip_name()]} | {'OPTIONS', [sip_name()]} | no_detect_loops]) -> #uas{}.
 new(Options) when is_list(Options) ->

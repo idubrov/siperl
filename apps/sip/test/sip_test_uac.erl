@@ -38,7 +38,7 @@ stop(Pid) ->
 %%-----------------------------------------------------------------
 %% @private
 init({}) ->
-    {ok, #state{uac = sip_uac:new(?MODULE)}}.
+    {ok, #state{uac = sip_uac:new([])}}.
 
 %% @private
 handle_call({request, Method, RequestURI}, Client, #state{uac = UAC} = State) ->

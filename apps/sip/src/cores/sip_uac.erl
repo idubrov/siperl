@@ -31,11 +31,11 @@
                    target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
--record(uac, {callback :: module()}).
+-record(uac, {options = [] :: [{atom(), any()} | atom()]}).
 
--spec new(module()) -> #uac{}.
-new(Module) ->
-    #uac{callback = Module}.
+-spec new([]) -> #uac{}.
+new([]) ->
+    #uac{}.
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
