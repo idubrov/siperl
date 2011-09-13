@@ -63,18 +63,18 @@
 
 %% Value for headers `Accept:', ...
 -record(sip_hdr_mediatype,
-        {type :: sip_syntax:name(),
-         subtype :: sip_syntax:name(),
+        {type :: sip_name(),
+         subtype :: sip_name(),
          params = []}).
 
 %% Value for headers `Accept-Encoding:', ...
 -record(sip_hdr_encoding,
-        {encoding :: sip_syntax:name(),
+        {encoding :: sip_name(),
          params = []}).
 
 %% Value for headers `Accept-Language:', ...
 -record(sip_hdr_language,
-        {language :: sip_syntax:name(),
+        {language :: sip_name(),
          params = []}).
 
 %% Value for headers `Alert-Info:', `Call-Info', `Error-Info', ...
@@ -84,12 +84,12 @@
 
 %% Value for header `Authorization:'
 -record(sip_hdr_auth,
-        {scheme :: sip_syntax:name(),
+        {scheme :: sip_name(),
          params = []}).
 
 %% Value for header `Content-Disposition:'
 -record(sip_hdr_disposition,
-        {type :: sip_syntax:name(),
+        {type :: sip_name(),
          params = []}).
 
 %% Value for header `Retry-After:'
@@ -118,7 +118,7 @@
                                       {'maddr', string() | inet:ip_address()} |
                                       {'received', inet:ip_address()} |
                                       {'branch', binary()} |
-                                      {sip_syntax:name(), term()} | sip_syntax:name()]}).
+                                      {sip_name(), term()} | sip_name()]}).
 
 -record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
 
@@ -126,7 +126,7 @@
 -record(sip_hdr_address,
         {display_name = <<>> :: binary(), % display name is unquoted (all escapes are unescaped)
          uri = <<>>          :: binary() | #sip_uri{},
-         params = []         :: [{sip_syntax:name(), term()} | sip_syntax:name()]}).
+         params = []         :: [{sip_name(), term()} | sip_name()]}).
 
 %%-----------------------------------------------------------------
 %% SIP transport layer types
@@ -150,13 +150,13 @@
 -define(MAGIC_COOKIE, "z9hG4bK").
 
 %% Client transaction unique key
--record(sip_tx_client, {branch :: binary(), method :: sip_syntax:name()}).
+-record(sip_tx_client, {branch :: binary(), method :: sip_name()}).
 
 %% Server transaction unique key
 -record(sip_tx_server, {host :: binary(), % via sent-by host
                         port :: integer() | 'undefined', % via sent-by port,
                         branch :: binary(),
-                        method :: sip_syntax:name()}).
+                        method :: sip_name()}).
 
 %%-----------------------------------------------------------------
 %% SIP dialogs

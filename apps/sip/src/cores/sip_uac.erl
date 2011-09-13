@@ -43,7 +43,7 @@ new(Module) ->
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(#uac{}, sip_syntax:name(), #sip_hdr_address{}) -> sip_message().
+-spec create_request(#uac{}, sip_name(), #sip_hdr_address{}) -> sip_message().
 create_request(UAC, Method, ToValue) when
   is_record(UAC, uac), is_record(ToValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of

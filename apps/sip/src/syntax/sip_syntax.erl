@@ -14,26 +14,6 @@
 -export([format_addr/1]).
 -export([parse_name/1, format_name/1]).
 
-%% Types
-
--type name() :: atom() | binary().
-%% Optimized representation of entity name. When name is constructed
-%% from the binary, a check is made if matching atom exists. If such atom
-%% exists, it is used to represent the name of the entity. Otherwise,
-%% binary is used.
-%%
-%% This ensures both optimal representation of name at runtime without
-%% the danger of overloading atom table by malicious requests.
-%%
-%% Note that client code can always safely match such name against atom,
-%% since matching against atom ensures atom is loaded and therefore, atom
-%% representation will be chosen by SIP libary. The opposite is not true,
-%% though. Client code should never assume that name is binary, even if
-%% client code itself does not contain an atom (because this atom could
-%% be in fact referenced by another module).
--export_type([name/0]).
-
-
 %% Includes
 -include("../sip_common.hrl").
 -include("sip_syntax.hrl").
@@ -340,7 +320,7 @@ parse_integer(<<Rest/binary>>, Acc) ->
 %% If atom matching the binary name exist, atom is returned. Otherwise,
 %% binary is returned as-is.
 %% @end
--spec parse_name(binary()) -> name().
+-spec parse_name(binary()) -> sip_name().
 parse_name(Bin) ->
     try binary_to_existing_atom(Bin, utf8)
     catch error:badarg -> Bin
@@ -349,7 +329,7 @@ parse_name(Bin) ->
 
 %% @doc Convert name to the binary
 %% @end
--spec format_name(name()) -> binary().
+-spec format_name(sip_name()) -> binary().
 format_name(Name) when is_binary(Name) -> Name;
 format_name(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
 

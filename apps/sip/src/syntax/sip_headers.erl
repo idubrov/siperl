@@ -27,7 +27,7 @@
 %% header terminated by `CRLF'. Empty binary is valid argument that
 %% results in empty list returned.
 %% @end
--spec parse_headers(binary()) -> [{Name :: sip_syntax:name(), Value :: term()}].
+-spec parse_headers(binary()) -> [{Name :: sip_name(), Value :: term()}].
 parse_headers(<<>>) -> [];
 parse_headers(Headers) when is_binary(Headers) ->
     Pos = size(Headers) - 2,
@@ -39,7 +39,7 @@ parse_headers(Headers) when is_binary(Headers) ->
 %%
 %% For supported header representations, see {@link parse/2}/{@link format/2} functions.
 %% @end
--spec format_headers([{sip_syntax:name(), term()}]) -> binary().
+-spec format_headers([{sip_name(), term()}]) -> binary().
 format_headers(Headers) ->
     << <<(process(fn, Name, ignore))/binary, ": ",
          (format(Name, Value))/binary, "\r\n">> ||
@@ -53,15 +53,15 @@ format_headers(Headers) ->
            ('accept-encoding', binary()) -> [#sip_hdr_encoding{}];
            ('accept-language', binary()) -> [#sip_hdr_language{}];
            ('alert-info', binary()) -> [#sip_hdr_info{}];
-           ('allow', binary()) -> [Method :: sip_syntax:name()];
+           ('allow', binary()) -> [Method :: sip_name()];
            ('authentication-info', binary()) -> #sip_hdr_auth{};
            ('authorization', binary()) -> #sip_hdr_auth{};
            ('call-id', binary()) -> binary();
            ('call-info', binary()) -> [#sip_hdr_info{}];
            ('contact', binary()) -> [#sip_hdr_address{}]; % FIXME '*'
            ('content-disposition', binary()) -> #sip_hdr_disposition{};
-           ('content-encoding', binary()) -> [ContentCoding :: sip_syntax:name()];
-           ('content-language', binary()) -> [LanguageTag :: sip_syntax:name()];
+           ('content-encoding', binary()) -> [ContentCoding :: sip_name()];
+           ('content-language', binary()) -> [LanguageTag :: sip_name()];
            ('content-length', binary()) -> integer();
            ('content-type', binary()) -> #sip_hdr_mediatype{};
            ('cseq', binary()) -> #sip_hdr_cseq{};
@@ -74,27 +74,27 @@ format_headers(Headers) ->
            ('min-expires', binary()) -> integer();
            ('mime-version', binary()) -> {Major :: integer(), Minor :: integer()};
            ('organization', binary()) -> Organization :: binary();
-           ('priority', binary()) -> Priority :: sip_syntax:name();
+           ('priority', binary()) -> Priority :: sip_name();
            ('proxy-authenticate', binary()) -> #sip_hdr_auth{};
            ('proxy-authorization', binary()) -> #sip_hdr_auth{};
-           ('proxy-require', binary()) -> [OptionTag :: sip_syntax:name()];
+           ('proxy-require', binary()) -> [OptionTag :: sip_name()];
            ('record-route', binary()) -> [#sip_hdr_address{}];
            ('reply-to', binary()) -> #sip_hdr_address{};
-           ('require', binary()) -> [OptionTag :: sip_syntax:name()];
+           ('require', binary()) -> [OptionTag :: sip_name()];
            ('retry-after', binary()) -> #sip_hdr_retry{};
            ('route', binary()) -> [#sip_hdr_address{}];
            ('server', binary()) -> Server :: binary();
            ('subject', binary()) -> Subject :: binary();
-           ('supported', binary()) -> [OptionTag :: sip_syntax:name()];
+           ('supported', binary()) -> [OptionTag :: sip_name()];
            ('timestamp', binary()) -> #sip_hdr_timestamp{};
            ('to', binary()) -> #sip_hdr_address{};
-           ('unsupported', binary()) -> [OptionTag :: sip_syntax:name()];
+           ('unsupported', binary()) -> [OptionTag :: sip_name()];
            ('user-agent', binary()) -> UserAgent :: binary();
            ('via', binary()) -> [#sip_hdr_via{}];
            ('warning', binary()) -> [#sip_hdr_warning{}];
            ('www-authenticate', binary()) -> #sip_hdr_auth{};
-           (Other :: sip_syntax:name(), binary()) -> binary();
-           (Name :: sip_syntax:name(), Parsed :: any()) -> Parsed :: any().
+           (Other :: sip_name(), binary()) -> binary();
+           (Name :: sip_name(), Parsed :: any()) -> Parsed :: any().
 %% @doc Parse binary header value into the Erlang term representation
 %%
 %% See type specification for information about which term is used to represent
@@ -106,15 +106,15 @@ parse(Name, Bin) -> process(p, Name, Bin).
            ('accept-encoding', [#sip_hdr_encoding{}]) -> binary();
            ('accept-language', [#sip_hdr_language{}]) -> binary();
            ('alert-info', [#sip_hdr_info{}]) -> binary();
-           ('allow', [Method :: sip_syntax:name()]) -> binary();
+           ('allow', [Method :: sip_name()]) -> binary();
            ('authentication-info', #sip_hdr_auth{}) -> binary();
            ('authorization', #sip_hdr_auth{}) -> binary();
            ('call-id', binary()) -> binary();
            ('call-info', [#sip_hdr_info{}]) -> binary();
            ('contact', [#sip_hdr_address{}]) -> binary(); % FIXME '*'
            ('content-disposition', #sip_hdr_disposition{}) -> binary();
-           ('content-encoding', [ContentCoding :: sip_syntax:name()]) -> binary();
-           ('content-language', [LanguageTag :: sip_syntax:name()]) -> binary();
+           ('content-encoding', [ContentCoding :: sip_name()]) -> binary();
+           ('content-language', [LanguageTag :: sip_name()]) -> binary();
            ('content-length', integer()) -> binary();
            ('content-type', #sip_hdr_mediatype{}) -> binary();
            ('cseq', #sip_hdr_cseq{}) -> binary();
@@ -127,27 +127,27 @@ parse(Name, Bin) -> process(p, Name, Bin).
            ('min-expires', integer()) -> binary();
            ('mime-version', {Major :: integer(), Minor :: integer()}) -> binary();
            ('organization', Organization :: binary()) -> binary();
-           ('priority', Priority :: sip_syntax:name()) -> binary();
+           ('priority', Priority :: sip_name()) -> binary();
            ('proxy-authenticate', #sip_hdr_auth{}) -> binary();
            ('proxy-authorization', #sip_hdr_auth{}) -> binary();
-           ('proxy-require', [OptionTag :: sip_syntax:name()]) -> binary();
+           ('proxy-require', [OptionTag :: sip_name()]) -> binary();
            ('record-route', [#sip_hdr_address{}]) -> binary();
            ('reply-to', #sip_hdr_address{}) -> binary();
-           ('require', [OptionTag :: sip_syntax:name()]) -> binary();
+           ('require', [OptionTag :: sip_name()]) -> binary();
            ('retry-after', #sip_hdr_retry{}) -> binary();
            ('route', [#sip_hdr_address{}]) -> binary();
            ('server', Server :: binary()) -> binary();
            ('subject', Subject :: binary()) -> binary();
-           ('supported', [OptionTag :: sip_syntax:name()]) -> binary();
+           ('supported', [OptionTag :: sip_name()]) -> binary();
            ('timestamp', #sip_hdr_timestamp{}) -> binary();
            ('to', #sip_hdr_address{}) -> binary();
-           ('unsupported', [OptionTag :: sip_syntax:name()]) -> binary();
+           ('unsupported', [OptionTag :: sip_name()]) -> binary();
            ('user-agent', UserAgent :: binary()) -> binary();
            ('via', [#sip_hdr_via{}]) -> binary();
            ('warning', [#sip_hdr_warning{}]) -> binary();
            ('www-authenticate', #sip_hdr_auth{}) -> binary();
-           (Other :: sip_syntax:name(), binary()) -> binary();
-           (Name :: sip_syntax:name(), Parsed :: any()) -> binary().
+           (Other :: sip_name(), binary()) -> binary();
+           (Name :: sip_name(), Parsed :: any()) -> binary().
 %% @doc Format header value into the binary.
 %% @end
 format(Name, [Value]) -> process(f, Name, Value);
@@ -165,7 +165,7 @@ format(Name, Value) -> process(f, Name, Value).
 %%
 %% Parsing/formatting merged into single function for better locality of changes.
 %% @end
--spec process(p | f | pn | fn, Name :: sip_syntax:name(), Value :: any()) -> term().
+-spec process(p | f | pn | fn, Name :: sip_name(), Value :: any()) -> term().
 
 % Default header processing
 process(p, _Name, Header) when not is_binary(Header) -> Header; % already parsed
@@ -883,19 +883,19 @@ via(Transport, Host, Params) when is_list(Host); is_tuple(Host) ->
 
 %% @doc Construct media type value.
 %% @end
--spec media(sip_syntax:name(), sip_syntax:name(), [any()]) -> #sip_hdr_mediatype{}.
+-spec media(sip_name(), sip_name(), [any()]) -> #sip_hdr_mediatype{}.
 media(Type, SubType, Params) when is_list(Params) ->
     #sip_hdr_mediatype{type = Type, subtype = SubType, params = Params}.
 
 %% @doc Construct encoding type value.
 %% @end
--spec encoding(sip_syntax:name(), [any()]) -> #sip_hdr_encoding{}.
+-spec encoding(sip_name(), [any()]) -> #sip_hdr_encoding{}.
 encoding(Encoding, Params) when is_list(Params) ->
     #sip_hdr_encoding{encoding = Encoding, params = Params}.
 
 %% @doc Construct language type value.
 %% @end
--spec language(sip_syntax:name(), [any()]) -> #sip_hdr_language{}.
+-spec language(sip_name(), [any()]) -> #sip_hdr_language{}.
 language(Language, Params) when is_list(Params) ->
     #sip_hdr_language{language = Language, params = Params}.
 
@@ -913,7 +913,7 @@ auth(Scheme, Params) ->
 
 %% @doc Construct `CSeq:' header value.
 %% @end
--spec cseq(integer(), sip_syntax:name()) -> #sip_hdr_cseq{}.
+-spec cseq(integer(), sip_name()) -> #sip_hdr_cseq{}.
 cseq(Sequence, Method) when
   is_integer(Sequence),
   (is_atom(Method) orelse is_binary(Method)) ->
