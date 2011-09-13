@@ -101,13 +101,8 @@ send_response(Msg, TxState) ->
     TxState.
 
 -spec pass_to_tu(#sip_message{}, #tx_state{}) -> term().
-pass_to_tu(Msg, TxState) ->
-    Kind =
-        case Msg#sip_message.kind of
-            #sip_request{} -> request;
-            #sip_response{} -> response
-        end,
-    notify_tu(TxState, {Kind, Msg}),
+pass_to_tu(#sip_message{kind = #sip_response{}} = Msg, TxState) ->
+    notify_tu(TxState, {response, Msg}),
     TxState.
 
 %% @private
