@@ -86,7 +86,7 @@ validate_allowed(Request, State) ->
 
 %% Validate message according to the 8.2.2.2
 -spec validate_loop(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
-validate_loop(Request, #sip_ua_state{detect_loops = false} = State) ->
+validate_loop(_Request, #sip_ua_state{detect_loops = false} = State) ->
     pipeline_m:next(State);
 validate_loop(Request, State) ->
     case sip_transaction:is_loop_detected(Request) of
