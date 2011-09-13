@@ -66,7 +66,13 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     TTL = proplists:get_value(ttl, Opts, 1),
     Request2 = add_via_sentby(Request, To, TTL),
 
-    case transport_send(To, Request2) of
+    % Add Content-Length, if not present
+    Fun = fun(undefined) -> size(Request#sip_message.body);
+             (Value) -> Value
+          end,
+    Request3 = sip_message:update_top_header('content-length', Fun, Request2),
+
+    case transport_send(To, Request3) of
         ok -> ok;
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
