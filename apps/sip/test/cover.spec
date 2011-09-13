@@ -1,2 +1,2 @@
 {incl_app, sip, details}.
-{export, "ct.coverdata"}.
+{export, "test/ct.coverdata"}.
