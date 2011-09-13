@@ -143,18 +143,5 @@
 %% SIP UAC/UAS
 %%-----------------------------------------------------------------
 
-
--record(req_info, {request :: #sip_message{},                 % SIP request message
-                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
-                   user_data}).                               % Custom user data associated with request
-
--record(sip_ua_state, {callback :: module(),        % Callback module
-                       allow = [] :: [atom()],      % List of allowed methods
-                       supported = [] :: [atom()],  % List of supported extensions
-                       detect_loops = true :: boolean(), % Enable loop detection (8.2.2.2)
-                       state}).                     % Callback module state
-
 -define(CORE_PROPERTY, core_registration).
 -record(sip_core_info, {is_applicable :: fun((#sip_message{}) -> boolean())}). % check if message is applicable
-

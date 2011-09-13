@@ -2,12 +2,6 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UAC response processing behaviour
 %%%
-%%% The response handling uses `do' parse transformer from
-%%% <a href="https://github.com/rabbitmq/erlando">Erlando</a>. Each step
-%%% of the request processing is "valve" function that returns value in
-%%% the `pipeline_m' monad. The return is either `{next, State}' (apply
-%%% next valve) or `{stop, Result}' (stop message processing and return Result).
-%%%
 %%% Automatic response handling:
 %%% <ul>
 %%% <li>If response is redirect (3xx), populate target set with values from
@@ -26,15 +20,22 @@
 -compile({parse_transform, do}).
 
 %% API
--export([create_request/2, send_request/3, handle_info/2]).
-
-%% Response processing
--export([validate_vias/2, process_response/3]).
+-export([new/1, create_request/3, send_request/3, process_response/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
+-record(req_info, {request :: #sip_message{},                 % SIP request message
+                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
+                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
+                   user_data}).                               % Custom user data associated with request
+
+-record(uac, {callback :: module()}).
+
+-spec new(module()) -> #uac{}.
+new(Module) ->
+    #uac{callback = Module}.
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
@@ -42,9 +43,9 @@
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(atom() | binary(), #sip_hdr_address{}) -> #sip_message{}.
-create_request(Method, ToValue) when
-  is_record(ToValue, sip_hdr_address) ->
+-spec create_request(#uac{}, sip_syntax:name(), #sip_hdr_address{}) -> #sip_message{}.
+create_request(UAC, Method, ToValue) when
+  is_record(UAC, uac), is_record(ToValue, sip_hdr_address) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
     RequestURI = ToValue#sip_hdr_address.uri,
@@ -70,93 +71,69 @@ create_request(Method, ToValue) when
 %% @doc Send the request according to the 8.1.2 Sending the Request
 %% FIXME: Must have Contact: header if request can establish dialog (INVITE)
 %% @end
--spec send_request(#sip_message{}, term(), #sip_ua_state{}) -> {ok, #sip_ua_state{}}.
-send_request(Request, UserData, State) ->
+-spec send_request(#uac{}, #sip_message{}, term()) -> ok | {error, Reason :: term()}.
+send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,
 
     % Put Request URI into the target set
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
 
-    % Must finish with {noreply, State2}
-    {stop, {noreply, State2}} = next_uri(ReqInfo, none, State),
-    {ok, State2}.
+    case next_uri(ReqInfo, none) of
+        {error, _Reason} -> ok; % processing terminated
+        ok -> {error, no_destinations}
+    end.
 
 
-%% @private
--spec handle_info(term(), #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
-handle_info({response, _Response}, State) ->
-    % XXX: What do we do with responses, not associated with transactions?
-    pipeline_m:next(State);
-
+-spec process_response(#uac{}, #sip_message{}, #req_info{}) -> {ok, UserData :: term()} | {error, Reason :: term()}.
 %% @doc Process received response by pushing it through our processing pipeline
 %% @end
-handle_info({tx, _TxKey, {response, Response, ReqInfo}}, State) ->
-    do_process_response(Response, ReqInfo, State);
+process_response(UAC, Response, ReqInfo) when is_record(UAC, uac) ->
+    do([error_m ||
+        validate_vias(Response),
+        handle_response(ReqInfo, Response),
+        return(ReqInfo#req_info.user_data)]).
 
-%% @doc Process terminated client transactions
-%% @end
-handle_info({tx, TxKey, {terminated, _Reason}}, State) when is_record(TxKey, sip_tx_client) ->
-    pipeline_m:stop({noreply, State});
-
-handle_info(_Info, State) ->
-    pipeline_m:next(State).
+%% Internal functions
 
 %% Validate message according to the 8.1.3.3
--spec validate_vias(#sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
-validate_vias(Msg, State) ->
+-spec validate_vias(#sip_message{}) -> error_m:monad(ok).
+validate_vias(Msg) ->
     Count = length(sip_message:header_values('via', Msg)),
     case Count of
         1 ->
-            pipeline_m:next(State);
+            error_m:return(ok);
         _Other ->
             % discard response, too much/few Via's
             error_logger:warning_report(['message_discarded',
                                          {reason, wrong_vias},
                                          {msg, Msg}]),
-            pipeline_m:stop({noreply, State})
+            error_m:fail(discarded)
     end.
 
 %% @doc Automatic handling of 3xx-6xx responses valve
 %% @end
--spec process_response(#req_info{}, #sip_message{}, #sip_ua_state{}) -> pipeline_m:monad(#sip_ua_state{}).
-process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response, State)
+-spec handle_response(#req_info{}, #sip_message{}) -> error_m:monad(ok).
+handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response)
   when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
 
     % try next URI, was redirected
-    next_uri(ReqInfo2, Response, State);
-process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response, State)
-  when Status =:= 503; Status =:= 408 ->
-    % RFC 3263, 4.3. Processing failed responses, try next IP address
-    next_destination(ReqInfo, Response, State);
-process_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response, State)
-  when Status > 399 ->
-    % Try next Contact in target set (if was redirected)
-    % otherwise, will process response as is
-    next_uri(ReqInfo, Response, State);
-process_response(_ReqInfo, _Msg, State) ->
-    pipeline_m:next(State).
+    next_uri(ReqInfo2, Response);
+handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response) when Status =:= 503; Status =:= 408 ->
+    % failed with 408 or 503, try next IP address
+    next_destination(ReqInfo, Response);
+handle_response(ReqInfo, #sip_message{kind = #sip_response{status = Status}} = Response) when Status > 399 ->
+    % failed, try next URI
+    next_uri(ReqInfo, Response);
+handle_response(_ReqInfo, _Msg) ->
+    error_m:return(ok).
 
-do_process_response(Response, ReqInfo, State) ->
-    Mod = State#sip_ua_state.callback,
-    do([pipeline_m ||
-        % FIXME: re-send if failed and have more destinations/target URIs.
-        S1 <- validate_vias(Response, State),
-        S2 <- process_response(ReqInfo, Response, S1),
-        S3 <- Mod:handle_response(ReqInfo#req_info.user_data, Response, S2),
-        % TODO: log unhandled requests?
-        S3]).
-
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------
-
-next_uri(ReqInfo, Response, State) ->
+next_uri(ReqInfo, Response) ->
     case sip_priority_set:take(ReqInfo#req_info.target_set) of
         false ->
-            % No more URIs to try -- continue with last response
-            pipeline_m:next(State);
+            % No more URIs to try, continue processing
+            error_m:return(ok);
         {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -166,7 +143,7 @@ next_uri(ReqInfo, Response, State) ->
             ReqInfo2 = ReqInfo#req_info{request = Request2,
                                         destinations = lookup_destinations(Request2),
                                         target_set = TargetSet2},
-            next_destination(ReqInfo2, Response, State)
+            next_destination(ReqInfo2, Response)
     end.
 
 
@@ -174,14 +151,15 @@ next_uri(ReqInfo, Response, State) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(#req_info{destinations = []}, _Response, State) ->
-    % no destination IPs to try, continue with last response
-    pipeline_m:next(State);
-next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
+next_destination(#req_info{destinations = []}, _Response) ->
+    % no destination IPs to try, continue processing
+    error_m:return(ok);
+next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response) ->
     % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
     sip_transaction:start_client_tx(self(), Top, Request, ReqInfo2),
-    pipeline_m:stop({noreply, State}).
+    % stop processing
+    error_m:fail(processed).
 
 lookup_destinations(Request) ->
     RequestURI = Request#sip_message.kind#sip_request.uri,

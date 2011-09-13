@@ -4,8 +4,7 @@
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 -module(sip_test_uas).
-
--extends(sip_ua).
+-behaviour(gen_server).
 
 %% Exports
 
@@ -14,13 +13,13 @@
 -include("sip_test.hrl").
 
 %% API
--export([start_link/0, set_handler/2, stop/1]).
+-export([start_link/0, set_handler/2, stop/1, handle_request/3]).
 
 %% Server callbacks
--export([init/1]).
--export([handle_request/3, handle_cast/2, handle_call/3]).
+-export([init/1, terminate/2, code_change/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
 
--record(state, {handler}).
+-record(state, {uas, handler}).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -40,25 +39,53 @@ stop(Pid) ->
 %% @private
 init({}) ->
     sip_cores:register_core(#sip_core_info{is_applicable = fun is_applicable/1}),
-    {ok, #sip_ua_state{callback = ?MODULE,
-                       allow = ['OPTIONS'],
-                       state = #state{},
-                       detect_loops = false}}.
+    {ok, #state{uas = sip_uas:new(?MODULE, ['OPTIONS'], [])}}.
 
 %% @private
-handle_call({set_handler, Handler}, _Client, #sip_ua_state{} = State) ->
-    UserState = State#sip_ua_state.state,
-    {reply, ok, State#sip_ua_state{state = UserState#state{handler = Handler}}}.
+handle_call({set_handler, Handler}, _Client, #state{} = State) ->
+    {reply, ok, State#state{handler = Handler}}.
 
 %% @private
-handle_request(_Method, Request, #sip_ua_state{state = #state{handler = Handler}} = State) ->
+-spec handle_info(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
+handle_info({request, Msg}, State) ->
+    % parse the URI
+    % FIXME: should be done by transport layer?
+    Req = Msg#sip_message.kind,
+    URI = sip_uri:parse(Req#sip_request.uri),
+    Msg2 = Msg#sip_message{kind = Req#sip_request{uri = URI}},
+
+    case sip_uas:process_request(State#state.uas, Msg2) of
+        ok ->
+            handle_request(sip_message:method(Msg), Msg2, State),
+            {noreply, State};
+        {error, _Reason} ->
+            {noreply, State}
+    end;
+handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
+    {noreply, State}.
+
+%% @private
+handle_request(_Method, Request, #state{handler = Handler, uas = UAS}) ->
     Response = Handler(Request),
-    pipeline_m:stop({reply, Response, State}).
+    sip_uas:send_response(UAS, Response),
+    ok.
 
 %% @private
--spec handle_cast(_, #sip_ua_state{}) -> any().
+-spec handle_cast(_, #state{}) -> any().
 handle_cast(stop, State) ->
     {stop, normal, State}.
+
+
+%% @private
+-spec terminate(term(), #state{}) -> ok.
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+-spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
 
 
 is_applicable(_Msg) -> true.

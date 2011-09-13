@@ -60,7 +60,7 @@ start_client_tx(TU, To, Request, UserData)
 %% @doc
 %% Start new server transaction.
 %% @end
--spec start_server_tx(pid() | term(), #sip_message{}) -> {ok, #sip_tx_server{}}.
+-spec start_server_tx(term(), #sip_message{}) -> {ok, #sip_tx_server{}}.
 start_server_tx(TU, Request)
   when is_record(Request, sip_message) ->
 
@@ -71,8 +71,8 @@ start_server_tx(TU, Request)
     Key = tx_key(server, Request),
     Module = tx_module(server, Request),
     TxState = #tx_state{tx_key = Key,
-                        tx_user = TU,
                         request = Request,
+                        tx_user = TU,
                         reliable = Reliable},
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
