@@ -96,8 +96,7 @@ send_response(Response, TxState) ->
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> term().
 pass_to_tu(#sip_response{} = Msg, TxState) ->
-    TxKey = TxState#tx_state.tx_key,
-    notify_tu(TxState, {tx, TxKey, {response, Msg, TxState#tx_state.user_data}}),
+    notify_tu(TxState, {response, Msg, TxState#tx_state.user_data}),
     TxState.
 
 %% @private

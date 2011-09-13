@@ -53,7 +53,7 @@ handle_cast(stop, State) ->
 
 %% @private
 -spec handle_info(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
-handle_info({tx, _TxKey, {response, Response, ReqInfo}}, State) ->
+handle_info({response, Response, ReqInfo}, State) ->
     UAC = State#state.uac,
     case sip_uac:process_response(UAC, Response, ReqInfo) of
         {ok, Client} ->
