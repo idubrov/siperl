@@ -35,14 +35,7 @@
 
 -spec handle_info(term(), atom(), #tx_state{}) ->
           {stop, term(), #tx_state{}}.
-%% @doc
-%% Handle case when we expect response from the TU, but it goes down
-%% @end
-handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, 'PROCEEDING', TxState) ->
-    {stop, {tu_down, TxState#tx_state.tx_user}, TxState};
-
-%% @doc
-%% Send provisional response.
+%% @doc Send provisional response.
 %% @end
 handle_info(provisional, _State, TxState) ->
     % send provisional response
@@ -52,8 +45,7 @@ handle_info(provisional, _State, TxState) ->
     TxState3 = ?PROVISIONAL(TxState2),
     {next_state, 'PROCEEDING', TxState3};
 
-%% @doc
-%% Let the base module handle the info.
+%% @doc Let the base module handle the info.
 %% @end
 handle_info(Info, State, TxState) ->
     sip_transaction_base:handle_info(Info, State, TxState).

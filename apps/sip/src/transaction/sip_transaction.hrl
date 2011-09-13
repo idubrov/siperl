@@ -20,6 +20,8 @@
          timerI,        % Timer I, RFC 3261 17.2.1
          timerJ,        % Timer J, RFC 3261 17.2.2
          timerK,        % Timer K, RFC 3261 17.1.2.2
+         timerTU,       % Timer that terminates server transaction
+                        % if response was not received from TU
          request,       % Original request
          provisional,   % Most recent provisional response
          response,      % Final response

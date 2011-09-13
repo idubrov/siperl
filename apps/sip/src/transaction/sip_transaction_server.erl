@@ -18,7 +18,6 @@
 -include("sip.hrl").
 
 %% FSM callbacks
--export([handle_info/3]).
 -export(['INIT'/2, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
 
 %%-----------------------------------------------------------------
@@ -29,21 +28,6 @@
 -spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
 'INIT'(init, TxState) ->
     {next_state, 'TRYING', TxState}.
-
--spec handle_info(term(), atom(), #tx_state{}) ->
-          {stop, term(), #tx_state{}}.
-%% @doc
-%% Handle case when we expect response from the TU, but it goes down
-%% @end
-handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, TxState)
-  when State =:= 'TRYING'; State =:= 'PROCEEDING' ->
-    {stop, {tu_down, TxState#tx_state.tx_user}, TxState};
-
-%% @doc
-%% Let the base module handle the info.
-%% @end
-handle_info(Info, State, TxState) ->
-    sip_transaction_base:handle_info(Info, State, TxState).
 
 -spec 'TRYING'(term(), term(), #tx_state{}) -> term().
 %% @doc

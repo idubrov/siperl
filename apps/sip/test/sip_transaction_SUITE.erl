@@ -18,8 +18,8 @@
 % test cases
 -export([client_invite_ok/1, client_invite_err/1, client_invite_timeout_calling/1, client_invite_timeout_proceeding/1]).
 -export([client_ok/1, client_timeout_trying/1, client_timeout_proceeding/1]).
--export([server_invite_ok/1, server_invite_err/1, server_invite_timeout/1, server_invite_tu_down/1]).
--export([server_ok/1, server_err/1, server_tu_down/1]).
+-export([server_invite_ok/1, server_invite_err/1, server_invite_timeout/1]).
+-export([server_ok/1, server_err/1]).
 -export([server_loop/1]).
 
 
@@ -40,11 +40,9 @@ groups() ->
          server_invite_ok,
          server_invite_err,
          server_invite_timeout,
-         server_invite_tu_down,
 
          server_ok,
          server_err,
-         server_tu_down,
 
          server_loop],
 
@@ -609,41 +607,6 @@ server_invite_timeout(Config) ->
 
 %% @doc
 %% Scenario tested:
-%% - INVITE request is received
-%% - transaction is in the list
-%% - TU process goes down
-%% - transaction is not in the list of transactions
-%% @end
-server_invite_tu_down(Config) ->
-    Transport  = ?config(transport, Config),
-    Reliable = ?config(reliable, Config),
-
-    Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
-
-    % Prepare TU
-    TUFun =
-        fun () ->
-                 receive {proceed, Ref} -> Ref end,
-                 % exit from TU, this should force transaction to terminate
-                 ok
-         end,
-    TU = erlang:spawn_link(TUFun),
-
-    % Start server transaction
-    {ok, TxKey} = sip_transaction:start_server_tx(TU, Request),
-
-    [TxKey] = [T || T <- sip_transaction:list_tx(), T =:= TxKey], % have transaction in list
-    TU ! {proceed, TxKey}, % notify TU about transaction
-    ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
-
-    % wait for TU to exit and transaction layer to process the 'DOWN' event
-    timer:sleep(500),
-    [] = [T || T <- sip_transaction:list_tx(), T =:= TxKey], % do not have transaction in list
-    ok.
-
-%% @doc
-%% Scenario tested:
 %% - non-INVITE request is received
 %% - request is passed to TU
 %% - provisional response is sent by TU
@@ -748,37 +711,6 @@ server_err(Config) ->
     ?assertReceiveNot("Message queue is empty", _),
     ok.
 
-%% @doc
-%% Scenario tested:
-%% - non-INVITE request is received
-%% - transaction is in the list
-%% - TU process goes down
-%% - transaction is not in the list of transactions
-%% @end
-server_tu_down(Config) ->
-    Transport  = ?config(transport, Config),
-
-    Request = sip_test:request('OPTIONS', Transport),
-
-    % Prepare TU
-    TUFun =
-        fun () ->
-                 receive {proceed, Ref} -> Ref end,
-                 % exit from TU, this should force transaction to terminate
-                 ok
-         end,
-    TU = erlang:spawn_link(TUFun),
-
-    % Start server transaction
-    {ok, TxKey} = sip_transaction:start_server_tx(TU, Request),
-
-    [TxKey] = [T || T <- sip_transaction:list_tx(), T =:= TxKey], % have transaction in list
-    TU ! {proceed, TxKey}, % notify TU about transaction
-
-    % wait for TU to exit and transaction layer to process the 'DOWN' event
-    timer:sleep(500),
-    [] = [T || T <- sip_transaction:list_tx(), T =:= TxKey], % do not have transaction in list
-    ok.
 
 %% @doc
 %% Scenario tested:

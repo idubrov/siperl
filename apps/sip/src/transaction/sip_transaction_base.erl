@@ -27,7 +27,7 @@
 %% API
 %%-----------------------------------------------------------------
 -spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
-init(#tx_state{tx_key = Key, tx_user = TxUser, request = Msg} = TxState) ->
+init(#tx_state{tx_key = Key, request = Msg} = TxState) ->
     % Register transaction under its key
     gproc:add_local_name({tx, Key}),
 
@@ -48,13 +48,6 @@ init(#tx_state{tx_key = Key, tx_user = TxUser, request = Msg} = TxState) ->
             ok
     end,
 
-    % start monitoring TU user so we terminate if it does
-    % FIXME: mechanism for detecting gproc-registered TUs failures
-    case TxUser of
-        Pid when is_pid(Pid) ->
-            monitor(process, TxUser);
-        _ -> ok
-    end,
     % Send initialization message to ourselves, to make any heavy-weight
     % initialization. Also, any failure during the heavy-weight initialization
     % is appropriately reported to the TU (see 8.1.3.1, RFC 3261)
@@ -120,12 +113,7 @@ handle_sync_event(Event, _From, _State, TxState) ->
     {stop, Reason, Reason, TxState}.
 
 %% @private
--spec handle_info(term(), atom(), #tx_state{}) ->
-          {stop, term(), #tx_state{}}.
-handle_info({'DOWN', _MonitorRef, process, _Pid, _Info}, State, TxState) ->
-    % we mostly ignore when TU is down, it is only handled in server
-    % transactions when response from TU is expected
-    {next_state, State, TxState};
+-spec handle_info(term(), atom(), #tx_state{}) -> {stop, term(), #tx_state{}}.
 handle_info(Info, _State, TxState) ->
     {stop, {unexpected, Info}, TxState}.
 
