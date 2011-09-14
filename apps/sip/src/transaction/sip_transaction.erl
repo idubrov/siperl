@@ -46,8 +46,7 @@ start_client_tx(TU, To, Request, Options)
     % Every new client transaction has its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
 
-    % Transport reliability is from To: header
-    % FIXME: what if request will be sent via TCP due to the request being oversized for UDP?
+    % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(To#sip_destination.transport),
 
     Key = tx_key(client, Request2),
