@@ -162,15 +162,17 @@ send_response_fallback([To|Rest], Response) ->
 %% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
-%% FIXME: Remove connection...
 -spec dispatch(#sip_destination{},
                {message, sip_message()} | {error, Reason :: term(), sip_message()}) ->
           ok | {reply, sip_message()}.
 dispatch(From, {message, Msg}) when is_record(Msg, sip_request) ->
-    Msg2 = add_via_received(From, Msg),
+    % pre-parse message
+    Msg2 = pre_parse(Msg),
+
+    Msg3 = add_via_received(From, Msg2),
     % 18.2.1: route to server transaction or to core
-    case sip_transaction:handle_request(Msg2) of
-        not_handled -> dispatch_core(request, Msg2);
+    case sip_transaction:handle_request(Msg3) of
+        not_handled -> dispatch_core(request, Msg3);
         {ok, _TxRef} -> ok
     end,
     ok;
@@ -315,6 +317,24 @@ dispatch_core(Kind, Msg) ->
                                       {msg, Msg}]),
             ok
     end.
+
+%% @doc Parse required headers
+%% @end
+pre_parse(#sip_request{} = Msg) ->
+    URI = sip_uri:parse(Msg#sip_request.uri),
+    Headers = pre_parse_headers(Msg#sip_request.headers),
+    Msg#sip_request{uri = URI, headers = Headers}.
+
+pre_parse_headers(Headers) ->
+    % TODO: Catch incorrect headers and report as bad request/response
+    Fun =
+        fun({Name, Value}) when
+             Name =:= to; Name =:= from; Name =:= cseq; Name =:= 'call-id';
+             Name =:= 'max-forwards'; Name =:= via; Name =:= 'contact' ->
+                {Name, sip_headers:parse(Name, Value)};
+           (Other) -> Other
+        end,
+    lists:map(Fun, Headers).
 
 %%-----------------------------------------------------------------
 %% Server callbacks

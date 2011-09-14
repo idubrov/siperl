@@ -23,7 +23,6 @@ invite(Transport) ->
 %% @doc Generate test request with given `Method'. Sets `Transport' on top via.
 %% @end
 request(Method, Transport) ->
-    % FIXME: Update sip_headers.
     Headers = [{cseq, sip_headers:cseq(232908, Method)},
                {via, [sip_headers:via(Transport, {{127, 0, 0, 1}, 25060}, [{branch, sip_idgen:generate_branch()}])]},
                {via, [sip_headers:via(udp, {{127, 0, 0, 1}, 5060}, [{branch, <<?MAGIC_COOKIE, $_, "kjshdyff">>}])]},

@@ -49,14 +49,9 @@ handle_call({set_handler, Handler}, _Client, #state{} = State) ->
 %% @private
 -spec handle_info(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
 handle_info({request, Msg}, State) ->
-    % parse the URI
-    % FIXME: should be done by transport layer?
-    URI = sip_uri:parse(Msg#sip_request.uri),
-    Msg2 = Msg#sip_request{uri = URI},
-
-    case sip_uas:process_request(State#state.uas, Msg2) of
+    case sip_uas:process_request(State#state.uas, Msg) of
         ok ->
-            handle_request(sip_message:method(Msg), Msg2, State),
+            handle_request(sip_message:method(Msg), Msg, State),
             {noreply, State};
         {error, _Reason} ->
             {noreply, State}
