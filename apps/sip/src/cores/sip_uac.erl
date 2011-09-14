@@ -73,8 +73,6 @@ create_request(UAC, Method, ToValue) when
 %% @end
 -spec send_request(#uac{}, sip_message(), term()) -> ok | {error, Reason :: term()}.
 send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
-    ok = sip_message:validate_request(Request),
-
     % Put Request URI into the target set
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
