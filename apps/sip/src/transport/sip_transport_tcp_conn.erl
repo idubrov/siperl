@@ -82,10 +82,7 @@ init(Socket) ->
 -spec handle_info({tcp, inet:socket(), binary()} | tcp_closed | term(), #state{}) ->
           {noreply, #state{}, integer()} | {stop, normal, #state{}} | {stop, {unexpected, _}, #state{}}.
 handle_info({tcp, _Socket, Packet}, State) ->
-    {ok, NewState, Props} = process_stream(Packet, State, []),
-
-    % register as connection that serves given transactions
-    gproc:mreg(p, l, Props),
+    {ok, NewState} = process_stream(Packet, State),
 
     ok = inet:setopts(NewState#state.socket, [{active, once}]),
     {noreply, NewState, State#state.timeout};
@@ -125,38 +122,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
-process_stream(Packet, State, Props) ->
+process_stream(Packet, State) ->
     case sip_message:parse_stream(Packet, State#state.parse_state) of
         {ok, NewParseState} ->
             % no more messages to parse -- return
-            {ok, State#state{parse_state = NewParseState}, Props};
+            {ok, State#state{parse_state = NewParseState}};
         {ok, Msg, NewParseState} ->
-            % dispatch to transport layer
-            Result = sip_transport:dispatch(State#state.remote, {message, Msg}),
-            immediate_reply(Result, State),
-
             % add property to register with gproc for requests
             % each property is a marker that this process handles
             % given server transaction, so we could find proper
             % connection when sending responses
-            % FIXME: What about terminated transactions?
-            NewProps =
-                case Msg of
-                    #sip_request{} ->
-                        Prop = {{connection, sip_transaction:tx_key(server, Msg)}, true},
-                        [Prop | Props];
-                    #sip_response{} -> Props
-                end,
+            gproc:add_local_property({connection, sip_transaction:tx_key(server, Msg)}, true),
+
+            % dispatch to transport layer
+            Result = sip_transport:dispatch(State#state.remote, {message, Msg}),
+            immediate_reply(Result, State),
 
             % there could be more messages to parse, recurse
-            process_stream(<<>>, State#state{parse_state = NewParseState}, NewProps);
+            process_stream(<<>>, State#state{parse_state = NewParseState});
         {error, Reason, Msg, NewParseState} ->
             % dispatch to transport layer
             Result = sip_transport:dispatch(State#state.remote, {error, Reason, Msg}),
             immediate_reply(Result, State),
 
             % there could be more messages to parse, recurse
-            process_stream(<<>>, State#state{parse_state = NewParseState}, Props)
+            process_stream(<<>>, State#state{parse_state = NewParseState})
     end.
 
 %% @doc When transport returns `{reply, Msg}' on `dispatch/2' call, we need to reply immediately
