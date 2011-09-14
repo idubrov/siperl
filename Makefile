@@ -8,7 +8,7 @@ deps:
 compile:
 	@$(REBAR) compile
 test: deps
-	@$(REBAR) skip_deps=true eunit ct
+	-@$(REBAR) skip_deps=true eunit ct
 clean:
 	@$(REBAR) clean
 check: compile
