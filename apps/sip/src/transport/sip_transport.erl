@@ -162,16 +162,10 @@ send_response_fallback([To|Rest], Response) ->
 %%
 %% Dispatch request/response received through given connection. This function
 %% is called by concrete transport implementations.
-%%
-%% <em>`{reply, sip_message()}' is used for sending reply immediately,
-%% without blocking on the `sip_transport_X:send/2' call.</em>
 %% @end
 %% @private
--spec dispatch(#sip_destination{},
-               {message, sip_message()} | {error, Reason :: term(), sip_message()}) ->
-          ok | {reply, sip_message()}.
-dispatch(From, {message, Msg}) when is_record(Msg, sip_request) ->
-    % FIXME: validate incoming requests
+-spec dispatch(#sip_destination{}, sip_message()) -> ok.
+dispatch(From, Msg) when is_record(Msg, sip_request) ->
     % pre-parse message
     Msg2 = pre_parse(Msg),
 
@@ -182,7 +176,7 @@ dispatch(From, {message, Msg}) when is_record(Msg, sip_request) ->
         {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, {message, Msg}) when is_record(Msg, sip_response) ->
+dispatch(From, Msg) when is_record(Msg, sip_response) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
@@ -202,26 +196,28 @@ dispatch(From, {message, Msg}) when is_record(Msg, sip_response) ->
                                          {'sent_by', SentBy},
                                          {msg, Msg}])
     end,
-    ok;
-dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_request) ->
-    % reply with 400 Bad Request
-    error_logger:warning_report(['bad_request',
-                                 {reason, Reason},
-                                 {from, From},
-                                 {msg, Msg}]),
-    % TODO: Put reason in the response
-    Response = sip_message:create_response(Msg, 400),
-
-    % we are not going to go through whole procedures for sending response, just try to send
-    % via the same transport
-    {reply, Response};
-dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_response) ->
-    % discard malformed responses
-    error_logger:warning_report(['message_discarded',
-                                 {reason, Reason},
-                                 {from, From},
-                                 {msg, Msg}]),
     ok.
+
+%%
+%% dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_request) ->
+%%     % reply with 400 Bad Request
+%%     error_logger:warning_report(['bad_request',
+%%                                  {reason, Reason},
+%%                                  {from, From},
+%%                                  {msg, Msg}]),
+%%     % TODO: Put reason in the response
+%%     Response = sip_message:create_response(Msg, 400),
+%%
+%%     % we are not going to go through whole procedures for sending response, just try to send
+%%     % via the same transport
+%%     {reply, Response};
+%% dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_response) ->
+%%     % discard malformed responses
+%%     error_logger:warning_report(['bad_response',
+%%                                  {reason, Reason},
+%%                                  {from, From},
+%%                                  {msg, Msg}]),
+%%     ok.
 
 %%-----------------------------------------------------------------
 %% Internal functions

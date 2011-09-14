@@ -128,35 +128,47 @@ process_stream(Packet, State) ->
             % no more messages to parse -- return
             {ok, State#state{parse_state = NewParseState}};
         {ok, Msg, NewParseState} ->
-            % add property to register with gproc for requests
-            % each property is a marker that this process handles
-            % given server transaction, so we could find proper
-            % connection when sending responses
-            gproc:add_local_property({connection, sip_transaction:tx_key(server, Msg)}, true),
-
-            % dispatch to transport layer
-            Result = sip_transport:dispatch(State#state.remote, {message, Msg}),
-            immediate_reply(Result, State),
+            case validate(Msg) of
+                ok ->
+                    process_message(State, Msg);
+                {error, Reason} ->
+                    bad_message(Msg, Reason, State)
+            end,
 
             % there could be more messages to parse, recurse
             process_stream(<<>>, State#state{parse_state = NewParseState});
         {error, Reason, Msg, NewParseState} ->
-            % dispatch to transport layer
-            Result = sip_transport:dispatch(State#state.remote, {error, Reason, Msg}),
-            immediate_reply(Result, State),
+            bad_message(Msg, Reason, State),
 
             % there could be more messages to parse, recurse
             process_stream(<<>>, State#state{parse_state = NewParseState})
     end.
 
-%% @doc When transport returns `{reply, Msg}' on `dispatch/2' call, we need to reply immediately
-%%
-%% This functionality is used for sending responses on bad requests,
-%% so the sip_transport:dispatch/3 does not block on regular `sip_transport_tcp:send/2' call
-%% @end
-immediate_reply(ok, _State) -> ok;
-immediate_reply({reply, Message}, State) ->
-    % send response
-    Socket = State#state.socket,
-    Packet = sip_message:to_binary(Message),
-    gen_tcp:send(Socket, Packet).
+process_message(State, Msg) ->
+    % add property to register with gproc for requests
+    % each property is a marker that this process handles
+    % given server transaction, so we could find proper
+    % connection when sending responses
+    TxKey = sip_transaction:tx_key(server, Msg),
+    gproc:add_local_property({connection, TxKey}, true),
+
+    % dispatch to transport layer
+    ok = sip_transport:dispatch(State#state.remote, Msg).
+
+validate(#sip_request{} = Request) -> sip_message:validate_request(Request);
+validate(#sip_response{} = Response) -> sip_message:validate_response(Response).
+
+bad_message(#sip_request{} = Request, Reason, State) ->
+    sip_log:bad_request(Request, Reason, State#state.remote),
+
+    % TODO: Put reason in the response
+    Response = sip_message:create_response(Request, 400),
+    Packet = sip_message:to_binary(Response),
+
+    % Don't bother about return value
+    _Ignore = gen_tcp:send(State#state.socket, Packet),
+    ok;
+bad_message(#sip_response{} = Response, Reason, State) ->
+    sip_log:bad_response(Response, Reason, State#state.remote),
+    ok.
+

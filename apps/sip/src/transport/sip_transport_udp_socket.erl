@@ -103,20 +103,16 @@ init(#sip_destination{address = ToAddr, port = ToPort}) ->
           {noreply, #state{}, infinity} | {stop, _Reason, #state{}}.
 handle_info({udp, Socket, SrcAddress, SrcPort, Packet}, State) ->
     Remote = #sip_destination{transport = udp, address = SrcAddress, port = SrcPort},
-    Result =
-        case sip_message:parse_datagram(Packet) of
-            {ok, Msg} -> {message, Msg};
-            {error, Reason, Msg} -> {error, Reason, Msg}
-        end,
-    case sip_transport:dispatch(Remote, Result) of
-        ok -> ok;
-        {reply, Response} ->
-            % we need to reply immediately
-            % this functionality is used for sending responses on bad requests
-            % so the sip_transport:dispatch/3 does not block on regular
-            % `sip_transport_udp:send/2' call
-            Packet = sip_message:to_binary(Response),
-            gen_udp:send(Socket, SrcAddress, SrcPort, Packet)
+    case sip_message:parse_datagram(Packet) of
+        {ok, Msg} ->
+            case validate(Msg) of
+                ok ->
+                    ok = sip_transport:dispatch(Remote, Msg);
+                {error, Reason} ->
+                    bad_message(Msg, Reason, Remote, Socket)
+            end;
+        {error, Reason, Msg} ->
+            bad_message(Msg, Reason, Remote, Socket)
     end,
     {noreply, State, State#state.timeout};
 handle_info({udp_error, _Socket, Reason}, State) ->
@@ -140,11 +136,10 @@ handle_call({send, To, Message}, _From, State) ->
     %% using an RFC 2914 [43] congestion controlled transport protocol, such
     %% as TCP.
     Reply =
-        if
-            size(Packet) > 1300 ->
-                {error, too_big};
-            true ->
-                gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet)
+        if size(Packet) > 1300 ->
+               {error, too_big};
+           true ->
+               ok = gen_udp:send(State#state.socket, To#sip_destination.address, To#sip_destination.port, Packet)
         end,
     {reply, Reply, State, State#state.timeout};
 
@@ -166,3 +161,23 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+validate(#sip_request{} = Request) -> sip_message:validate_request(Request);
+validate(#sip_response{} = Response) -> sip_message:validate_response(Response).
+
+bad_message(#sip_request{} = Request, Reason, Remote, Socket) ->
+    sip_log:bad_request(Request, Reason, Remote),
+
+    % TODO: Put reason in the response
+    Response = sip_message:create_response(Request, 400),
+    Packet = sip_message:to_binary(Response),
+
+    % Don't bother about return value
+    _Ignore = gen_udp:send(Socket,
+                           Remote#sip_destination.address,
+                           Remote#sip_destination.port,
+                           Packet),
+    ok;
+bad_message(#sip_response{} = Response, Reason, Remote, _Socket) ->
+    sip_log:bad_response(Response, Reason, Remote),
+    ok.
