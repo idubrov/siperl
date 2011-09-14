@@ -171,7 +171,7 @@ lookup_destinations(Request) ->
                 % See RFC3261, 8.1.2
                 % If first element in the route set is strict router,
                 % use Request-URI
-                case is_strict_router(Route#sip_hdr_address.uri) of
+                case sip_uri:is_strict_router(Route#sip_hdr_address.uri) of
                     true -> RequestURI;
                     false -> Route
                 end
@@ -199,20 +199,3 @@ collect_redirects(ReqInfo, Response) ->
     % go through Contact: headers and add URIs to our current redirect set
     NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Response),
     ReqInfo#req_info{target_set = NewTargetSet, destinations = []}.
-
-% FIXME: Move to sip_uri.
-is_strict_router(#sip_uri{params = Params}) ->
-    not proplists:get_bool('lr', Params).
-
-
-%%-----------------------------------------------------------------
-%% Tests
-%%-----------------------------------------------------------------
--ifdef(TEST).
-
--spec ua_test_() -> term().
-ua_test_() ->
-    [?_assertEqual(true, is_strict_router(sip_uri:parse(<<"sip:p3.middle.com">>))),
-     ?_assertEqual(false, is_strict_router(sip_uri:parse(<<"sip:p2.example.com;lr">>)))
-    ].
--endif.

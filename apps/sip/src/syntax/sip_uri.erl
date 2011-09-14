@@ -13,6 +13,7 @@
 
 %% API
 -export([parse/1, format/1]).
+-export([is_strict_router/1]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -33,6 +34,12 @@ parse(<<"sip:", Rest/binary>>) -> parse_sip(sip, Rest);
 parse(<<"sips:", Rest/binary>>) -> parse_sip(sips, Rest);
 parse(Bin) when is_binary(Bin) ->
     Bin.
+
+%% @doc Check if SIP URI is strict router URI
+%% @end
+is_strict_router(#sip_uri{params = Params}) ->
+    not proplists:get_bool(lr, Params).
+
 
 %% @doc Parse SIP URI
 %% BNF notation:
@@ -249,5 +256,11 @@ format_test_() ->
      ?_assertEqual(<<"sip:alice@[2001:0db8:0000:0000:0000:0000:ae21:ad12]:5060">>,
                    format(#sip_uri{scheme = sip, user = <<"alice">>, host = {8193,3512,0,0,0,0,44577,44306}, port = 5060}))
      ].
+
+-spec is_strict_router_test_() -> list().
+is_strict_router_test_() ->
+    [?_assertEqual(true, is_strict_router(sip_uri:parse(<<"sip:p3.middle.com">>))),
+     ?_assertEqual(false, is_strict_router(sip_uri:parse(<<"sip:p2.example.com;lr">>)))
+    ].
 
 -endif.
