@@ -166,6 +166,7 @@ send_response_fallback([To|Rest], Response) ->
                {message, sip_message()} | {error, Reason :: term(), sip_message()}) ->
           ok | {reply, sip_message()}.
 dispatch(From, {message, Msg}) when is_record(Msg, sip_request) ->
+    % FIXME: validate incoming requests
     % pre-parse message
     Msg2 = pre_parse(Msg),
 
