@@ -33,7 +33,7 @@ request(Method, Transport) ->
                {'max-forwards', 70},
                {'content-length', 6}],
     Msg = #sip_request{method = Method,
-                       uri = <<"sip:127.0.0.1/test">>,
+                       uri = sip_uri:parse(<<"sip:test@127.0.0.1">>),
                        body = <<"Hello!">>,
                        headers = Headers},
     Msg.
