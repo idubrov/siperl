@@ -156,11 +156,6 @@ code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
 
 notify_tu(TxState, Msg) ->
-    case TxState#tx_state.tx_user of
-        Pid when is_pid(Pid) -> Pid ! Msg;
-        % Name must be gproc-registered name
-        Name ->
-            gproc:send({n, l, Name}, Msg)
-    end,
+    Pid = TxState#tx_state.tx_user ! Msg,
     ok.
 
