@@ -41,16 +41,16 @@ start_link() ->
 %% @doc
 %% Start transaction FSM process.
 %% @end
--spec start_tx(module(), #tx_state{}) -> supervisor:start_child_ret().
-start_tx(Module, TxState) ->
-    supervisor:start_child(?SERVER, [Module, TxState]).
+-spec start_tx(module(), sip_tx_key()) -> supervisor:start_child_ret().
+start_tx(Module, TxKey) ->
+    supervisor:start_child(?SERVER, [Module, TxKey]).
 
 %% @private
 %% Start FSM implemented by given module.
--spec start_fsm_link(module(), #tx_state{}) ->
+-spec start_fsm_link(module(), sip_tx_key()) ->
           {ok, pid()} | ignore | {error, term()}.
-start_fsm_link(Module, TxState) ->
-    gen_fsm:start_link(Module, TxState, []).
+start_fsm_link(Module, TxKey) ->
+    gen_fsm:start_link(Module, TxKey, []).
 
 %%-----------------------------------------------------------------
 %% Supervisor callbacks

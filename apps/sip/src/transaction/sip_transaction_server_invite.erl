@@ -18,21 +18,23 @@
 -include("sip.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3, 'CONFIRMED'/2, 'CONFIRMED'/3]).
+-export(['INIT'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3, 'CONFIRMED'/2, 'CONFIRMED'/3]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
-'INIT'(init, TxState) ->
+-spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
+'INIT'({init, TxState}, _From, undefined) ->
+    gproc:mreg(p, l, TxState#tx_state.props),
+
     % send provisional response
     Trying = sip_message:create_response(TxState#tx_state.request, 100),
     TxState2 = TxState#tx_state{provisional = Trying},
 
     TxState3 = ?PROVISIONAL(TxState2),
-    {next_state, 'PROCEEDING', TxState3}.
+    {reply, ok, 'PROCEEDING', TxState3}.
 
 -spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 %% @doc

@@ -18,7 +18,7 @@
 -include("sip.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/2, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
+-export(['INIT'/3, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
@@ -28,8 +28,10 @@
 %% @doc
 %% `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
-'INIT'(init, TxState) ->
+-spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
+'INIT'({init, TxState}, _From, undefined) ->
+    gproc:mreg(p, l, TxState#tx_state.props),
+
     % start Timer A only for unreliable transports
     IsReliable = TxState#tx_state.reliable,
     TxState2 = case IsReliable of
@@ -40,7 +42,7 @@
     TxState3 = ?START(timerB, 64 * ?T1, TxState2),
     % send request
     TxState4 = ?REQUEST(TxState3),
-    {next_state, 'CALLING', TxState4}.
+    {reply, ok, 'CALLING', TxState4}.
 
 %% @doc
 %% Handle retransmission timer (Timer A).

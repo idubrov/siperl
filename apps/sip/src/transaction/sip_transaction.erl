@@ -49,16 +49,18 @@ start_client_tx(TU, To, Request, Options)
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(To#sip_destination.transport),
 
-    Key = tx_key(client, Request2),
+    TxKey = tx_key(client, Request2),
     Module = tx_module(client, Request2),
     TxState = #tx_state{to = To,
-                        tx_key = Key,
+                        tx_key = TxKey,
                         tx_user = TU,
                         request = Request2,
                         reliable = Reliable,
-                        options = Options},
-    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
-    {ok, Key}.
+                        options = Options,
+                        props = tx_props(client, TxKey, Request2)},
+    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
+    ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
+    {ok, TxKey}.
 
 %% @doc
 %% Start new server transaction.
@@ -71,14 +73,17 @@ start_server_tx(TU, Request)
     Via = sip_message:header_top_value('via', Request),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
-    Key = tx_key(server, Request),
+    TxKey = tx_key(server, Request),
     Module = tx_module(server, Request),
-    TxState = #tx_state{tx_key = Key,
+    TxState = #tx_state{tx_key = TxKey,
                         request = Request,
                         tx_user = TU,
-                        reliable = Reliable},
-    {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
-    {ok, Key}.
+                        reliable = Reliable,
+                        props = tx_props(server, TxKey, Request)},
+    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
+    ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
+    {ok, TxKey}.
+
 
 -spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].
 list_tx() ->
@@ -215,4 +220,18 @@ tx_send(Key, Msg) ->
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
             {ok, Key}
+    end.
+
+tx_props(client, _TxKey, #sip_request{}) -> [];
+tx_props(server, TxKey, #sip_request{} = Msg) ->
+    % Add gproc: property for loop detection for server transactions, see 8.2.2.2
+    From = sip_message:header_top_value(from, Msg),
+    case lists:keyfind(tag, 1, From#sip_hdr_address.params) of
+        {tag, FromTag} ->
+            CallId = sip_message:header_top_value('call-id', Msg),
+            CSeq = sip_message:header_top_value(cseq, Msg),
+            Prop = {tx_loop, FromTag, CallId, CSeq},
+            [{Prop, TxKey}];
+        false ->
+            []
     end.

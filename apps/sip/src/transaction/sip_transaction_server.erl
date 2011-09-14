@@ -18,16 +18,17 @@
 -include("sip.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/2, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
+-export(['INIT'/3, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
-'INIT'(init, TxState) ->
-    {next_state, 'TRYING', TxState}.
+-spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
+'INIT'({init, TxState}, _From, undefined) ->
+    gproc:mreg(p, l, TxState#tx_state.props),
+    {reply, ok, 'TRYING', TxState}.
 
 -spec 'TRYING'(term(), term(), #tx_state{}) -> term().
 %% @doc

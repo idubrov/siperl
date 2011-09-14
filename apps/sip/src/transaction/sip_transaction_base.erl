@@ -27,32 +27,10 @@
 %% API
 %%-----------------------------------------------------------------
 -spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
-init(#tx_state{tx_key = Key, request = Msg} = TxState) ->
+init(TxKey) ->
     % Register transaction under its key
-    gproc:add_local_name({tx, Key}),
-
-    % Add gproc: property for loop detection for server transactions, see 8.2.2.2
-    case Key of
-        #sip_tx_server{} ->
-            From = sip_message:header_top_value(from, Msg),
-            case lists:keyfind(tag, 1, From#sip_hdr_address.params) of
-                {tag, FromTag} ->
-                    CallId = sip_message:header_top_value('call-id', Msg),
-                    CSeq = sip_message:header_top_value(cseq, Msg),
-                    gproc:add_local_property({tx_loop, FromTag, CallId, CSeq}, Key),
-                    ok;
-                false ->
-                    ok
-            end;
-        #sip_tx_client{} ->
-            ok
-    end,
-
-    % Send initialization message to ourselves, to make any heavy-weight
-    % initialization. Also, any failure during the heavy-weight initialization
-    % is appropriately reported to the TU (see 8.1.3.1, RFC 3261)
-    gen_fsm:send_event(self(), init),
-    {ok, 'INIT', TxState}.
+    gproc:add_local_name({tx, TxKey}),
+    {ok, 'INIT', undefined}.
 
 -spec cancel_timer(integer(), #tx_state{}) -> #tx_state{}.
 cancel_timer(TimerIdx, TxState)
@@ -123,6 +101,9 @@ handle_info(Info, _State, TxState) ->
 %% Inform the transaction user about transition to 'TERMINATED' state.
 %% @end
 -spec terminate(term(), atom(), #tx_state{}) -> ok.
+terminate(_Reason, _State, undefined) ->
+    % Not yet initialized
+    ok;
 terminate(Reason, _State, TxState) ->
     TxKey = TxState#tx_state.tx_key,
 
@@ -156,6 +137,6 @@ code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
 
 notify_tu(TxState, Msg) ->
-    Pid = TxState#tx_state.tx_user ! Msg,
+    TxState#tx_state.tx_user ! Msg,
     ok.
 
