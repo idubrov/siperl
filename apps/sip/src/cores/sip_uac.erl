@@ -94,7 +94,7 @@ process_response(UAC, Response, ReqInfo) when is_record(UAC, uac) ->
 %% Internal functions
 
 %% Validate message according to the 8.1.3.3
--spec validate_vias(sip_message()) -> error_m:monad(ok).
+-spec validate_vias(#sip_response{}) -> error_m:monad(ok).
 validate_vias(Msg) ->
     Count = length(sip_message:header_values('via', Msg)),
     case Count of
@@ -102,15 +102,13 @@ validate_vias(Msg) ->
             error_m:return(ok);
         _Other ->
             % discard response, too much/few Via's
-            error_logger:warning_report(['message_discarded',
-                                         {reason, wrong_vias},
-                                         {msg, Msg}]),
+            sip_log:wrong_vias(Msg),
             error_m:fail(discarded)
     end.
 
 %% @doc Automatic handling of 3xx-6xx responses valve
 %% @end
--spec handle_response(#req_info{}, sip_message()) -> error_m:monad(ok).
+-spec handle_response(#req_info{}, #sip_response{}) -> error_m:monad(ok).
 handle_response(ReqInfo, #sip_response{status = Status} = Response)
   when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),

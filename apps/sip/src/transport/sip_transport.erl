@@ -62,19 +62,21 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     % Validate request
     ok = sip_message:validate_request(Request),
 
+    % Add Content-Length, if missing
+    Request2 = add_content_length(Request),
+
     % Update top Via header
     TTL = proplists:get_value(ttl, Opts, 1),
-    Request2 = add_via_sentby(Request, To, TTL),
+    Request3 = add_via_sentby(Request2, To, TTL),
 
-    Request3 = add_content_length(Request2),
     case transport_send(To, Request3) of
         ok -> ok;
         {error, too_big} ->
             % Try with congestion controlled protocol (TCP) (only for requests, 18.1)
-            error_logger:warning_msg("Message is too big, re-sending using TCP"),
+            sip_log:too_big(Request3),
 
-            % Change transport
-            send_request(To#sip_destination{transport = tcp}, Request, Opts);
+            % Change transport (note: using request without Via: updated)
+            send_request(To#sip_destination{transport = tcp}, Request2, Opts);
         {error, Reason} -> {error, Reason}
      end.
 
@@ -190,34 +192,9 @@ dispatch(From, Msg) when is_record(Msg, sip_response) ->
                 {ok, _TxRef} -> ok
             end;
         {ExpectedSentBy, SentBy} ->
-            error_logger:warning_report(['message_discarded',
-                                         {reason, sent_by_mismatch},
-                                         {'expected_sent_by', ExpectedSentBy},
-                                         {'sent_by', SentBy},
-                                         {msg, Msg}])
+            sip_log:sentby_mismatch(Msg, ExpectedSentBy, SentBy)
     end,
     ok.
-
-%%
-%% dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_request) ->
-%%     % reply with 400 Bad Request
-%%     error_logger:warning_report(['bad_request',
-%%                                  {reason, Reason},
-%%                                  {from, From},
-%%                                  {msg, Msg}]),
-%%     % TODO: Put reason in the response
-%%     Response = sip_message:create_response(Msg, 400),
-%%
-%%     % we are not going to go through whole procedures for sending response, just try to send
-%%     % via the same transport
-%%     {reply, Response};
-%% dispatch(From, {error, Reason, Msg}) when is_record(Msg, sip_response) ->
-%%     % discard malformed responses
-%%     error_logger:warning_report(['bad_response',
-%%                                  {reason, Reason},
-%%                                  {from, From},
-%%                                  {msg, Msg}]),
-%%     ok.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -312,11 +289,7 @@ dispatch_core(Kind, Msg) ->
             Pid ! {Kind, Msg},
             ok;
         undefined ->
-            % No UAS to handle request, discard and ignore
-            % FIXME: Only on debug level?
-            error_logger:info_report(['message_discarded',
-                                      {reason, no_core},
-                                      {msg, Msg}]),
+            sip_log:no_core(Msg),
             ok
     end.
 
