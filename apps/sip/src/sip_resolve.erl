@@ -61,7 +61,6 @@ client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI,
         Explicit ->
             % Transport is provided explicitly, make SRV query
             Domain = service_proto(Transport, TLS) ++ Target,
-            % FIXME: what if port is specified or address is given???
             Dest = #sip_destination{transport = Transport, params = Params},
             resolve_dest_srv(Domain, Dest);
         true ->
