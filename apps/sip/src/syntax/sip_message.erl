@@ -232,10 +232,9 @@ create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
                                  Name =:= cseq orelse Name =:= 'via' orelse
                                  Name =:= 'to')],
-    % also, insert zero-length Content-Length, so response could be sent "as-is"
     #sip_response{status = Status,
                   reason = Reason,
-                  headers = [{'content-length', 0} | Headers]}.
+                  headers = Headers}.
 
 %% @doc Create response for given request (with default Reason)
 %% @end
@@ -646,8 +645,7 @@ create_response_test_() ->
     % (default reason)
     Response =
         #sip_response{status = 405, reason = <<"Method Not Allowed">>,
-                     headers = [{'content-length', 0},
-                                {via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                     headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
                                 {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
                                 {to, <<"Bob <sip:bob@biloxi.com>">>},
                                 {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
@@ -656,8 +654,6 @@ create_response_test_() ->
     % custom reason
     Response2 = Response#sip_response{status = 201, reason = <<"Very Ok!">>},
     [% Check that all required headers are copied
-     % Also, create_response adds content-length of 0
-     % XXX: Should the content-length be added by transport layer instead?
      ?_assertEqual(Response, create_response(Request, 405)),
      ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>))
      ].

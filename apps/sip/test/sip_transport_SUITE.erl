@@ -252,7 +252,7 @@ send_response_udp_maddr(Config) ->
     Via = sip_headers:via(udp, SentBy, [{branch, sip_idgen:generate_branch()}, {'maddr', <<"239.0.0.100">>}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    Response = sip_message:append_header('content-length', 0, sip_message:create_response(Request, 200, <<"Ok">>)),
     ExpectedResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to maddr)
@@ -270,7 +270,7 @@ send_response_udp_maddr(Config) ->
     % RFC 3261, 18.2.2: Sending Responses (to received)
     Via3 = #sip_hdr_via{host = "localhost", port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
     Response3 = #sip_response{status = 200, reason = <<"Ok">>,
-                             headers = [{'via', [Via3]}]},
+                             headers = [{'via', [Via3]}, {'content-length', 0}]},
     ExpectedResponseBin2 = sip_message:to_binary(Response3),
 
     ok = sip_transport:send_response(Response3),
@@ -284,7 +284,7 @@ send_response_udp_default_port(_Config) ->
     Via = sip_headers:via(udp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(udp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    Response = sip_message:append_header('content-length', 0, sip_message:create_response(Request, 200, <<"Ok">>)),
     ExpectedResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (to sent-by and default port)
@@ -305,7 +305,7 @@ receive_request_send_response_tcp(_Config) ->
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    Response = sip_message:append_header('content-length', 0, sip_message:create_response(Request, 200, <<"Ok">>)),
     ExpectedResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, same connection)
@@ -342,7 +342,7 @@ receive_request_send_response_tcp_reconnect(Config) ->
     Via = sip_headers:via(tcp, SentBy, [{branch, sip_idgen:generate_branch()}]),
     Request = sip_message:replace_top_header('via', Via, sip_test:invite(tcp)),
 
-    Response = sip_message:create_response(Request, 200, <<"Ok">>),
+    Response = sip_message:append_header('content-length', 0, sip_message:create_response(Request, 200, <<"Ok">>)),
     ExpectedResponseBin = sip_message:to_binary(Response),
 
     % RFC 3261, 18.2.2: Sending Responses (reliable protocol, server reopens connection)

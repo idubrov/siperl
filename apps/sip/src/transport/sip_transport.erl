@@ -65,12 +65,7 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     TTL = proplists:get_value(ttl, Opts, 1),
     Request2 = add_via_sentby(Request, To, TTL),
 
-    % Add Content-Length, if not present
-    Fun = fun(undefined) -> size(Request#sip_request.body);
-             (Value) -> Value
-          end,
-    Request3 = sip_message:update_top_header('content-length', Fun, Request2),
-
+    Request3 = add_content_length(Request2),
     case transport_send(To, Request3) of
         ok -> ok;
         {error, too_big} ->
@@ -86,27 +81,29 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
 %% @end
 -spec send_response(#sip_response{}) -> ok | {error, Reason :: term()}.
 send_response(Response) when is_record(Response, sip_response) ->
-    Via = sip_message:header_top_value(via, Response),
+    Response2 = add_content_length(Response),
+
+    Via = sip_message:header_top_value(via, Response2),
     case is_reliable(Via#sip_hdr_via.transport) of
         true ->
             % try to lookup the connection
-            Key = sip_transaction:tx_key(server, Response),
+            Key = sip_transaction:tx_key(server, Response2),
             case gproc:lookup_pids({p, l, {connection, Key}}) of
                 [Pid | _Rest] ->
                     Connection = #sip_connection{transport = Via#sip_hdr_via.transport, connection = Pid},
-                    case transport_send(Connection, Response) of
+                    case transport_send(Connection, Response2) of
                         ok -> ok;
                         {error, _Reason} ->
                             % try to send to address in `received'
-                            send_response_received(Response)
+                            send_response_received(Response2)
                     end;
                 [] ->
                     % no connections for tx, send to address `received'
-                    send_response_received(Response)
+                    send_response_received(Response2)
             end;
         false ->
             % not reliable -- send to address in `received'
-            send_response_received(Response)
+            send_response_received(Response2)
     end.
 
 %% @doc See RFC 3261 18.2.2 Sending Responses
@@ -336,6 +333,18 @@ pre_parse_headers(Headers) ->
            (Other) -> Other
         end,
     lists:map(Fun, Headers).
+
+%% Add Content-Length to the message, if not present
+add_content_length(Msg) ->
+    Fun =
+        fun(undefined) ->
+                case Msg of
+                    #sip_request{body = Body} -> size(Body);
+                    #sip_response{body = Body} -> size(Body)
+                end;
+           (Value) -> Value
+        end,
+    sip_message:update_top_header('content-length', Fun, Msg).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
