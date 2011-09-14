@@ -18,7 +18,6 @@
 -include("sip.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export([handle_info/3]).
 -export(['INIT'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3, 'CONFIRMED'/2, 'CONFIRMED'/3]).
 
 %%-----------------------------------------------------------------
@@ -28,27 +27,12 @@
 %% @end
 -spec 'INIT'(init, #tx_state{}) -> {next_state, atom(), #tx_state{}}.
 'INIT'(init, TxState) ->
-    % notify self to send provisional response
-    % (not to block initialization)
-    self() ! provisional,
-    {next_state, 'PROCEEDING', TxState}.
-
--spec handle_info(term(), atom(), #tx_state{}) ->
-          {stop, term(), #tx_state{}}.
-%% @doc Send provisional response.
-%% @end
-handle_info(provisional, _State, TxState) ->
     % send provisional response
     Trying = sip_message:create_response(TxState#tx_state.request, 100),
     TxState2 = TxState#tx_state{provisional = Trying},
 
     TxState3 = ?PROVISIONAL(TxState2),
-    {next_state, 'PROCEEDING', TxState3};
-
-%% @doc Let the base module handle the info.
-%% @end
-handle_info(Info, State, TxState) ->
-    sip_transaction_base:handle_info(Info, State, TxState).
+    {next_state, 'PROCEEDING', TxState3}.
 
 -spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 %% @doc

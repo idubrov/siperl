@@ -17,7 +17,7 @@
 -include("sip_transaction.hrl").
 -include("sip.hrl").
 
-%% FSM callbacks
+%% FSM callbacks (the rest are provided by `sip_transaction_base')
 -export(['INIT'/2, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
 
 %%-----------------------------------------------------------------
