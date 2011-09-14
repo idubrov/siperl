@@ -58,7 +58,7 @@ format_headers(Headers) ->
            ('authorization', binary()) -> #sip_hdr_auth{};
            ('call-id', binary()) -> binary();
            ('call-info', binary()) -> [#sip_hdr_info{}];
-           ('contact', binary()) -> [#sip_hdr_address{}]; % FIXME '*'
+           ('contact', binary()) -> [#sip_hdr_address{}] | '*';
            ('content-disposition', binary()) -> #sip_hdr_disposition{};
            ('content-encoding', binary()) -> [ContentCoding :: sip_name()];
            ('content-language', binary()) -> [LanguageTag :: sip_name()];
@@ -111,7 +111,7 @@ parse(Name, Bin) -> process(p, Name, Bin).
            ('authorization', #sip_hdr_auth{}) -> binary();
            ('call-id', binary()) -> binary();
            ('call-info', [#sip_hdr_info{}]) -> binary();
-           ('contact', [#sip_hdr_address{}]) -> binary(); % FIXME '*'
+           ('contact', [#sip_hdr_address{}] | '*') -> binary();
            ('content-disposition', #sip_hdr_disposition{}) -> binary();
            ('content-encoding', [ContentCoding :: sip_name()]) -> binary();
            ('content-language', [LanguageTag :: sip_name()]) -> binary();
