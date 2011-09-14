@@ -70,13 +70,13 @@ create_request(UAC, Method, ToValue) when
                  headers = [Via, MaxForwards, From, To, CSeq, CallId] ++ Routes}.
 
 %% @doc Send the request according to the 8.1.2 Sending the Request
-%% FIXME: Must have Contact: header if request can establish dialog (INVITE)
 %% @end
 -spec send_request(#uac{}, sip_message(), term()) -> ok | {error, Reason :: term()}.
 send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
-    RequestURI = Request#sip_request.uri,
+    ok = sip_message:validate_request(Request),
 
     % Put Request URI into the target set
+    RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
     ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
 
