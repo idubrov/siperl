@@ -13,7 +13,7 @@
 -export([method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
--export([validate_request/1]).
+-export([validate_request/1, validate_response/1]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
 -export([with_branch/2, foldl_headers/4]).
@@ -175,7 +175,7 @@ header_values(Name, Headers) when is_list(Headers) ->
 %% Fails if header with given name does not exist.
 %% <em>This function parses the header value if header is in binary form.</em>
 %% @end
--spec header_top_value(sip_name(), sip_message()) -> term().
+-spec header_top_value(sip_name(), sip_message() | sip_headers()) -> term().
 header_top_value(Name, Msg) when is_record(Msg, sip_request); is_record(Msg, sip_response) ->
     Headers = headers(Msg),
     {Name, Value} = lists:keyfind(Name, 1, Headers),
@@ -228,6 +228,7 @@ create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
 %% @end
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
+    % FIXME: Copy Timestamp: for provisional responses
     Headers = [{Name, Value} || {Name, Value} <- ReqHeaders,
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
                                  Name =:= cseq orelse Name =:= 'via' orelse
@@ -283,6 +284,41 @@ validate_request(#sip_request{method = Method, headers = Headers}) ->
           -> ok;
         _ -> {error, invalid_headers}
     end.
+
+%% @doc Validate that response contains all required headers
+%% A valid SIP response formulated by a UAS MUST, at a minimum, contain
+%% the following header fields: To, From, CSeq, Call-ID and Via;
+%% all of these header fields are mandatory in all SIP responses.
+%% @end
+-spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
+validate_response(#sip_response{headers = Headers}) ->
+    CountFun =
+        fun ({Name, Value}, Counts) ->
+                 % assign tuple index for every header being counted
+                 Idx = case Name of
+                           to -> 1;
+                           from -> 2;
+                           cseq -> 3;
+                           'call-id' -> 4;
+                           via -> 5;
+                           _ -> 0
+                       end,
+                 if
+                     Idx > 0 ->
+                         Incr = if is_list(Value) -> length(Value); true -> 1 end,
+                         setelement(Idx, Counts, element(Idx, Counts) + Incr);
+                     true -> Counts
+                 end
+        end,
+
+    % Count headers
+    case lists:foldl(CountFun, {0, 0, 0, 0, 0}, Headers) of
+        C when C >= {1, 1, 1, 1, 1}, % Each header must be at least once (except contact),
+               C =< {1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
+          -> ok;
+        _ -> {error, invalid_headers}
+    end.
+
 
 %% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
@@ -635,7 +671,7 @@ create_response_test_() ->
         #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>,
                      headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
                                 {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
-                                {to, <<"Bob <sip:bob@biloxi.com>">>},
+                                {to, <<"Bob <sip:bob@biloxi.com>;tag=XyXULrhOnNkGqswu">>},
                                 {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
                                 {'call-id', <<"987asjd97y7atg">>},
                                 {cseq, <<"986759 INVITE">>},
@@ -647,12 +683,13 @@ create_response_test_() ->
         #sip_response{status = 405, reason = <<"Method Not Allowed">>,
                      headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
                                 {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
-                                {to, <<"Bob <sip:bob@biloxi.com>">>},
+                                {to, <<"Bob <sip:bob@biloxi.com>;tag=XyXULrhOnNkGqswu">>},
                                 {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
                                 {'call-id', <<"987asjd97y7atg">>},
                                 {cseq, <<"986759 INVITE">>}]},
     % custom reason
     Response2 = Response#sip_response{status = 201, reason = <<"Very Ok!">>},
+
     [% Check that all required headers are copied
      ?_assertEqual(Response, create_response(Request, 405)),
      ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>))

@@ -268,12 +268,11 @@ send_response_udp_maddr(Config) ->
     ok = inet:setopts(UDP, [{drop_membership, {MAddr, {0, 0, 0, 0}}}]),
 
     % RFC 3261, 18.2.2: Sending Responses (to received)
-    Via3 = #sip_hdr_via{host = "localhost", port = 25060, transport = udp, params = [{'received',  {127, 0, 0, 1}}]},
-    Response3 = #sip_response{status = 200, reason = <<"Ok">>,
-                             headers = [{'via', [Via3]}, {'content-length', 0}]},
-    ExpectedResponseBin2 = sip_message:to_binary(Response3),
+    Via2 = sip_headers:via(udp, {"localhost", 25060}, [{'received',  {127, 0, 0, 1}}]),
+    Response2 = sip_message:replace_top_header(via, Via2, Response),
+    ExpectedResponseBin2 = sip_message:to_binary(Response2),
 
-    ok = sip_transport:send_response(Response3),
+    ok = sip_transport:send_response(Response2),
     {ok, {_, _, ExpectedResponseBin2}} = gen_udp:recv(UDP, size(ExpectedResponseBin2), ?TIMEOUT),
     ok.
 

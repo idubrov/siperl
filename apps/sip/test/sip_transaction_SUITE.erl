@@ -714,7 +714,7 @@ server_err(Config) ->
 
 %% @doc
 %% Scenario tested:
-%% - non-INVITE request is received
+%% - non-INVITE request is received (withou tag in `To:' header)
 %% - request is passed to TU
 %% - is_loop_detected returns true for message with same tags, but different branch
 %% @end
@@ -722,7 +722,12 @@ server_loop(Config) ->
     Transport  = ?config(transport, Config),
     Reliable = ?config(reliable, Config),
 
-    Request = sip_test:request('OPTIONS', Transport),
+    % Generate request with To: header missing the `tag' parameter
+    Request =
+        sip_message:replace_top_header(
+          to,
+          sip_headers:address(<<"Alice">>, sip_uri:parse(<<"sip:alice@atlanta.com">>), []),
+          sip_test:request('OPTIONS', Transport)),
     Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     % Start server transaction

@@ -55,6 +55,7 @@ is_reliable(tcp) -> true.
 %% Send request via the specified connection.
 %% Opts = [term()]. The only supported option is {ttl, TTL} used
 %% for sending multicast requests.
+%% <em>Note: Content-Length header is automatically added if it is not present</em>
 %% @end
 -spec send_request(#sip_destination{}, #sip_request{}, [{ttl, non_neg_integer()}]) -> ok | {error, Reason :: term()}.
 send_request(To, Request, Opts) when is_record(To, sip_destination) ->
@@ -78,32 +79,39 @@ send_request(To, Request, Opts) when is_record(To, sip_destination) ->
      end.
 
 %% @doc Send response by following RFC 3261 18.2.2
+%% <em>Note: Content-Length header is automatically added if it is not present</em>
+%% <em>Note: `To:' header `tag' parameter is automatically generated and added if it
+%% is not present and status code is not 100</em>
 %% @end
 -spec send_response(#sip_response{}) -> ok | {error, Reason :: term()}.
 send_response(Response) when is_record(Response, sip_response) ->
-    Response2 = add_content_length(Response),
+    % Validate response
+    ok = sip_message:validate_response(Response),
 
-    Via = sip_message:header_top_value(via, Response2),
+    Response2 = add_content_length(Response),
+    Response3 = add_to_tag(Response2),
+
+    Via = sip_message:header_top_value(via, Response3),
     case is_reliable(Via#sip_hdr_via.transport) of
         true ->
             % try to lookup the connection
-            Key = sip_transaction:tx_key(server, Response2),
+            Key = sip_transaction:tx_key(server, Response3),
             case gproc:lookup_pids({p, l, {connection, Key}}) of
                 [Pid | _Rest] ->
                     Connection = #sip_connection{transport = Via#sip_hdr_via.transport, connection = Pid},
-                    case transport_send(Connection, Response2) of
+                    case transport_send(Connection, Response3) of
                         ok -> ok;
                         {error, _Reason} ->
                             % try to send to address in `received'
-                            send_response_received(Response2)
+                            send_response_received(Response3)
                     end;
                 [] ->
                     % no connections for tx, send to address `received'
-                    send_response_received(Response2)
+                    send_response_received(Response3)
             end;
         false ->
             % not reliable -- send to address in `received'
-            send_response_received(Response2)
+            send_response_received(Response3)
     end.
 
 %% @doc See RFC 3261 18.2.2 Sending Responses
@@ -345,6 +353,19 @@ add_content_length(Msg) ->
            (Value) -> Value
         end,
     sip_message:update_top_header('content-length', Fun, Msg).
+
+
+%% Add To: header tag, if not present and response status is not "100 Trying"
+add_to_tag(Msg) ->
+    To = sip_message:header_top_value(to, Msg),
+    Params = To#sip_hdr_address.params,
+    case lists:keyfind(tag, 1, Params) of
+        false ->
+            To2 = To#sip_hdr_address{params = [{tag, sip_idgen:generate_tag()} | Params]},
+            sip_message:replace_top_header(to, To2, Msg);
+        _Other ->
+            Msg
+    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks

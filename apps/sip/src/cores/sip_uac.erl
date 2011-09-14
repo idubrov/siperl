@@ -1,4 +1,3 @@
-%%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UAC response processing behaviour
 %%%
@@ -15,7 +14,6 @@
 %%% </ul>
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
-%%%----------------------------------------------------------------
 -module(sip_uac).
 -compile({parse_transform, do}).
 
