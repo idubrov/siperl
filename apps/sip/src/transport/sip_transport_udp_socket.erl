@@ -30,6 +30,9 @@
 %%% <em>Since this process register itself with `gproc' in "connected"
 %%% mode, the same process should be used by all parties communicating
 %%% with same remote address</em>
+%%%
+%%% <em>Note: transport is responsible for basic validation of
+%%% incoming requests/responses and sending "400 Bad Request/Response".</em>
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------,
