@@ -157,7 +157,7 @@ next_destination(#req_info{destinations = []}, _Response) ->
 next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response) ->
     % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-    {ok, _TxKey} = sip_transaction:start_client_tx(self(), Top, Request, ReqInfo2),
+    {ok, _TxKey} = sip_transaction:start_client_tx(self(), Top, Request, [{user_data, ReqInfo2}]),
     % stop processing
     error_m:fail(processed).
 

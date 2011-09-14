@@ -79,8 +79,9 @@ send_ack(Response, TxState) ->
 -spec send_request(#sip_request{}, #tx_state{}) -> #tx_state{}.
 send_request(Request, TxState) ->
     % Send request to the given destination address
-    % FIXME: Options!
-    case sip_transport:send_request(TxState#tx_state.to, Request, []) of
+    % Extract 'ttl' option from the options list
+    Opts = lists:filter(fun(N) -> N =:= ttl end, TxState#tx_state.options),
+    case sip_transport:send_request(TxState#tx_state.to, Request, Opts) of
         ok -> ok;
         {error, Reason} -> erlang:error(Reason)
     end,
@@ -96,7 +97,8 @@ send_response(Response, TxState) ->
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> term().
 pass_to_tu(#sip_response{} = Msg, TxState) ->
-    notify_tu(TxState, {response, Msg, TxState#tx_state.user_data}),
+    UserData = proplists:get_value(user_data, TxState#tx_state.options),
+    notify_tu(TxState, {response, Msg, UserData}),
     TxState.
 
 %% @private

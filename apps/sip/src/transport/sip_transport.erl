@@ -56,7 +56,7 @@ is_reliable(tcp) -> true.
 %% Opts = [term()]. The only supported option is {ttl, TTL} used
 %% for sending multicast requests.
 %% @end
--spec send_request(#sip_destination{}, #sip_request{}, [term()]) -> ok | {error, Reason :: term()}.
+-spec send_request(#sip_destination{}, #sip_request{}, [{ttl, non_neg_integer()}]) -> ok | {error, Reason :: term()}.
 send_request(To, Request, Opts) when is_record(To, sip_destination) ->
     % Validate request
     ok = sip_message:validate_request(Request),

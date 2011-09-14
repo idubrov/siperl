@@ -30,14 +30,18 @@
 %% @end
 -spec start_client_tx(pid() | term(), #sip_destination{}, #sip_request{}) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, To, Request) ->
-  start_client_tx(TU, To, Request, undefined).
+  start_client_tx(TU, To, Request, []).
 
 %% @doc Start new client transaction with user data associated with it.
 %% @end
--spec start_client_tx(pid() | term(), #sip_destination{}, #sip_request{}, term()) -> {ok, #sip_tx_client{}}.
-start_client_tx(TU, To, Request, UserData)
+-spec start_client_tx(pid() | term(),
+                      #sip_destination{},
+                      #sip_request{},
+                      [{ttl, non_neg_integer()} | {user_data, any()}]) -> {ok, #sip_tx_client{}}.
+start_client_tx(TU, To, Request, Options)
   when is_record(To, sip_destination),
-       is_record(Request, sip_request) ->
+       is_record(Request, sip_request),
+       is_list(Options) ->
 
     % Every new client transaction has its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
@@ -53,7 +57,7 @@ start_client_tx(TU, To, Request, UserData)
                         tx_user = TU,
                         request = Request2,
                         reliable = Reliable,
-                        user_data = UserData},
+                        options = Options},
     {ok, _Pid} = sip_transaction_tx_sup:start_tx(Module, TxState),
     {ok, Key}.
 
