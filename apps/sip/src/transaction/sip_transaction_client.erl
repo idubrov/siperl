@@ -27,6 +27,8 @@
 %% @end
 -spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
 'INIT'({init, TxState}, _From, undefined) ->
+    gproc:mreg(p, l, TxState#tx_state.props),
+
     % start Timer E only for unreliable transports
     IsReliable = TxState#tx_state.reliable,
     TxState2 = case IsReliable of

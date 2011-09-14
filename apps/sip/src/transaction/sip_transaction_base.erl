@@ -29,6 +29,8 @@
 -spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
 init(TxKey) ->
     % Register transaction under its key
+    % FIXME: Race condition is possible. If two messages matching same
+    % transaction arrive, second one could go to the unitialized transaction
     gproc:add_local_name({tx, TxKey}),
     {ok, 'INIT', undefined}.
 
