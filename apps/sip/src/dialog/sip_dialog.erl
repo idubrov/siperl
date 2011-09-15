@@ -1,11 +1,17 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc SIP dialog API
+%%% @doc SIP dialog server
+%%%
+%%% Manages SIP dialog creation, state, updates and expiration.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_dialog).
 
 %% API
--export([create_dialog/3]).
+-export([start_link/0, create_dialog/3]).
+
+%% Server callbacks
+-export([init/1, terminate/2, code_change/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -13,7 +19,18 @@
 
 -define(SERVER, ?MODULE).
 
+-record(state, {table}).
+
+-type gen_from() :: {pid(), term()}.
+
 %% API
+
+-spec start_link() -> {ok, pid()} | {error, term()}.
+%% @doc Creates dialog server as part of the supervision tree.
+%% @end
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
+
 
 -spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> ok.
 %% @doc Create new dialog
@@ -22,7 +39,49 @@ create_dialog(uas, Request, Response) ->
     Dialog = uas_dialog_state(Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
 
+%%-----------------------------------------------------------------
+%% Server callbacks
+%%-----------------------------------------------------------------
+
+%% @private
+-spec init({}) -> {ok, #state{}}.
+init({}) ->
+    Table = ets:new(?MODULE, [private, set, {keypos, #sip_dialog.id}]),
+    {ok, #state{table = Table}}.
+
+%% @private
+-spec handle_call({create_dialog, #sip_dialog{}}, gen_from(), #state{}) -> {reply, ok, #state{}}.
+handle_call({create_dialog, Dialog}, _Client, State) ->
+    case ets:insert_new(State#state.table, Dialog) of
+        true -> {reply, ok, State};
+        false -> {reply, {error, already_exist}, State}
+    end;
+handle_call(Request, _From, State) ->
+    {stop, {unexpected, Request}, State}.
+
+%% @private
+-spec handle_cast(term(), #state{}) -> {stop, {unexpected, term()}, #state{}}.
+handle_cast(Cast, State) ->
+    {stop, {unexpected, Cast}, State}.
+
+%% @private
+-spec handle_info(term(), #state{}) -> {stop, {unexpected, term()}, #state{}}.
+handle_info(Info, State) ->
+    {stop, {unexpected, Info}, State}.
+
+%% @private
+-spec terminate(term(), #state{}) -> ok.
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+-spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%-----------------------------------------------------------------
 %% Internal functions
+%%-----------------------------------------------------------------
 
 -spec uas_dialog_state(#sip_request{}, #sip_response{}) -> #sip_dialog{}.
 %% @doc Construct dialog state for UAS
@@ -34,7 +93,6 @@ uas_dialog_state(Request, Response)
     CSeq = sip_message:header_top_value(cseq, Request),
     From = sip_message:header_top_value(from, Request),
     CallId = sip_message:header_top_value('call-id', Request),
-
     % To comes from the response (MUST have tag)
     To = sip_message:header_top_value(to, Response),
 

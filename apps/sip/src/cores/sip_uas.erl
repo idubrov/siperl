@@ -63,7 +63,7 @@ handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
 
 %% @private
--spec handle_cast({send_response, #sip_response{}}, #state{}) -> {reply, ok, #state{}}.
+-spec handle_cast({send_response, #sip_response{}}, #state{}) -> {noreply, #state{}}.
 handle_cast({send_response, Request, Response}, State) ->
     ok = do_send_response(Request, Response, State),
     {noreply, State};
