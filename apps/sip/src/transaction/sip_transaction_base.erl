@@ -26,7 +26,7 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec init(sip_tx_key()) -> {ok, atom(), undefined}.
+-spec init(sip_tx_key()) -> {ok, 'INIT', undefined}.
 init(TxKey) ->
     % Register transaction under its key
     % FIXME: Race condition is possible. If two messages matching same
@@ -108,18 +108,18 @@ terminate(_Reason, _State, undefined) ->
     ok;
 terminate(Reason, _State, TxState) ->
     TxKey = TxState#tx_state.tx_key,
-
     % For client transactions, handle failure as response message
     % See 8.1.3.1
-    TxState2 =
+    ok =
         case failed_status(TxState#tx_state.tx_key, Reason) of
-            false -> TxState;
+            false -> ok;
             Status ->
                 % Send failure as response to the TU
                 Response = sip_message:create_response(TxState#tx_state.request, Status),
-                pass_to_tu(Response, TxState)
+                pass_to_tu(Response, TxState),
+                ok
         end,
-    notify_tu(TxState2, {tx, TxKey, {terminated, Reason}}),
+    notify_tu(TxState, {tx, TxKey, {terminated, Reason}}),
     ok.
 
 %% @doc Determine if response should be sent to TU
