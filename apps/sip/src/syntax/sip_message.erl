@@ -48,7 +48,7 @@ is_dialog_establishing(#sip_response{} = Response) ->
     is_dialog_establishing(method(Response), Response#sip_response.status, Response).
 
 is_dialog_establishing('INVITE', Status, Msg) when Status >= 200, Status =< 299 ->
-    To = sip_message:header_top_value(to, Msg),
+    To = header_top_value(to, Msg),
     case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
         false ->
             % No tag in `To:', method is 'INVITE', status is 2xx
@@ -273,10 +273,24 @@ count(Name, Msg) ->
 
 is_contact_valid(Msg) ->
     case header_values(contact, Msg) of
-        [Contact] ->
-            is_record(Contact#sip_hdr_address.uri, sip_uri);
+        [Contact] when is_record(Contact#sip_hdr_address.uri, sip_uri) -> true;
         _Other -> false % either no contact header or multiple headers
     end.
+
+is_contact_secure(Request) ->
+    IsRequestSecure = sip_uri:is_sips(Request#sip_request.uri),
+    IsRouteSecure =
+        case has_header(route, Request) of
+            true ->
+                #sip_hdr_address{uri = Route} = header_top_value(route, Request),
+                sip_uri:is_sips(Route);
+            false -> false
+        end,
+    Contact = header_top_value(contact, Request),
+    IsContactSecure = sip_uri:is_sips(Contact#sip_hdr_address.uri),
+
+    % Contact can be non-secure only if both Request-URI and top Route are not secure, 12.1.2
+    IsContactSecure orelse (not IsRequestSecure andalso not IsRouteSecure).
 
 %% @doc Validate that request contains all required headers
 %% A valid SIP request formulated by a UAC MUST, at a minimum, contain
@@ -298,7 +312,7 @@ validate_request(#sip_request{method = Method} = Msg) ->
         % The Contact header field MUST be present and contain exactly one SIP
         % or SIPS URI in any request that can result in the establishment of a
         % dialog.
-        check(IsNotDialogEstablishing orelse is_contact_valid(Msg), {invalid, contact})]).
+        check(IsNotDialogEstablishing orelse (is_contact_valid(Msg) andalso is_contact_secure(Msg)), {invalid, contact})]).
 
 %% @doc Validate that response contains all required headers
 %% A valid SIP response formulated by a UAS MUST, at a minimum, contain
@@ -742,12 +756,13 @@ helpers_test_() ->
     InvalidResponse = create_response(InvalidRequest, 200),
 
     % with added contact header
-    ValidRequest2 =
-        InvalidRequest#sip_request{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_request.headers]},
-
-    ValidResponse2 =
-        InvalidResponse#sip_response{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_request.headers]},
+    ValidRequest2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidRequest),
+    ValidResponse2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse),
     ValidResponse3 = create_response(InvalidRequest, 300), % not dialog-establishing response
+
+    % Contact is not sips URI, but top route is
+    InvalidRequest2 = append_header(route, sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
+    ValidRequest3 = replace_top_header(contact, sip_headers:address(<<>>, <<"sips:alice@localhost">>, []), InvalidRequest2),
 
 
     [% Header lookup functions
@@ -766,6 +781,9 @@ helpers_test_() ->
      ?_assertEqual(ok, validate_request(ValidRequest)),
      ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest)),
      ?_assertEqual(ok, validate_request(ValidRequest2)),
+     ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest2)),
+     ?_assertEqual(ok, validate_request(ValidRequest3)),
+
 
      % Validation
      ?_assertEqual(ok, validate_response(ValidResponse)),
