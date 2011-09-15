@@ -167,13 +167,15 @@
 %% SIP dialogs
 %%-----------------------------------------------------------------
 
--type sip_dialog_id() :: {CallId :: binary(),
-                          LocalTag :: binary(),
-                          RemoteTag :: binary()}.
+-record(sip_dialog_id,
+        {call_id :: binary(),
+         local_tag :: binary(),
+         remote_tag :: binary()}).
+
 %% Dialog is identified by call-id, local and remote tags.
 
 -record(sip_dialog,
-        {id                 :: sip_dialog_id(),
+        {id                 :: #sip_dialog_id{},
          local_seq          :: sip_sequence(),
          remote_seq         :: sip_sequence(),
          local_uri          :: sip_uri(),

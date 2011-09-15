@@ -10,7 +10,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/2, send_response/2]).
+-export([start_link/2, send_response/3]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -35,9 +35,10 @@ start_link(Callback, Context) when is_atom(Callback) ->
 
 %% @doc Initiate a response from the UAS
 %% @end
--spec send_response(pid() | atom(), #sip_response{}) -> ok.
-send_response(UAS, Response) when is_record(Response, sip_response) ->
-    gen_server:cast(UAS, {send_response, Response}),
+-spec send_response(pid() | atom(), #sip_request{}, #sip_response{}) -> ok.
+send_response(UAS, Request, Response) when is_record(Response, sip_response) ->
+    % FIXME: Instead, store unreplied requests somewhere and provide request id...
+    gen_server:cast(UAS, {send_response, Request, Response}),
     ok.
 
 %%-----------------------------------------------------------------
@@ -63,8 +64,8 @@ handle_call(Request, _From, State) ->
 
 %% @private
 -spec handle_cast({send_response, #sip_response{}}, #state{}) -> {reply, ok, #state{}}.
-handle_cast({send_response, Response}, State) ->
-    ok = do_send_response(undefined, Response, State),
+handle_cast({send_response, Request, Response}, State) ->
+    ok = do_send_response(Request, Response, State),
     {noreply, State};
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
@@ -157,24 +158,26 @@ validate_required(Request, #state{callback = Callback} = State) ->
             error_m:fail(bad_extension)
     end.
 
--spec do_send_response(#sip_request{} | undefined, #sip_response{}, #state{}) -> ok.
+-spec do_send_response(#sip_request{}, #sip_response{}, #state{}) -> ok.
 do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
     % Validate response before sending it
     ok = sip_message:validate_response(Response),
 
+    ok = case sip_message:is_dialog_establishing(Response) of
+        true ->
+            ok = sip_dialog:create_dialog(uas, Request, Response);
+        false ->
+            ok
+    end,
+
     % Append Supported and Allow headers (only if request is available)
-    Response2 =
-        case Request of
-            undefined ->
-                Response;
-            _Other ->
-                Allow = Callback:allowed_methods(Request, State#state.context),
-                Extensions = Callback:extensions(Request, State#state.context),
-                R1 = sip_message:append_header(allow, Allow, Response),
-                R2 = sip_message:append_header(supported, Extensions, R1),
-                R2
-        end,
-    {ok, _TxKey} = sip_transaction:send_response(Response2),
+    Allow = Callback:allowed_methods(Request, State#state.context),
+    Extensions = Callback:extensions(Request, State#state.context),
+    Response2 = sip_message:append_header(allow, Allow, Response),
+    Response3 = sip_message:append_header(supported, Extensions, Response2),
+
+    % send
+    {ok, _TxKey} = sip_transaction:send_response(Response3),
     ok.
 
 do_handle_request(Request, #state{callback = Callback} = State) ->
@@ -186,5 +189,3 @@ do_handle_request(Request, #state{callback = Callback} = State) ->
             ok = do_send_response(Request, Response, State),
             {ok, State#state{context = Context}}
     end.
-
-
