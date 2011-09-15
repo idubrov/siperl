@@ -26,7 +26,7 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec init(#tx_state{}) -> {ok, atom(), #tx_state{}}.
+-spec init(sip_tx_key()) -> {ok, atom(), undefined}.
 init(TxKey) ->
     % Register transaction under its key
     % FIXME: Race condition is possible. If two messages matching same
@@ -42,7 +42,7 @@ cancel_timer(TimerIdx, TxState)
             TxState;
 
         Timer ->
-            gen_fsm:cancel_timer(Timer),
+            _Ignore = gen_fsm:cancel_timer(Timer),
             setelement(TimerIdx, TxState, undefined)
     end.
 
@@ -75,11 +75,11 @@ send_response(Response, TxState) ->
     end,
     TxState.
 
--spec pass_to_tu(#sip_response{}, #tx_state{}) -> term().
+-spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
 pass_to_tu(#sip_response{} = Msg, TxState) ->
     UserData = proplists:get_value(user_data, TxState#tx_state.options),
     notify_tu(TxState, {response, Msg, UserData}),
-    TxState.
+    ok.
 
 %% @private
 -spec handle_event(term(), atom(), #tx_state{}) ->

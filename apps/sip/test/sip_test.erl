@@ -61,10 +61,9 @@ generate_body(Bin, Repeat, Count) ->
 with_timeout(Funs, Timeout) ->
     [fun (R) -> {timeout, Timeout, fun() -> Fun(R) end} end || Fun <- Funs].
 
-%% @doc
-%% Shutdown given linked supervisor.
+%% @doc Shutdown process
 %% @end
-shutdown_sup(Pid) ->
+shutdown(Pid) ->
     process_flag(trap_exit, true),
     exit(Pid, shutdown),
     receive

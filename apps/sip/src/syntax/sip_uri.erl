@@ -37,6 +37,7 @@ parse(Bin) when is_binary(Bin) ->
 
 %% @doc Check if SIP URI is strict router URI
 %% @end
+-spec is_strict_router(#sip_uri{}) -> boolean().
 is_strict_router(#sip_uri{params = Params}) ->
     not proplists:get_bool(lr, Params).
 

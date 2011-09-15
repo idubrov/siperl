@@ -41,7 +41,7 @@ start_link() ->
 %% @doc
 %% Start transaction FSM process.
 %% @end
--spec start_tx(module(), sip_tx_key()) -> supervisor:start_child_ret().
+-spec start_tx(module(), sip_tx_key()) -> supervisor:startchild_ret().
 start_tx(Module, TxKey) ->
     supervisor:start_child(?SERVER, [Module, TxKey]).
 

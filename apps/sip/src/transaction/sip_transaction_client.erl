@@ -25,7 +25,7 @@
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
+-spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {reply, ok, 'TRYING', #tx_state{}}.
 'INIT'({init, TxState}, _From, undefined) ->
     gproc:mreg(p, l, TxState#tx_state.props),
 
@@ -67,14 +67,14 @@
   when Status >= 100, Status =< 199 ->
     %% Provisional response, transition to PROCEEDING state.
 
-    ?TU(Response, TxState),
+    ok = ?TU(Response, TxState),
     {reply, ok, 'PROCEEDING', TxState};
 
 'TRYING'({response, Status, Response}, _From, TxState)
   when Status >= 200, Status =< 699 ->
     %% Final response, transition to COMPLETED state.
 
-    ?TU(Response, TxState),
+    ok = ?TU(Response, TxState),
 
     % cancel the timers E and F
     TxState2 = ?CANCEL(timerE, TxState),

@@ -38,7 +38,7 @@ lookup_socket(To) ->
             % Start new UDP socket for given destination
             % Note that this could actually fail in case of race condition
             % So we query gproc again to get the pid of surviving socket
-            sip_transport_udp_socket_sup:start_socket(To),
+            _Ignore = sip_transport_udp_socket_sup:start_socket(To),
             gproc:lookup_pid(Key);
         [P|_] -> P
     end.

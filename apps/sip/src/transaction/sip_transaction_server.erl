@@ -25,7 +25,7 @@
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {next_state, atom(), #tx_state{}}.
+-spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {reply, ok, 'TRYING', #tx_state{}}.
 'INIT'({init, TxState}, _From, undefined) ->
     gproc:mreg(p, l, TxState#tx_state.props),
     {reply, ok, 'TRYING', TxState}.

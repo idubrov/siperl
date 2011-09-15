@@ -5,7 +5,8 @@
                  sip_transport,
                  sip_transport_udp_socket_sup,
                  sip_transport_tcp_conn_sup,
-                 sip_transaction_tx_sup
+                 sip_transaction_tx_sup,
+                 sip_uac
                  ]},
    {applications, [kernel, stdlib, gproc]},
    {mod, {sip_app,[]}},

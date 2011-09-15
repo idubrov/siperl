@@ -31,16 +31,15 @@ end_per_suite(_Config) ->
 
 init_per_testcase(_TestCase, Config) ->
     {ok, UAS} = sip_test_uas:start_link(),
-    {ok, UAC} = sip_test_uac:start_link(),
+    {ok, UAC} = sip_uac:start_link(),
     [{uac, UAC}, {uas, UAS} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test_uac:stop(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(uac, Config)),
     ok = sip_test_uas:stop(?config(uas, Config)),
     ok.
 
 options_200(Config) ->
-    UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
 
     % configure UAS to reply with 200 Ok
@@ -49,8 +48,9 @@ options_200(Config) ->
               end,
     sip_test_uas:set_handler(UAS, Handler),
 
-    RequestURI = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+    To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
+    Request = sip_uac:create_request('OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(Request),
 
     % Validate response
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -70,7 +70,6 @@ options_200(Config) ->
     ok.
 
 options_302(Config) ->
-    UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
 
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
@@ -84,8 +83,9 @@ options_302(Config) ->
               end,
     sip_test_uas:set_handler(UAS, Handler),
 
-    RequestURI = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+    To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
+    Request = sip_uac:create_request('OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(Request),
 
     % Validate response
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -105,7 +105,6 @@ options_302(Config) ->
     ok.
 
 options_302_failed(Config) ->
-    UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
 
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
@@ -122,15 +121,15 @@ options_302_failed(Config) ->
               end,
     sip_test_uas:set_handler(UAS, Handler),
 
-    RequestURI = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+    To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
+    Request = sip_uac:create_request('OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(Request),
 
     % Validate response code
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
 options_501(Config) ->
-    UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
 
     % configure UAS to reply with 501 Not Implemented
@@ -139,8 +138,9 @@ options_501(Config) ->
               end,
     sip_test_uas:set_handler(UAS, Handler),
 
-    RequestURI = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+    To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
+    Request = sip_uac:create_request('OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(Request),
 
     % Validate response
     #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
@@ -170,7 +170,6 @@ options_503_next_200(Config) ->
                               #sip_destination{address = {127, 0, 0, 1}, transport = tcp}]
                      end),
 
-    UAC = ?config(uac, Config),
     UAS = ?config(uas, Config),
 
     % configure UAS to reply with 503 Service Unavailable for UDP transport
@@ -185,8 +184,9 @@ options_503_next_200(Config) ->
               end,
     sip_test_uas:set_handler(UAS, Handler),
 
-    RequestURI = sip_headers:address(<<>>, <<"sip:example.test">>, []),
-    {ok, Response} = sip_test_uac:request(UAC, 'OPTIONS', RequestURI),
+    To = sip_headers:address(<<>>, <<"sip:example.test">>, []),
+    Request = sip_uac:create_request('OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(Request),
 
     % Validate response
     #sip_response{status = 200, reason = <<"Ok">>} = Response,

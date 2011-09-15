@@ -52,14 +52,15 @@ handle_call(Req, _From, State) ->
 -spec handle_cast(_, #state{}) -> {stop, {unexpected, _}, #state{}}.
 handle_cast(accept, State) ->
     Socket = State#state.socket,
-    case gen_tcp:accept(Socket, 1000) of
-        {ok, Sock} ->
-            sip_transport_tcp_conn_sup:start_connection(Sock);
-
-        {error, timeout} ->
-            ok
-    end,
-    gen_server:cast(self(), accept),
+    ok =
+        case gen_tcp:accept(Socket, 1000) of
+            {ok, Sock} ->
+                {ok, _Pid} = sip_transport_tcp_conn_sup:start_connection(Sock),
+                ok;
+            {error, timeout} ->
+                ok
+        end,
+    ok = gen_server:cast(self(), accept),
     {noreply, State};
 
 %% @private

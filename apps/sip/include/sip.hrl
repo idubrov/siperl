@@ -39,7 +39,7 @@
                   user = <<>>       :: binary(),
                   password = <<>>   :: binary(),
                   host = undefined  :: inet:ip_address() | string(),
-                  port = undefined  :: undefined | inet:ip_port(),
+                  port = undefined  :: undefined | 0..65535,
                   params = []       :: sip_params(),
                   headers = []      :: sip_headers()}).
 -record(tel_uri, {phone = <<>> :: binary()}).

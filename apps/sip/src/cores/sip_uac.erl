@@ -1,5 +1,7 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc UAC response processing behaviour
+%%% @doc UAC core implementation
+%%%
+%%% Implements OTP `gen_server' behaviour.
 %%%
 %%% Automatic response handling:
 %%% <ul>
@@ -15,10 +17,17 @@
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_uac).
+-behaviour(gen_server).
 -compile({parse_transform, do}).
 
 %% API
--export([new/1, create_request/3, send_request/3, process_response/3]).
+-export([start_link/0, create_request/2, send_request/2, send_request_sync/1]).
+
+%% Server callbacks
+-export([init/1, terminate/2, code_change/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
+
+-define(SERVER, ?MODULE).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -29,11 +38,15 @@
                    target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
--record(uac, {options = [] :: [{atom(), any()} | atom()]}).
+-record(state, {}).
 
--spec new([]) -> #uac{}.
-new([]) ->
-    #uac{}.
+-type gen_from() :: {pid(), term()}.
+
+%% API
+
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
@@ -41,23 +54,95 @@ new([]) ->
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
 %% @end
--spec create_request(#uac{}, sip_name(), #sip_hdr_address{}) -> #sip_request{}.
-create_request(UAC, Method, ToValue) when
-  is_record(UAC, uac), is_record(ToValue, sip_hdr_address) ->
+-spec create_request(sip_name(), #sip_hdr_address{}) -> #sip_request{}.
+create_request(Method, To) when is_record(To, sip_hdr_address) ->
+    gen_server:call(?SERVER, {create_request, Method, To}).
+
+%% @doc Send the request asynchronously. Responses will be provided via
+%% `Callback' function calls.
+%% <em>Note: callback function will be evaluated on a different process!</em>
+%% @end
+-spec send_request(sip_message(), fun((#sip_response{}) -> ok)) -> ok.
+send_request(Request, Callback) when is_record(Request, sip_request) ->
+    ok = gen_server:cast(?SERVER, {send_request, Request, Callback}).
+
+%% @doc Send the request synchronously
+%% @end
+-spec send_request_sync(sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
+send_request_sync(Request) when is_record(Request, sip_request) ->
+    gen_server:call(?SERVER, {send_request, Request}).
+
+%%-----------------------------------------------------------------
+%% Server callbacks
+%%-----------------------------------------------------------------
+
+%% @private
+-spec init({}) -> {ok, #state{}}.
+init({}) ->
+    {ok, #state{}}.
+
+%% @private
+-spec handle_call
+    ({create_request, sip_name(), #sip_hdr_address{}}, gen_from(), #state{}) ->
+        {reply, #sip_request{}, #state{}};
+    ({send_request, #sip_request{}}, gen_from(), #state{}) ->
+        {noreply, #state{}}.
+handle_call({create_request, Method, To}, _From, State) ->
+    Request = do_create_request(Method, To),
+    {reply, Request, State};
+handle_call({send_request, Request}, From, State) ->
+    Callback = fun(Result) -> gen_server:reply(From, Result) end,
+    ok = do_send_request(Request, Callback),
+    {noreply, State};
+handle_call(Request, _From, State) ->
+    {stop, {unexpected, Request}, State}.
+
+%% @private
+-spec handle_cast(term(), #state{}) -> {noreply, #state{}} | {stop, term(), #state{}}.
+handle_cast({send_request, Request, Callback}, State) ->
+    ok = do_send_request(Request, Callback),
+    {noreply, State};
+handle_cast(Cast, State) ->
+    {stop, {unexpected, Cast}, State}.
+
+%% @private
+-spec handle_info(_, #state{}) -> {noreply, #state{}}.
+handle_info({response, Response, ReqInfo}, State) ->
+    do_response(Response, ReqInfo),
+    {noreply, State};
+handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
+    % FIXME: should we handle terminated transactions?
+    {noreply, State};
+handle_info(Info, State) ->
+    {stop, {unexpected, Info}, State}.
+
+%% @private
+-spec terminate(term(), #state{}) -> ok.
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+-spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% Internal functions
+
+do_create_request(Method, ToAddress) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
-    RequestURI = ToValue#sip_hdr_address.uri,
+    RequestURI = ToAddress#sip_hdr_address.uri,
 
     % will be updated later (by transport layer)
     % branch will be added before sending
-    Via = {'via', #sip_hdr_via{}},
+    Via = {via, #sip_hdr_via{}},
     MaxForwards = {'max-forwards', 70},
-    From = {'from', sip_headers:address(<<"Anonymous">>,
+    From = {from, sip_headers:address(<<"Anonymous">>,
                                         <<"sip:thisis@anonymous.invalid">>,
                                         [{'tag', sip_idgen:generate_tag()}])},
-    To = {'to', ToValue},
+    To = {to, ToAddress},
     % FIXME: for REGISTER requests CSeqs are not arbitrary...
-    CSeq = {'cseq', sip_headers:cseq(sip_idgen:generate_cseq(), Method)},
+    CSeq = {cseq, sip_headers:cseq(sip_idgen:generate_cseq(), Method)},
     CallId = {'call-id', sip_idgen:generate_call_id()},
 
     % configure pre-existing route set
@@ -67,31 +152,34 @@ create_request(UAC, Method, ToValue) when
                  uri = RequestURI,
                  headers = [Via, MaxForwards, From, To, CSeq, CallId] ++ Routes}.
 
-%% @doc Send the request according to the 8.1.2 Sending the Request
-%% @end
--spec send_request(#uac{}, sip_message(), term()) -> ok | {error, Reason :: term()}.
-send_request(UAC, Request, UserData) when is_record(UAC, uac) ->
-    % Put Request URI into the target set
+% Put Request URI into the target set
+do_send_request(Request, Callback) ->
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
-    ReqInfo = #req_info{request = Request, user_data = UserData, target_set = TargetSet},
 
-    case next_uri(ReqInfo, none) of
-        {error, _Reason} -> ok; % processing terminated
-        ok -> {error, no_destinations}
-    end.
+    ReqInfo = #req_info{request = Request,
+                        user_data = Callback,
+                        target_set = TargetSet},
+    % What if `ok' is returned (meaning request was not processed)
+    {error, _Reason} = next_uri(ReqInfo, none),
+    ok.
 
-
--spec process_response(#uac{}, sip_message(), #req_info{}) -> {ok, UserData :: term()} | {error, Reason :: term()}.
-%% @doc Process received response by pushing it through our processing pipeline
-%% @end
-process_response(UAC, Response, ReqInfo) when is_record(UAC, uac) ->
-    do([error_m ||
-        validate_vias(Response),
-        handle_response(ReqInfo, Response),
-        return(ReqInfo#req_info.user_data)]).
-
-%% Internal functions
+do_response(Response, ReqInfo) ->
+    Result = do([error_m ||
+                 validate_vias(Response),
+                 handle_response(ReqInfo, Response),
+                 return(ok)]),
+    case Result of
+        ok ->
+            Callback = ReqInfo#req_info.user_data,
+            Callback({ok, Response});
+        {error, _Reason} ->
+            % Response was either discarded or is still being
+            % processed (following redirect, trying next IP, etc)
+            % So, nothing to report to the client callback
+            ok
+    end,
+    ok.
 
 %% Validate message according to the 8.1.3.3
 -spec validate_vias(#sip_response{}) -> error_m:monad(ok).
