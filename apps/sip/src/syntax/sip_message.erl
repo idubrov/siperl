@@ -10,7 +10,7 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([method/1]).
+-export([is_dialog_establishing/1, method/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([validate_request/1, validate_response/1]).
@@ -39,6 +39,24 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
+
+-spec is_dialog_establishing(#sip_response{}) -> boolean().
+%% @doc Check if provided response will establish a new dialog
+%% @end
+is_dialog_establishing(#sip_response{} = Response) ->
+    is_dialog_establishing(method(Response), Response#sip_response.status, Response).
+
+is_dialog_establishing('INVITE', Status, Msg) when Status >= 200, Status =< 299 ->
+    To = sip_message:header_top_value(to, Msg),
+    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
+        false ->
+            % No tag in `To:', method is 'INVITE', status is 2xx
+            % this request will establish a new dialog
+            true;
+        {tag, _ToTag} -> false
+    end;
+is_dialog_establishing(_Method, _Status, _Msg) -> false.
+
 
 %% @doc Retrieve method of SIP message
 %%
@@ -227,12 +245,16 @@ create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
 %% @doc Create response for given request
 %% @end
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
-create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
+create_response(#sip_request{headers = ReqHeaders} = Request, Status, Reason) ->
+    IsDialogEstablishing = is_dialog_establishing(Request#sip_request.method, Status, Request),
+
     % FIXME: Copy Timestamp: for provisional responses
     Headers = [{Name, Value} || {Name, Value} <- ReqHeaders,
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
                                  Name =:= cseq orelse Name =:= 'via' orelse
-                                 Name =:= 'to')],
+                                 Name =:= 'to' orelse
+                                 % UAS behaviour:
+                                 (Name =:= 'record-route' andalso IsDialogEstablishing))],
     #sip_response{status = Status,
                   reason = Reason,
                   headers = Headers}.
@@ -291,7 +313,8 @@ validate_request(#sip_request{method = Method, headers = Headers}) ->
 %% all of these header fields are mandatory in all SIP responses.
 %% @end
 -spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
-validate_response(#sip_response{headers = Headers}) ->
+validate_response(#sip_response{headers = Headers} = Response) ->
+    IsNotDialogEstablishing = not is_dialog_establishing(Response),
     CountFun =
         fun ({Name, Value}, Counts) ->
                  % assign tuple index for every header being counted
@@ -301,6 +324,7 @@ validate_response(#sip_response{headers = Headers}) ->
                            cseq -> 3;
                            'call-id' -> 4;
                            via -> 5;
+                           contact -> 6;
                            _ -> 0
                        end,
                  if
@@ -312,9 +336,14 @@ validate_response(#sip_response{headers = Headers}) ->
         end,
 
     % Count headers
-    case lists:foldl(CountFun, {0, 0, 0, 0, 0}, Headers) of
-        C when C >= {1, 1, 1, 1, 1}, % Each header must be at least once (except contact),
-               C =< {1, 1, 1, 1, a}  % except Via:, which must be at least once (atom > every possible number)
+    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Headers) of
+        C when C >= {1, 1, 1, 1, 1, 0}, % Each header must be at least once (except contact),
+               C =< {1, 1, 1, 1, a, 0}, % except Via:, which must be at least once (atom > every possible number)
+
+              % The Contact header field MUST be present and contain exactly one SIP
+               % or SIPS URI in any response that can result in the establishment of a
+               % dialog
+               (IsNotDialogEstablishing orelse element(6, C) =:= 1)
           -> ok;
         _ -> {error, invalid_headers}
     end.

@@ -37,7 +37,8 @@ start_link(Callback, Context) when is_atom(Callback) ->
 %% @end
 -spec send_response(pid() | atom(), #sip_response{}) -> ok.
 send_response(UAS, Response) when is_record(Response, sip_response) ->
-    gen_server:call(UAS, {send_response, Response}).
+    gen_server:cast(UAS, {send_response, Response}),
+    ok.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -56,15 +57,15 @@ init({Callback, Param}) ->
                 context = Context}}.
 
 %% @private
--spec handle_call({send_response, #sip_response{}}, gen_from(), #state{}) -> {reply, ok, #state{}}.
-handle_call({send_response, Response}, _From, State) ->
-    ok = do_send_response(undefined, Response, State),
-    {reply, ok, State};
+-spec handle_call(term(), gen_from(), #state{}) -> {stop, {unexpected, term()}, #state{}}.
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
 
 %% @private
--spec handle_cast(term(), #state{}) -> {stop, {unexpected, term()}, #state{}}.
+-spec handle_cast({send_response, #sip_response{}}, #state{}) -> {reply, ok, #state{}}.
+handle_cast({send_response, Response}, State) ->
+    ok = do_send_response(undefined, Response, State),
+    {noreply, State};
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
 
@@ -158,6 +159,9 @@ validate_required(Request, #state{callback = Callback} = State) ->
 
 -spec do_send_response(#sip_request{} | undefined, #sip_response{}, #state{}) -> ok.
 do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
+    % Validate response before sending it
+    ok = sip_message:validate_response(Response),
+
     % Append Supported and Allow headers (only if request is available)
     Response2 =
         case Request of

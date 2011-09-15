@@ -25,7 +25,9 @@
 %% though. Client code should never assume that name is binary, even if
 %% client code itself does not contain an atom (because this atom could
 %% be in fact referenced by another module).
--export_type([sip_name/0]).
+
+
+-type sip_sequence() :: 0..2147483647. % sequence number MUST be less than 2**31
 
 -type sip_headers() :: [{Name :: sip_name(), Value :: any()}].
 -type sip_params()  :: [{Name :: sip_name(), Value :: any()} | sip_name()].
@@ -120,7 +122,8 @@
                                       {'branch', binary()} |
                                       {sip_name(), term()} | sip_name()]}).
 
--record(sip_hdr_cseq, {sequence :: integer(), method :: atom() | binary()}).
+-record(sip_hdr_cseq, {sequence :: sip_sequence(),
+                       method :: atom() | binary()}).
 
 %% Value for address headers (`Route:', `Record-Route', `To:', `From:', `Contact')
 -record(sip_hdr_address,
@@ -164,8 +167,20 @@
 %% SIP dialogs
 %%-----------------------------------------------------------------
 
+-type sip_dialog_id() :: {CallId :: binary(),
+                          LocalTag :: binary(),
+                          RemoteTag :: binary()}.
 %% Dialog is identified by call-id, local and remote tags.
--record(sip_dialog, {local_tag, remote_tag, call_id}).
+
+-record(sip_dialog,
+        {id                 :: sip_dialog_id(),
+         local_seq          :: sip_sequence(),
+         remote_seq         :: sip_sequence(),
+         local_uri          :: sip_uri(),
+         remote_uri         :: sip_uri(),
+         remote_target_uri  :: sip_uri(),
+         secure             :: boolean(),
+         route_set          :: [sip_uri()]}).
 
 %%-----------------------------------------------------------------
 %% SIP UAC/UAS

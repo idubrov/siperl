@@ -326,6 +326,7 @@ add_content_length(Msg) ->
 
 %% Add To: header tag, if not present and response status is not "100 Trying"
 add_to_tag(Msg) ->
+    % FIXME: Move to UAC implementation?
     To = sip_message:header_top_value(to, Msg),
     Params = To#sip_hdr_address.params,
     case lists:keyfind(tag, 1, Params) of
