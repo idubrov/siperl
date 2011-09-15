@@ -100,11 +100,7 @@ uas_dialog_state(Request, Response)
     FromTag = tag(from, From),
 
     IsViaTLS = Via#sip_hdr_via.transport =:= tls,
-    IsSecureURI =
-        case Request#sip_request.uri of
-            #sip_uri{scheme = sips} -> true;
-            _Other -> false
-        end,
+    IsSecureURI = sip_uri:is_sips(Request#sip_request.uri),
 
     RouteSet = [Address#sip_hdr_address.uri || Address <- sip_message:header_values('record-route', Request)],
     DialogId = #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag},
