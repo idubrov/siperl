@@ -12,6 +12,7 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 -include("sip_transaction.hrl").
+-include_lib("stdlib/include/ms_transform.hrl").
 
 % Client API
 -export([start_client_tx/3, start_client_tx/4, start_server_tx/2, send_response/1, tx_key/2]).
@@ -87,12 +88,8 @@ start_server_tx(TU, Request)
 
 -spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].
 list_tx() ->
-    gproc:select(names,
-                 [{{'$1','$2','$3'},
-                   % Match {n, _, {tx, Key}}
-                   [{'=:=', tx, {element, 1, {element, 3, '$1'}}}],
-                   % Return {Key, Pid}
-                   [{element, 2, {element, 3, '$1'}}]}]).
+    MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
+    gproc:select(names, MS).
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled
