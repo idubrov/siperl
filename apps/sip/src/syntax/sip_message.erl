@@ -6,6 +6,7 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_message).
+-compile({parse_transform, do}).
 
 %%-----------------------------------------------------------------
 %% Exports
@@ -56,7 +57,6 @@ is_dialog_establishing('INVITE', Status, Msg) when Status >= 200, Status =< 299 
         {tag, _ToTag} -> false
     end;
 is_dialog_establishing(_Method, _Status, _Msg) -> false.
-
 
 %% @doc Retrieve method of SIP message
 %%
@@ -265,6 +265,19 @@ create_response(#sip_request{headers = ReqHeaders} = Request, Status, Reason) ->
 create_response(Request, Status) ->
     create_response(Request, Status, default_reason(Status)).
 
+check(true, _Reason) -> ok;
+check(false, Reason) -> error_m:fail(Reason).
+
+count(Name, Msg) ->
+    length(header_values(Name, Msg)).
+
+is_contact_valid(Msg) ->
+    case header_values(contact, Msg) of
+        [Contact] ->
+            is_record(Contact#sip_hdr_address.uri, sip_uri);
+        _Other -> false % either no contact header or multiple headers
+    end.
+
 %% @doc Validate that request contains all required headers
 %% A valid SIP request formulated by a UAC MUST, at a minimum, contain
 %% the following header fields: To, From, CSeq, Call-ID, Max-Forwards,
@@ -272,40 +285,20 @@ create_response(Request, Status) ->
 %% requests.
 %% @end
 -spec validate_request(#sip_request{}) -> ok | {error, Reason :: term()}.
-validate_request(#sip_request{method = Method, headers = Headers}) ->
-    CountFun =
-        fun ({Name, Value}, Counts) ->
-                 % assign tuple index for every header being counted
-                 Idx = case Name of
-                           to -> 1;
-                           from -> 2;
-                           cseq -> 3;
-                           'call-id' -> 4;
-                           'max-forwards' -> 5;
-                           via -> 6;
-                           contact -> 7;
-                           _ -> 0
-                       end,
-                 if
-                     Idx > 0 ->
-                         Incr = if is_list(Value) -> length(Value); true -> 1 end,
-                         setelement(Idx, Counts, element(Idx, Counts) + Incr);
-                     true -> Counts
-                 end
-        end,
-
-    % Count headers
-    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0, 0}, Headers) of
-        C when C >= {1, 1, 1, 1, 1, 1, 0}, % Each header must be at least once (except contact),
-               C =< {1, 1, 1, 1, 1, a, 0}, % except Via:, which must be at least once (atom > every possible number)
-
-               % The Contact header field MUST be present and contain exactly one SIP
-               % or SIPS URI in any request that can result in the establishment of a
-               % dialog.
-               (Method =/= 'INVITE' orelse element(7, C) =:= 1)
-          -> ok;
-        _ -> {error, invalid_headers}
-    end.
+validate_request(#sip_request{method = Method} = Msg) ->
+    IsNotDialogEstablishing = (Method =/= 'INVITE'),
+    do([error_m ||
+        check(count(to, Msg) =:= 1, {invalid, to}),
+        check(count(from, Msg) =:= 1, {invalid, from}),
+        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
+        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
+        check(count('max-forwards', Msg) =:= 1, {invalid, 'max-forwards'}),
+        % Must be at least one via
+        check(count(via, Msg) >= 1, {invalid, via}),
+        % The Contact header field MUST be present and contain exactly one SIP
+        % or SIPS URI in any request that can result in the establishment of a
+        % dialog.
+        check(IsNotDialogEstablishing orelse is_contact_valid(Msg), {invalid, contact})]).
 
 %% @doc Validate that response contains all required headers
 %% A valid SIP response formulated by a UAS MUST, at a minimum, contain
@@ -313,40 +306,17 @@ validate_request(#sip_request{method = Method, headers = Headers}) ->
 %% all of these header fields are mandatory in all SIP responses.
 %% @end
 -spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
-validate_response(#sip_response{headers = Headers} = Response) ->
-    IsNotDialogEstablishing = not is_dialog_establishing(Response),
-    CountFun =
-        fun ({Name, Value}, Counts) ->
-                 % assign tuple index for every header being counted
-                 Idx = case Name of
-                           to -> 1;
-                           from -> 2;
-                           cseq -> 3;
-                           'call-id' -> 4;
-                           via -> 5;
-                           contact -> 6;
-                           _ -> 0
-                       end,
-                 if
-                     Idx > 0 ->
-                         Incr = if is_list(Value) -> length(Value); true -> 1 end,
-                         setelement(Idx, Counts, element(Idx, Counts) + Incr);
-                     true -> Counts
-                 end
-        end,
-
-    % Count headers
-    case lists:foldl(CountFun, {0, 0, 0, 0, 0, 0}, Headers) of
-        C when C >= {1, 1, 1, 1, 1, 0}, % Each header must be at least once (except contact),
-               C =< {1, 1, 1, 1, a, 0}, % except Via:, which must be at least once (atom > every possible number)
-
-              % The Contact header field MUST be present and contain exactly one SIP
-               % or SIPS URI in any response that can result in the establishment of a
-               % dialog
-               (IsNotDialogEstablishing orelse element(6, C) =:= 1)
-          -> ok;
-        _ -> {error, invalid_headers}
-    end.
+validate_response(#sip_response{} = Msg) ->
+    IsNotDialogEstablishing = not is_dialog_establishing(Msg),
+    do([error_m ||
+        check(count(to, Msg) =:= 1, {invalid, to}),
+        check(count(from, Msg) =:= 1, {invalid, from}),
+        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
+        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
+        % Must be at least one via
+        check(count(via, Msg) >= 1, {invalid, via}),
+        % 12.1.1 The UAS MUST add a Contact header field to the response.
+        check(IsNotDialogEstablishing orelse is_contact_valid(Msg), {invalid, contact})]).
 
 
 %% @doc
@@ -765,12 +735,21 @@ helpers_test_() ->
                                 {'max-forwards', 70},
                                 {via, sip_headers:via(udp, "localhost", [])},
                                 {require, <<"foo">>}]},
+    ValidResponse = create_response(ValidRequest, 200),
 
-    % No contact in INVITE
-    InvalidRequest = ValidRequest#sip_request{method = 'INVITE'},
+    % No contact in dialog-establishing request/response
+    InvalidRequest = replace_top_header(cseq, sip_headers:cseq(1, 'INVITE'), ValidRequest#sip_request{method = 'INVITE'}),
+    InvalidResponse = create_response(InvalidRequest, 200),
+
     % with added contact header
     ValidRequest2 =
         InvalidRequest#sip_request{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_request.headers]},
+
+    ValidResponse2 =
+        InvalidResponse#sip_response{headers = [{contact, <<"sip:alice@localhost">>} | InvalidRequest#sip_request.headers]},
+    ValidResponse3 = create_response(InvalidRequest, 300), % not dialog-establishing response
+
+
     [% Header lookup functions
      ?_assertEqual(Via1, header_top_value('via', #sip_request{headers = [{'via', [Via1, Via2]}]})),
      ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_request{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
@@ -785,8 +764,14 @@ helpers_test_() ->
 
      % Validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
-     ?_assertEqual({error, invalid_headers}, validate_request(InvalidRequest)),
-     ?_assertEqual(ok, validate_request(ValidRequest2))
+     ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest)),
+     ?_assertEqual(ok, validate_request(ValidRequest2)),
+
+     % Validation
+     ?_assertEqual(ok, validate_response(ValidResponse)),
+     ?_assertEqual({error, {invalid, contact}}, validate_response(InvalidResponse)),
+     ?_assertEqual(ok, validate_response(ValidResponse2)),
+     ?_assertEqual(ok, validate_response(ValidResponse3))
      ].
 
 -spec update_header_test() -> ok.
