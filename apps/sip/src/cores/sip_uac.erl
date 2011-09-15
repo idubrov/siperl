@@ -79,6 +79,7 @@ send_request_sync(Request) when is_record(Request, sip_request) ->
 %% @private
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
+    % FIXME: should register as SIP messages handler to receive additional 2xx responses!
     {ok, #state{}}.
 
 %% @private

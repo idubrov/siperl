@@ -6,87 +6,145 @@
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_uas).
+-behaviour(gen_server).
 -compile({parse_transform, do}).
 
 %% API
--export([new/1, send_response/2, process_request/2]).
+-export([start_link/2, send_response/2]).
+
+%% Server callbacks
+-export([init/1, terminate/2, code_change/3]).
+-export([handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(uas, {options = [] :: [{atom(), any()} | atom()]}).
+-record(state, {callback :: module(),
+                context :: term()}).      % Callback context
 
--spec new([{'ALLOW', [sip_name()]} | {'OPTIONS', [sip_name()]} | no_detect_loops]) -> #uas{}.
-new(Options) when is_list(Options) ->
-    #uas{options = Options}.
+-type gen_from() :: {pid(), term()}.
 
-%% @doc Send response
-%%
-%% Automatically adds `Allow:' and `Supported:' headers for every reply.
+%% API
+
+%% @doc Creates UAS as part of the supervision tree.
 %% @end
--spec send_response(#uas{}, sip_message()) -> ok.
-send_response(#uas{options = Options}, Response)
-  when is_record(Response, sip_response) ->
-    % Append Supported and Allow headers
-    Resp2 = sip_message:append_header(allow, proplists:get_value(allow, Options, []), Response),
-    Resp3 = sip_message:append_header(supported, proplists:get_value(supported, Options, []), Resp2),
-    {ok, _TxKey} = sip_transaction:send_response(Resp3),
+-spec start_link(module(), term()) -> {ok, pid()} | {error, term()}.
+start_link(Callback, Context) when is_atom(Callback) ->
+    gen_server:start_link(?MODULE, {Callback, Context}, []).
+
+%% @doc Initiate a response from the UAS
+%% @end
+-spec send_response(pid() | atom(), #sip_response{}) -> ok.
+send_response(UAS, Response) when is_record(Response, sip_response) ->
+    gen_server:call(UAS, {send_response, Response}).
+
+%%-----------------------------------------------------------------
+%% Server callbacks
+%%-----------------------------------------------------------------
+
+%% @private
+-spec init({module(), term()}) -> {ok, #state{}}.
+init({Callback, Param}) ->
+    {ok, Context} = Callback:init(Param),
+    IsApplicable =
+        fun(#sip_response{}) -> false; % UAS never handles responses
+           (#sip_request{} = Msg) -> Callback:is_applicable(Msg)
+        end,
+    sip_cores:register_core(#sip_core_info{is_applicable = IsApplicable}),
+    {ok, #state{callback = Callback,
+                context = Context}}.
+
+%% @private
+-spec handle_call({send_response, #sip_response{}}, gen_from(), #state{}) -> {reply, ok, #state{}}.
+handle_call({send_response, Response}, _From, State) ->
+    ok = do_send_response(undefined, Response, State),
+    {reply, ok, State};
+handle_call(Request, _From, State) ->
+    {stop, {unexpected, Request}, State}.
+
+%% @private
+-spec handle_cast(term(), #state{}) -> {stop, {unexpected, term()}, #state{}}.
+handle_cast(Cast, State) ->
+    {stop, {unexpected, Cast}, State}.
+
+%% @private
+-spec handle_info({request, #sip_request{}}, #state{}) -> {noreply, #state{}}.
+handle_info({request, Request}, State) ->
+    {ok, State2} = do_request(Request, State),
+    {noreply, State2};
+handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
+    % FIXME: should we handle terminated transactions?
+    {noreply, State};
+handle_info(Info, State) ->
+    {stop, {unexpected, Info}, State}.
+
+%% @private
+-spec terminate(term(), #state{}) -> ok.
+terminate(_Reason, _State) ->
     ok.
 
-% @private
--spec process_request(#uas{}, sip_message()) -> ok | {error, Reason :: term()}.
-process_request(UAS, Msg) when is_record(UAS, uas), is_record(Msg, sip_request) ->
-    % start server transaction
-    {ok, _TxKey} = sip_transaction:start_server_tx(self(), Msg),
-
-    % validate message
-    do([error_m ||
-        validate_allowed(Msg, UAS),
-        validate_loop(Msg, UAS),
-        validate_required(Msg, UAS)]).
+%% @private
+-spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %% Internal functions
 
+do_request(Request, State) ->
+    % start server transaction
+    {ok, _TxKey} = sip_transaction:start_server_tx(self(), Request),
+
+    % validate message
+    Result =
+        do([error_m ||
+            validate_allowed(Request, State),
+            validate_loop(Request, State),
+            validate_required(Request, State)]),
+    case Result of
+        ok ->
+            do_handle_request(Request, State);
+        {error, _Reason} ->
+            {ok, State}
+    end.
+
 %% Validate message according to the 8.2.1
--spec validate_allowed(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_allowed(Request, #uas{options = Options} = UAS) ->
-    Method = Request#sip_request.method,
-    Allow = proplists:get_value(allow, Options, []),
-    Contains = lists:member(Method, Allow),
-    case Contains of
+-spec validate_allowed(#sip_request{}, #state{}) -> error_m:monad(ok).
+validate_allowed(Request, #state{callback = Callback} = State) ->
+    Allow = Callback:allowed_methods(Request, State#state.context),
+    case lists:member(Request#sip_request.method, Allow) of
         true ->
             error_m:return(ok);
         false ->
             % Send "405 Method Not Allowed"
             Response = sip_message:create_response(Request, 405),
-            ok = send_response(UAS, Response),
+            ok = do_send_response(Request, Response, State),
             error_m:fail(not_allowed)
     end.
 
 %% Validate message according to the 8.2.2.2
--spec validate_loop(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_loop(Request, #uas{options = Options} = UAS) ->
-    IsLoop = (not proplists:get_bool(no_detect_loops, Options)) andalso
-             sip_transaction:is_loop_detected(Request),
+-spec validate_loop(#sip_request{}, #state{}) -> error_m:monad(ok).
+validate_loop(Request, #state{callback = Callback} = State) ->
+    DetectLoops = Callback:detect_loops(Request, State#state.callback),
+    IsLoop = DetectLoops andalso sip_transaction:is_loop_detected(Request),
     case IsLoop of
         false ->
             error_m:return(ok);
         true ->
             % Send "482 Loop Detected"
             Response = sip_message:create_response(Request, 482),
-            ok = send_response(UAS, Response),
+            ok = do_send_response(Request, Response, State),
             error_m:fail(loop_detected)
     end.
 
 %% Validate message according to the 8.2.2.3
--spec validate_required(sip_message(), #uas{}) -> error_m:monad(ok).
-validate_required(Request, #uas{options = Options} = UAS) ->
-    Supported = proplists:get_value(supported, Options, []),
+-spec validate_required(#sip_request{}, #state{}) -> error_m:monad(ok).
+validate_required(Request, #state{callback = Callback} = State) ->
+    Supported = Callback:extensions(Request, State#state.context),
     IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
 
     %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
-    Require = sip_message:header_values('require', Request),
+    Require = sip_message:header_values(require, Request),
     case lists:filter(IsNotSupported, Require) of
         [] ->
             error_m:return(ok);
@@ -94,6 +152,35 @@ validate_required(Request, #uas{options = Options} = UAS) ->
             % Send "420 Bad Extension"
             Response = sip_message:create_response(Request, 420),
             Response2 = sip_message:append_header('unsupported', Unsupported, Response),
-            ok = send_response(UAS, Response2),
+            ok = do_send_response(Request, Response2, State),
             error_m:fail(bad_extension)
     end.
+
+-spec do_send_response(#sip_request{} | undefined, #sip_response{}, #state{}) -> ok.
+do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
+    % Append Supported and Allow headers (only if request is available)
+    Response2 =
+        case Request of
+            undefined ->
+                Response;
+            _Other ->
+                Allow = Callback:allowed_methods(Request, State#state.context),
+                Extensions = Callback:extensions(Request, State#state.context),
+                R1 = sip_message:append_header(allow, Allow, Response),
+                R2 = sip_message:append_header(supported, Extensions, R1),
+                R2
+        end,
+    {ok, _TxKey} = sip_transaction:send_response(Response2),
+    ok.
+
+do_handle_request(Request, #state{callback = Callback} = State) ->
+    Method = Request#sip_request.method,
+    case Callback:Method(Request, State#state.context) of
+        {noreply, Context} ->
+            {ok, State#state{context = Context}};
+        {reply, Response, Context} ->
+            ok = do_send_response(Request, Response, State),
+            {ok, State#state{context = Context}}
+    end.
+
+

@@ -30,23 +30,21 @@ end_per_suite(_Config) ->
     ok.
 
 init_per_testcase(_TestCase, Config) ->
-    {ok, UAS} = sip_test_uas:start_link(),
     {ok, UAC} = sip_uac:start_link(),
-    [{uac, UAC}, {uas, UAS} | Config].
+    [{uac, UAC} | Config].
 
 end_per_testcase(_TestCase, Config) ->
     ok = sip_test:shutdown(?config(uac, Config)),
-    ok = sip_test_uas:stop(?config(uas, Config)),
     ok.
 
 options_200(Config) ->
-    UAS = ?config(uas, Config),
+    % Start UAS to reply with 200 Ok
+    Handler =
+        fun (Request) ->
+                 sip_message:create_response(Request, 200)
+        end,
+    sip_uas:start_link(sip_test_uas, Handler),
 
-    % configure UAS to reply with 200 Ok
-    Handler = fun (Request) ->
-                       sip_message:create_response(Request, 200)
-              end,
-    sip_test_uas:set_handler(UAS, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     Request = sip_uac:create_request('OPTIONS', To),
@@ -70,18 +68,17 @@ options_200(Config) ->
     ok.
 
 options_302(Config) ->
-    UAS = ?config(uas, Config),
-
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
-    Handler = fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
-                      Response = sip_message:create_response(Request, 302),
-                      Contact = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, []),
-                      sip_message:append_header(contact, Contact, Response);
-                 (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
-                      sip_message:create_response(Request, 200)
-              end,
-    sip_test_uas:set_handler(UAS, Handler),
+    Handler =
+        fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
+                Response = sip_message:create_response(Request, 302),
+                Contact = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, []),
+                sip_message:append_header(contact, Contact, Response);
+           (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
+                sip_message:create_response(Request, 200)
+        end,
+    sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
     Request = sip_uac:create_request('OPTIONS', To),
@@ -105,21 +102,20 @@ options_302(Config) ->
     ok.
 
 options_302_failed(Config) ->
-    UAS = ?config(uas, Config),
-
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
-    Handler = fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
-                      Response = sip_message:create_response(Request, 302),
-                      Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
-                      Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
-                      sip_message:append_header(contact, [Contact1, Contact2], Response);
-                 (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
-                      sip_message:create_response(Request, 404);
-                 (#sip_request{uri = #sip_uri{user = <<"third">>}} = Request) ->
-                      sip_message:create_response(Request, 200)
-              end,
-    sip_test_uas:set_handler(UAS, Handler),
+    Handler =
+        fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
+                Response = sip_message:create_response(Request, 302),
+                Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
+                Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
+                sip_message:append_header(contact, [Contact1, Contact2], Response);
+           (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
+                sip_message:create_response(Request, 404);
+           (#sip_request{uri = #sip_uri{user = <<"third">>}} = Request) ->
+                sip_message:create_response(Request, 200)
+        end,
+    sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
     Request = sip_uac:create_request('OPTIONS', To),
@@ -130,13 +126,9 @@ options_302_failed(Config) ->
     ok.
 
 options_501(Config) ->
-    UAS = ?config(uas, Config),
-
     % configure UAS to reply with 501 Not Implemented
-    Handler = fun (Request) ->
-                       sip_message:create_response(Request, 501)
-              end,
-    sip_test_uas:set_handler(UAS, Handler),
+    Handler = fun (Request) -> sip_message:create_response(Request, 501) end,
+    sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     Request = sip_uac:create_request('OPTIONS', To),
@@ -170,19 +162,18 @@ options_503_next_200(Config) ->
                               #sip_destination{address = {127, 0, 0, 1}, transport = tcp}]
                      end),
 
-    UAS = ?config(uas, Config),
-
     % configure UAS to reply with 503 Service Unavailable for UDP transport
-    Handler = fun (Request) ->
-                       Via = sip_message:header_top_value(via, Request),
-                       case Via#sip_hdr_via.transport of
-                           udp ->
-                               sip_message:create_response(Request, 503);
-                           tcp ->
-                               sip_message:create_response(Request, 200)
-                       end
-              end,
-    sip_test_uas:set_handler(UAS, Handler),
+    Handler =
+        fun (Request) ->
+                 Via = sip_message:header_top_value(via, Request),
+                 case Via#sip_hdr_via.transport of
+                     udp ->
+                         sip_message:create_response(Request, 503);
+                     tcp ->
+                         sip_message:create_response(Request, 200)
+                 end
+        end,
+    sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:example.test">>, []),
     Request = sip_uac:create_request('OPTIONS', To),
