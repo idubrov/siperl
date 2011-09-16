@@ -21,7 +21,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/0, create_request/2, send_request/2, send_request_sync/1]).
+-export([start_link/0, create_request/2, send_request/1, send_request/2, send_request_sync/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -68,7 +68,18 @@ create_request(Method, To) when is_record(To, sip_hdr_address) ->
 send_request(Request, Callback) when is_record(Request, sip_request) ->
     ok = gen_server:cast(?SERVER, {send_request, Request, Callback}).
 
+%% @doc Send the request asynchronously. Responses will be provided via
+%% `{response, Response}' messages delivered to the caller
+%% @end
+-spec send_request(sip_message()) -> ok.
+send_request(Request) when is_record(Request, sip_request) ->
+    Pid = self(),
+    Callback = fun({ok, Response}) -> Pid ! {response, Response} end,
+    ok = gen_server:cast(?SERVER, {send_request, Request, Callback}).
+
+
 %% @doc Send the request synchronously
+%% FIXME: Does not work with provisional responses!!!
 %% @end
 -spec send_request_sync(sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
 send_request_sync(Request) when is_record(Request, sip_request) ->
@@ -165,7 +176,7 @@ do_send_request(Request, Callback) ->
     ReqInfo = #req_info{request = Request,
                         user_data = Callback,
                         target_set = TargetSet},
-    % What if `ok' is returned (meaning request was not processed)
+    % What if `ok' is returned (meaning request was not processed)?
     {error, _Reason} = next_uri(ReqInfo, none),
     ok.
 
