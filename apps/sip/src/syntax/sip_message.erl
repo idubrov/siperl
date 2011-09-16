@@ -12,7 +12,7 @@
 %% Exports
 %%-----------------------------------------------------------------
 -export([method/1]).
--export([validate_request/1, validate_response/1]).
+-export([validate_request/1, validate_response/1, validate_dialog_response/2]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
@@ -322,25 +322,61 @@ validate_request(#sip_request{method = Method} = Msg) ->
         check(Method =/= 'INVITE' orelse is_single_contact(Msg), {invalid, contact}), % 8.1.1.8
         check(is_contact_secure(Msg), {invalid, contact_must_be_sips})]).
 
+-spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
 %% @doc Validate that response contains all required headers
 %% A valid SIP response formulated by a UAS MUST, at a minimum, contain
 %% the following header fields: To, From, CSeq, Call-ID and Via;
 %% all of these header fields are mandatory in all SIP responses.
 %%
-%% FIXME: UAS should validate generated response according to 12.1.1
 %% @end
--spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
-validate_response(#sip_response{} = Msg) ->
+validate_response(#sip_response{} = Response) ->
     do([error_m ||
-        check(count(to, Msg) =:= 1, {invalid, to}),
-        check(count(from, Msg) =:= 1, {invalid, from}),
-        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
-        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
-        check(count(via, Msg) >= 1, {invalid, via})]).
+        check(count(to, Response) =:= 1, {invalid, to}),
+        check(count(from, Response) =:= 1, {invalid, from}),
+        check(count(cseq, Response) =:= 1, {invalid, cseq}),
+        check(count('call-id', Response) =:= 1, {invalid, 'call-id'}),
+        check(count(via, Response) >= 1, {invalid, via})]).
+
+-spec validate_dialog_response(#sip_request{}, #sip_response{}) -> ok | {error, Reason :: term()}.
+%% @doc Validate dialog establishing response.
+%%
+%% Validate that response is both valid response and matches requirements
+%% from 12.1.1 (has proper `Contact:' header).
+%% @end
+validate_dialog_response(Request, Response) ->
+    do([error_m ||
+        validate_response(Response),
+        validate_response_contact(Request, Response)]).
 
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+
+
+%% @doc Validate the Contact header according to the 12.1.1
+%% @end
+validate_response_contact(Request, Response) ->
+    RequestURI = Request#sip_request.uri,
+
+    % either Record-Route or Contact, if Record-Route is not present
+    #sip_hdr_address{uri = RRURI} =
+        case sip_message:has_header('record-route', Request) of
+            true -> sip_message:header_top_value('record-route', Request);
+            false -> sip_message:header_top_value(contact, Request)
+        end,
+    do([error_m ||
+        % Must be exactly one Contact with SIP/SIPS uri
+        ContactURI <-
+            case sip_message:header_values(contact, Response) of
+                [#sip_hdr_address{uri = #sip_uri{} = C}] -> return(C);
+                _Other -> fail({invalid, contact})
+            end,
+        % either Contact is SIPS or both Request-URI and Record-Route(Contact) are not SIPS
+        case sip_uri:is_sips(ContactURI) orelse (not sip_uri:is_sips(RequestURI) andalso not sip_uri:is_sips(RRURI)) of
+            true -> return(ok);
+            false -> fail({invalid, contact_must_be_sips})
+        end]).
+
 
 parse_stream_internal({'BEFORE', <<"\r\n", Rest/binary>>}, _From) ->
     % RFC 3261 7.5  Implementations processing SIP messages over
@@ -764,6 +800,14 @@ validation_test_() ->
     % Without a Via header
     InvalidResponse = ValidResponse#sip_response{headers = [{Name, Value} || {Name, Value} <- ValidResponse#sip_response.headers, Name =/= via]},
 
+    % Invalid dialog response, no contact
+    InvalidResponse2 = sip_message:create_response(ValidRequest2, 200),
+    ValidResponse2 = sip_message:append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse2),
+
+    % Record-Route is SIPS, so Contact must be sips
+    InvalidRequest3 = sip_message:append_header('record-route', sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
+    InvalidResponse3 = ValidResponse2,
+
     [% Request validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
      ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest)),
@@ -774,7 +818,12 @@ validation_test_() ->
 
      % Response validation
      ?_assertEqual(ok, validate_response(ValidResponse)),
-     ?_assertEqual({error, {invalid, via}}, validate_response(InvalidResponse))
+     ?_assertEqual({error, {invalid, via}}, validate_response(InvalidResponse)),
+
+     % Response validation
+     ?_assertEqual(ok, validate_dialog_response(ValidRequest2, ValidResponse2)),
+     ?_assertEqual({error, {invalid, contact}}, validate_dialog_response(ValidRequest2, InvalidResponse2)),
+     ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_dialog_response(InvalidRequest3, InvalidResponse3))
      ].
 
 -spec update_header_test() -> ok.

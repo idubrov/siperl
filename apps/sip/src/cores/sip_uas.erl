@@ -171,29 +171,22 @@ validate_required(Request, #state{callback = Callback} = State) ->
             error_m:fail(bad_extension)
     end.
 
--spec do_send_response(#sip_request{}, #sip_response{}, #state{}) -> ok.
+-spec do_send_response(#sip_request{}, #sip_response{}, #state{}) -> ok | {error, Reason :: term()}.
 do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
-    % Validate response before sending it
-    ok = sip_message:validate_response(Response),
 
-    % FIXME: Move Contact header security validation here...
+    case do_process_dialog(Request, Response) of
+        ok ->
+            % Append Supported and Allow headers
+            Allow = Callback:allowed_methods(Request, State#state.context),
+            Extensions = Callback:extensions(Request, State#state.context),
+            Response2 = sip_message:append_header(allow, Allow, Response),
+            Response3 = sip_message:append_header(supported, Extensions, Response2),
 
-    ok = case sip_dialog:is_dialog_establishing(Request, Response) of
-        true ->
-            ok = sip_dialog:create_dialog(uas, Request, Response);
-        false ->
-            ok
-    end,
-
-    % Append Supported and Allow headers (only if request is available)
-    Allow = Callback:allowed_methods(Request, State#state.context),
-    Extensions = Callback:extensions(Request, State#state.context),
-    Response2 = sip_message:append_header(allow, Allow, Response),
-    Response3 = sip_message:append_header(supported, Extensions, Response2),
-
-    % send
-    {ok, _TxKey} = sip_transaction:send_response(Response3),
-    ok.
+            % send
+            {ok, _TxKey} = sip_transaction:send_response(Response3),
+            ok;
+        {error, Reason} -> {error, Reason}
+    end.
 
 do_handle_request(Request, #state{callback = Callback} = State) ->
     Method = Request#sip_request.method,
@@ -203,4 +196,16 @@ do_handle_request(Request, #state{callback = Callback} = State) ->
         {reply, Response, Context} ->
             ok = do_send_response(Request, Response, State),
             {ok, State#state{context = Context}}
+    end.
+
+do_process_dialog(Request, Response) ->
+    case sip_dialog:is_dialog_establishing(Request, Response) of
+        true ->
+            case sip_message:validate_dialog_response(Request, Response) of
+                ok ->
+                    sip_dialog:create_dialog(uas, Request, Response);
+                {error, Reason} -> {error, Reason}
+            end;
+        false ->
+            sip_message:validate_response(Response)
     end.
