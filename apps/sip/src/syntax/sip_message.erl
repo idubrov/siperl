@@ -11,10 +11,10 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([is_dialog_establishing/1, method/1]).
+-export([method/1]).
+-export([validate_request/1, validate_response/1]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
--export([validate_request/1, validate_response/1]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
 -export([with_branch/2, foldl_headers/4]).
@@ -40,23 +40,6 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
-
--spec is_dialog_establishing(#sip_response{}) -> boolean().
-%% @doc Check if provided response will establish a new dialog
-%% @end
-is_dialog_establishing(#sip_response{} = Response) ->
-    is_dialog_establishing(method(Response), Response#sip_response.status, Response).
-
-is_dialog_establishing('INVITE', Status, Msg) when Status >= 200, Status =< 299 ->
-    To = header_top_value(to, Msg),
-    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
-        false ->
-            % No tag in `To:', method is 'INVITE', status is 2xx
-            % this request will establish a new dialog
-            true;
-        {tag, _ToTag} -> false
-    end;
-is_dialog_establishing(_Method, _Status, _Msg) -> false.
 
 %% @doc Retrieve method of SIP message
 %%
@@ -245,16 +228,12 @@ create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
 %% @doc Create response for given request
 %% @end
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
-create_response(#sip_request{headers = ReqHeaders} = Request, Status, Reason) ->
-    IsDialogEstablishing = is_dialog_establishing(Request#sip_request.method, Status, Request),
-
+create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
     % FIXME: Copy Timestamp: for provisional responses
     Headers = [{Name, Value} || {Name, Value} <- ReqHeaders,
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
                                  Name =:= cseq orelse Name =:= 'via' orelse
-                                 Name =:= 'to' orelse
-                                 % UAS behaviour:
-                                 (Name =:= 'record-route' andalso IsDialogEstablishing))],
+                                 Name =:= 'to')],
     #sip_response{status = Status,
                   reason = Reason,
                   headers = Headers}.
@@ -264,74 +243,6 @@ create_response(#sip_request{headers = ReqHeaders} = Request, Status, Reason) ->
 -spec create_response(sip_message(), integer()) -> #sip_response{}.
 create_response(Request, Status) ->
     create_response(Request, Status, default_reason(Status)).
-
-check(true, _Reason) -> ok;
-check(false, Reason) -> error_m:fail(Reason).
-
-count(Name, Msg) ->
-    length(header_values(Name, Msg)).
-
-is_contact_valid(Msg) ->
-    case header_values(contact, Msg) of
-        [Contact] when is_record(Contact#sip_hdr_address.uri, sip_uri) -> true;
-        _Other -> false % either no contact header or multiple headers
-    end.
-
-is_contact_secure(Request) ->
-    IsRequestSecure = sip_uri:is_sips(Request#sip_request.uri),
-    IsRouteSecure =
-        case has_header(route, Request) of
-            true ->
-                #sip_hdr_address{uri = Route} = header_top_value(route, Request),
-                sip_uri:is_sips(Route);
-            false -> false
-        end,
-    Contact = header_top_value(contact, Request),
-    IsContactSecure = sip_uri:is_sips(Contact#sip_hdr_address.uri),
-
-    % Contact can be non-secure only if both Request-URI and top Route are not secure, 12.1.2
-    IsContactSecure orelse (not IsRequestSecure andalso not IsRouteSecure).
-
-%% @doc Validate that request contains all required headers
-%% A valid SIP request formulated by a UAC MUST, at a minimum, contain
-%% the following header fields: To, From, CSeq, Call-ID, Max-Forwards,
-%% and Via; all of these header fields are mandatory in all SIP
-%% requests.
-%% @end
--spec validate_request(#sip_request{}) -> ok | {error, Reason :: term()}.
-validate_request(#sip_request{method = Method} = Msg) ->
-    IsNotDialogEstablishing = (Method =/= 'INVITE'),
-    do([error_m ||
-        check(count(to, Msg) =:= 1, {invalid, to}),
-        check(count(from, Msg) =:= 1, {invalid, from}),
-        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
-        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
-        check(count('max-forwards', Msg) =:= 1, {invalid, 'max-forwards'}),
-        % Must be at least one via
-        check(count(via, Msg) >= 1, {invalid, via}),
-        % The Contact header field MUST be present and contain exactly one SIP
-        % or SIPS URI in any request that can result in the establishment of a
-        % dialog.
-        check(IsNotDialogEstablishing orelse (is_contact_valid(Msg) andalso is_contact_secure(Msg)), {invalid, contact})]).
-
-%% @doc Validate that response contains all required headers
-%% A valid SIP response formulated by a UAS MUST, at a minimum, contain
-%% the following header fields: To, From, CSeq, Call-ID and Via;
-%% all of these header fields are mandatory in all SIP responses.
-%% @end
--spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
-validate_response(#sip_response{} = Msg) ->
-    IsNotDialogEstablishing = not is_dialog_establishing(Msg),
-    do([error_m ||
-        check(count(to, Msg) =:= 1, {invalid, to}),
-        check(count(from, Msg) =:= 1, {invalid, from}),
-        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
-        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
-        % Must be at least one via
-        check(count(via, Msg) >= 1, {invalid, via}),
-        % 12.1.1 The UAS MUST add a Contact header field to the response.
-        check(IsNotDialogEstablishing orelse is_contact_valid(Msg), {invalid, contact})]).
-
 
 %% @doc
 %% Parses the datagram for SIP packet. The headers of the returned message are
@@ -390,6 +301,42 @@ parse_stream(Packet, {State, Frame}) when is_binary(Packet) ->
 parse_all_headers(Msg) when is_record(Msg, sip_request); is_record(Msg, sip_response) ->
     Headers = [{Name, sip_headers:parse(Name, Value)} || {Name, Value} <- headers(Msg)],
     set_headers(Msg, Headers).
+
+
+%% @doc Validate that request contains all required headers
+%% A valid SIP request formulated by a UAC MUST, at a minimum, contain
+%% the following header fields: To, From, CSeq, Call-ID, Max-Forwards,
+%% and Via; all of these header fields are mandatory in all SIP
+%% requests.
+%% FIXME: UAC should validate generated request according to 12.1.2
+%% @end
+-spec validate_request(#sip_request{}) -> ok | {error, Reason :: term()}.
+validate_request(#sip_request{method = Method} = Msg) ->
+    do([error_m ||
+        check(count(to, Msg) =:= 1, {invalid, to}),
+        check(count(from, Msg) =:= 1, {invalid, from}),
+        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
+        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
+        check(count('max-forwards', Msg) =:= 1, {invalid, 'max-forwards'}),
+        check(count(via, Msg) >= 1, {invalid, via}),
+        check(Method =/= 'INVITE' orelse is_single_contact(Msg), {invalid, contact}), % 8.1.1.8
+        check(is_contact_secure(Msg), {invalid, contact_must_be_sips})]).
+
+%% @doc Validate that response contains all required headers
+%% A valid SIP response formulated by a UAS MUST, at a minimum, contain
+%% the following header fields: To, From, CSeq, Call-ID and Via;
+%% all of these header fields are mandatory in all SIP responses.
+%%
+%% FIXME: UAS should validate generated response according to 12.1.1
+%% @end
+-spec validate_response(#sip_response{}) -> ok | {error, Reason :: term()}.
+validate_response(#sip_response{} = Msg) ->
+    do([error_m ||
+        check(count(to, Msg) =:= 1, {invalid, to}),
+        check(count(from, Msg) =:= 1, {invalid, from}),
+        check(count(cseq, Msg) =:= 1, {invalid, cseq}),
+        check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
+        check(count(via, Msg) >= 1, {invalid, via})]).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -532,6 +479,38 @@ default_reason(Status) ->
         603 -> <<"Decline">>;
         604 -> <<"Does Not Exist Anywhere">>;
         606 -> <<"Not Acceptable">>
+    end.
+
+check(true, _Reason) -> ok;
+check(false, Reason) -> error_m:fail(Reason).
+
+count(Name, Msg) ->
+    length(header_values(Name, Msg)).
+
+is_single_contact(Msg) ->
+    case header_values(contact, Msg) of
+        [Contact] when is_record(Contact#sip_hdr_address.uri, sip_uri) -> true;
+        _Other -> false % either no contact header or multiple headers
+    end.
+
+is_contact_secure(Request) ->
+    IsRequestSecure = sip_uri:is_sips(Request#sip_request.uri),
+    IsRouteSecure =
+        case has_header(route, Request) of
+            true ->
+                #sip_hdr_address{uri = Route} = header_top_value(route, Request),
+                sip_uri:is_sips(Route);
+            false -> false
+        end,
+    case has_header(contact, Request) of
+        true ->
+            Contact = header_top_value(contact, Request),
+            IsContactSecure = sip_uri:is_sips(Contact#sip_hdr_address.uri),
+
+            % Contact can be non-secure only if both Request-URI and top Route are not secure, 12.1.2
+            IsContactSecure orelse (not IsRequestSecure andalso not IsRouteSecure);
+        false ->
+            true % no Contact header, so no check
     end.
 
 %% @doc Retrieve headers from SIP request/response
@@ -738,6 +717,21 @@ helpers_test_() ->
     Via2 = sip_headers:via(tcp, {"127.0.0.2", 15060}, [{ttl, 4}]),
     Via1Up = sip_headers:via(udp, {"localhost", 5060}, []),
 
+    [% Header lookup functions
+     ?_assertEqual(Via1, header_top_value('via', #sip_request{headers = [{'via', [Via1, Via2]}]})),
+     ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_request{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
+
+     ?_assertEqual(true, has_header(via, #sip_request{headers = [{via, [Via1, Via2]}]})),
+     ?_assertEqual(false, has_header(via, #sip_request{headers = [{'content-length', 5}]})),
+
+     % Fold Via's (extract hostnames in reverse order)
+     ?_assertEqual(["localhost", "127.0.0.2", "127.0.0.1"],
+                   foldl_headers(via, fun (#sip_hdr_via{host = Host}, Acc) -> [Host | Acc] end, [],
+                                 #sip_request{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]}))
+     ].
+
+-spec validation_test_() -> list().
+validation_test_() ->
     URI = <<"sip@nowhere.invalid">>,
     ValidRequest =
         #sip_request{method = 'OPTIONS',
@@ -749,47 +743,38 @@ helpers_test_() ->
                                 {'max-forwards', 70},
                                 {via, sip_headers:via(udp, "localhost", [])},
                                 {require, <<"foo">>}]},
-    ValidResponse = create_response(ValidRequest, 200),
+    ValidResponse = sip_message:create_response(ValidRequest, 200),
 
-    % No contact in dialog-establishing request/response
-    InvalidRequest = replace_top_header(cseq, sip_headers:cseq(1, 'INVITE'), ValidRequest#sip_request{method = 'INVITE'}),
-    InvalidResponse = create_response(InvalidRequest, 200),
+    % No contact in dialog-establishing request
+    InvalidRequest = sip_message:replace_top_header(
+                       cseq,
+                       sip_headers:cseq(1, 'INVITE'),
+                       ValidRequest#sip_request{method = 'INVITE'}),
 
     % with added contact header
-    ValidRequest2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidRequest),
-    ValidResponse2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse),
-    ValidResponse3 = create_response(InvalidRequest, 300), % not dialog-establishing response
+    ValidRequest2 = sip_message:append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidRequest),
 
     % Contact is not sips URI, but top route is
-    InvalidRequest2 = append_header(route, sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
-    ValidRequest3 = replace_top_header(contact, sip_headers:address(<<>>, <<"sips:alice@localhost">>, []), InvalidRequest2),
+    InvalidRequest2 = sip_message:append_header(route, sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
+    ValidRequest3 = sip_message:replace_top_header(contact, sip_headers:address(<<>>, <<"sips:alice@localhost">>, []), InvalidRequest2),
 
+    % Valid response
+    ValidResponse = sip_message:create_response(ValidRequest, 200),
 
-    [% Header lookup functions
-     ?_assertEqual(Via1, header_top_value('via', #sip_request{headers = [{'via', [Via1, Via2]}]})),
-     ?_assertEqual([Via1, Via2, Via1Up], header_values('via', #sip_request{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
+    % Without a Via header
+    InvalidResponse = ValidResponse#sip_response{headers = [{Name, Value} || {Name, Value} <- ValidResponse#sip_response.headers, Name =/= via]},
 
-     ?_assertEqual(true, has_header(via, #sip_request{headers = [{via, [Via1, Via2]}]})),
-     ?_assertEqual(false, has_header(via, #sip_request{headers = [{'content-length', 5}]})),
-
-     % Fold Via's (extract hostnames in reverse order)
-     ?_assertEqual(["localhost", "127.0.0.2", "127.0.0.1"],
-                   foldl_headers(via, fun (#sip_hdr_via{host = Host}, Acc) -> [Host | Acc] end, [],
-                                 #sip_request{headers = [{'via', Via1}, {'via', [Via2, Via1Up]}]})),
-
-     % Validation
+    [% Request validation
      ?_assertEqual(ok, validate_request(ValidRequest)),
      ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest)),
      ?_assertEqual(ok, validate_request(ValidRequest2)),
-     ?_assertEqual({error, {invalid, contact}}, validate_request(InvalidRequest2)),
+     ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_request(InvalidRequest2)),
      ?_assertEqual(ok, validate_request(ValidRequest3)),
 
 
-     % Validation
+     % Response validation
      ?_assertEqual(ok, validate_response(ValidResponse)),
-     ?_assertEqual({error, {invalid, contact}}, validate_response(InvalidResponse)),
-     ?_assertEqual(ok, validate_response(ValidResponse2)),
-     ?_assertEqual(ok, validate_response(ValidResponse3))
+     ?_assertEqual({error, {invalid, via}}, validate_response(InvalidResponse))
      ].
 
 -spec update_header_test() -> ok.
