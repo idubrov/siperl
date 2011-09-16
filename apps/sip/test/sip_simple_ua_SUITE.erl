@@ -50,9 +50,10 @@ options_200(Config) ->
     Request = sip_uac:create_request('OPTIONS', To),
     {ok, Response} = sip_uac:send_request_sync(Request),
 
-    % Validate response
+    % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
 
+    % validate headers
     0 = sip_message:header_top_value('content-length', Response),
 
     [Via] = sip_message:header_values(via, Response),
@@ -62,7 +63,7 @@ options_200(Config) ->
     #sip_hdr_address{} = sip_message:header_top_value(to, Response),
     #sip_hdr_address{} = sip_message:header_top_value(from, Response),
     #sip_hdr_cseq{method = 'OPTIONS'} = sip_message:header_top_value(cseq, Response),
-    ['OPTIONS'] = sip_message:header_values(allow, Response),
+    ['INVITE', 'OPTIONS'] = sip_message:header_values(allow, Response),
 
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
@@ -84,21 +85,8 @@ options_302(Config) ->
     Request = sip_uac:create_request('OPTIONS', To),
     {ok, Response} = sip_uac:send_request_sync(Request),
 
-    % Validate response
+    % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
-
-    0 = sip_message:header_top_value('content-length', Response),
-
-    [Via] = sip_message:header_values(via, Response),
-    #sip_hdr_via{transport = udp, host = ?HOST, port = 5060} = Via,
-    {received, {127, 0, 0, 1}} = lists:keyfind(received, 1, Via#sip_hdr_via.params),
-
-    #sip_hdr_address{} = sip_message:header_top_value(to, Response),
-    #sip_hdr_address{} = sip_message:header_top_value(from, Response),
-    #sip_hdr_cseq{method = 'OPTIONS'} = sip_message:header_top_value(cseq, Response),
-    ['OPTIONS'] = sip_message:header_values(allow, Response),
-
-    _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
 options_302_failed(Config) ->
@@ -121,7 +109,7 @@ options_302_failed(Config) ->
     Request = sip_uac:create_request('OPTIONS', To),
     {ok, Response} = sip_uac:send_request_sync(Request),
 
-    % Validate response code
+    % validate status code
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
@@ -134,21 +122,8 @@ options_501(Config) ->
     Request = sip_uac:create_request('OPTIONS', To),
     {ok, Response} = sip_uac:send_request_sync(Request),
 
-    % Validate response
+    % validate status
     #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
-
-    0 = sip_message:header_top_value('content-length', Response),
-
-    [Via] = sip_message:header_values(via, Response),
-    #sip_hdr_via{transport = udp, host = ?HOST, port = 5060} = Via,
-    {received, {127, 0, 0, 1}} = lists:keyfind(received, 1, Via#sip_hdr_via.params),
-
-    #sip_hdr_address{} = sip_message:header_top_value(to, Response),
-    #sip_hdr_address{} = sip_message:header_top_value(from, Response),
-    #sip_hdr_cseq{method = 'OPTIONS'} = sip_message:header_top_value(cseq, Response),
-    ['OPTIONS'] = sip_message:header_values(allow, Response),
-
-    _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
 %% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
@@ -179,7 +154,7 @@ options_503_next_200(Config) ->
     Request = sip_uac:create_request('OPTIONS', To),
     {ok, Response} = sip_uac:send_request_sync(Request),
 
-    % Validate response
+    % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
 
     meck:unload(sip_resolve),

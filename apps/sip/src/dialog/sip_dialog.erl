@@ -33,7 +33,7 @@ start_link() ->
 
 
 -spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> ok.
-%% @doc Create new dialog
+%% @doc Create new dialog for given pair of request/response
 %% @end
 create_dialog(uas, Request, Response) ->
     Dialog = uas_dialog_state(Request, Response),
