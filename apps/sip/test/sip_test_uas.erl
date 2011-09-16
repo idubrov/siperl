@@ -25,7 +25,7 @@ detect_loops(_Request, _State) ->
     false.
 
 -spec allowed_methods(#sip_request{}, #context{}) -> [atom()].
-allowed_methods(_Request, _Context) -> ['INVITE'].
+allowed_methods(_Request, _Context) -> ['INVITE', 'OPTIONS'].
 
 'OPTIONS'(Request, #context{handler = Handler} = Context) ->
     Response = Handler(Request),
