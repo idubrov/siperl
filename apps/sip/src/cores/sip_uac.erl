@@ -53,6 +53,8 @@ start_link() ->
 %% Creates all required headers of the SIP message: `Via:', `Max-Forwards:',
 %% `From:', `To:', `CSeq:', `Call-Id'. Also, adds `Route:' headers
 %% if pre-existing route set is configured.
+%%
+%% Clients are free to modify any part of the request according to their needs.
 %% @end
 -spec create_request(sip_name(), #sip_hdr_address{}) -> #sip_request{}.
 create_request(Method, To) when is_record(To, sip_hdr_address) ->
