@@ -10,7 +10,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/2, send_response/3]).
+-export([start_link/2, create_response/3, send_response/3]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -40,6 +40,19 @@ send_response(UAS, Request, Response) when is_record(Response, sip_response) ->
     % FIXME: Instead, store unreplied requests somewhere and provide request id...
     gen_server:cast(UAS, {send_response, Request, Response}),
     ok.
+
+-spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
+create_response(Request, Status, Reason) ->
+    Response = sip_message:create_response(Request, Status, Reason),
+    case sip_dialog:is_dialog_establishing(Request, Response) of
+        true ->
+            % Copy all Record-Route headers
+            RecordRoutes = [{'record-route', Value} ||
+                            {'record-route', Value} <- Request#sip_request.headers],
+            Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
+        false ->
+            Response
+    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -162,6 +175,8 @@ validate_required(Request, #state{callback = Callback} = State) ->
 do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
     % Validate response before sending it
     ok = sip_message:validate_response(Response),
+
+    % FIXME: Move Contact header security validation here...
 
     ok = case sip_message:is_dialog_establishing(Response) of
         true ->

@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3]).
+-export([start_link/0, create_dialog/3, is_dialog_establishing/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -38,6 +38,22 @@ start_link() ->
 create_dialog(uas, Request, Response) ->
     Dialog = uas_dialog_state(Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
+
+-spec is_dialog_establishing(#sip_request{}, #sip_response{}) -> boolean().
+%% @doc Check if response to the request will establish a new dialog
+%%
+%% Response is considered as dialog establishing if it is response
+%% to the `INVITE' method, status code is 2xx and no tag is present
+%% in the request `To' header.
+%% @end
+is_dialog_establishing(#sip_request{method = 'INVITE'} = Request, #sip_response{status = Status})
+  when Status >= 200, Status =< 299 ->
+    To = sip_message:header_top_value(to, Request),
+    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
+        false -> true;
+        {tag, _ToTag} -> false
+    end;
+is_dialog_establishing(#sip_request{}, #sip_response{}) -> false.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
