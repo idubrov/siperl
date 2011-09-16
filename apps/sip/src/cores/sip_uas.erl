@@ -10,7 +10,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/2, create_response/3, send_response/3]).
+-export([start_link/2, create_response/2, create_response/3, send_response/3]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -41,18 +41,34 @@ send_response(UAS, Request, Response) when is_record(Response, sip_response) ->
     gen_server:cast(UAS, {send_response, Request, Response}),
     ok.
 
+-spec create_response(#sip_request{}, integer()) -> #sip_response{}.
+create_response(Request, Status) ->
+    create_response(Request, Status, sip_message:default_reason(Status)).
+
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(Request, Status, Reason) ->
     Response = sip_message:create_response(Request, Status, Reason),
-    case sip_dialog:is_dialog_establishing(Request, Response) of
-        true ->
-            % Copy all Record-Route headers
-            RecordRoutes = [{'record-route', Value} ||
-                            {'record-route', Value} <- Request#sip_request.headers],
-            Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
-        false ->
-            Response
-    end.
+    Response2 =
+        case sip_dialog:is_dialog_establishing(Request, Response) of
+            true ->
+                % Copy all Record-Route headers
+                RecordRoutes = [{'record-route', Value} ||
+                                {'record-route', Value} <- Request#sip_request.headers],
+                Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
+            false ->
+                Response
+        end,
+
+    % Add `To' Tag if not present
+    Fun = fun(#sip_hdr_address{params = Params} = Addr) ->
+                  case lists:keyfind(tag, 1, Params) of
+                      false ->
+                          ToTag = sip_idgen:generate_tag(),
+                          Addr#sip_hdr_address{params = [{tag, ToTag} | Params]};
+                      {tag, _ToTag} -> Addr
+                  end
+          end,
+    sip_message:update_top_header(to, Fun, Response2).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -174,7 +190,7 @@ validate_required(Request, #state{callback = Callback} = State) ->
 -spec do_send_response(#sip_request{}, #sip_response{}, #state{}) -> ok | {error, Reason :: term()}.
 do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
 
-    case do_process_dialog(Request, Response) of
+    case do_pre_send(Request, Response) of
         ok ->
             % Append Supported and Allow headers
             Allow = Callback:allowed_methods(Request, State#state.context),
@@ -198,7 +214,10 @@ do_handle_request(Request, #state{callback = Callback} = State) ->
             {ok, State#state{context = Context}}
     end.
 
-do_process_dialog(Request, Response) ->
+
+%% @doc Validates response, creates dialog if response is dialog creating response
+%% @end
+do_pre_send(Request, Response) ->
     case sip_dialog:is_dialog_establishing(Request, Response) of
         true ->
             case sip_message:validate_dialog_response(Request, Response) of

@@ -18,6 +18,7 @@
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
 -export([with_branch/2, foldl_headers/4]).
+-export([default_reason/1]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -344,9 +345,11 @@ validate_response(#sip_response{} = Response) ->
 %% from 12.1.1 (has proper `Contact:' header).
 %% @end
 validate_dialog_response(Request, Response) ->
-    do([error_m ||
-        validate_response(Response),
-        validate_response_contact(Request, Response)]).
+    case validate_response(Response) of
+        ok ->
+            validate_dialog_contact(Request, Response);
+        {error, Reason} -> {error, Reason}
+    end.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -355,7 +358,7 @@ validate_dialog_response(Request, Response) ->
 
 %% @doc Validate the Contact header according to the 12.1.1
 %% @end
-validate_response_contact(Request, Response) ->
+validate_dialog_contact(Request, Response) ->
     RequestURI = Request#sip_request.uri,
 
     % either Record-Route or Contact, if Record-Route is not present
