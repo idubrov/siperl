@@ -155,6 +155,8 @@ do_create_request(Method, ToAddress) ->
 
 % Put Request URI into the target set
 do_send_request(Request, Callback) ->
+    ok = sip_message:validate_request(Request),
+
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
 
