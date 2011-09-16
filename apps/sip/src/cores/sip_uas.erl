@@ -178,7 +178,7 @@ do_send_response(Request, #sip_response{} = Response, #state{callback = Callback
 
     % FIXME: Move Contact header security validation here...
 
-    ok = case sip_message:is_dialog_establishing(Response) of
+    ok = case sip_dialog:is_dialog_establishing(Request, Response) of
         true ->
             ok = sip_dialog:create_dialog(uas, Request, Response);
         false ->
