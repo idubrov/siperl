@@ -15,7 +15,7 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 % Client API
--export([start_client_tx/3, start_client_tx/4, start_server_tx/2, send_response/1, tx_key/2]).
+-export([start_client_tx/3, start_client_tx/4, start_server_tx/2, send_response/1, tx_key/2, lookup_cancel/1]).
 -export([list_tx/0, is_loop_detected/1]).
 
 % Internal API for transport layer
@@ -91,6 +91,25 @@ list_tx() ->
     MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
     gproc:select(names, MS).
 
+-spec lookup_cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false.
+%% @doc Lookup server transaction based on the `CANCEL' request and cancel it (see 9.2)
+%%
+%% @end
+lookup_cancel(#sip_request{method = 'CANCEL'} = Request) ->
+    Key = tx_key(server, Request),
+    % lookup by the key, but with method not CANCEL/ACK
+    MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value})
+                          when is_record(TxKey, sip_tx_server),
+                               TxKey#sip_tx_server.branch =:= Key#sip_tx_server.branch,
+                               TxKey#sip_tx_server.host =:= Key#sip_tx_server.host,
+                               TxKey#sip_tx_server.port =:= Key#sip_tx_server.port,
+                               TxKey#sip_tx_server.method =/= 'CANCEL', TxKey#sip_tx_server.method =/= 'ACK'
+                          -> TxKey end),
+    case gproc:select(names, MS) of
+        [TxKey] -> {ok, TxKey};
+        [] -> false
+    end.
+
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled
 %% if no transaction to handle the message is found.
@@ -157,7 +176,10 @@ is_loop_detected(#sip_request{} = Msg) ->
 handle_internal(Kind, Msg) ->
     % lookup transaction by key
     Key = tx_key(Kind, Msg),
-    tx_send(Key, Msg).
+    case Msg of
+        #sip_request{method = Method} -> tx_send(Key, {request, Method, Msg});
+        #sip_response{status = Status} -> tx_send(Key, {response, Status, Msg})
+    end.
 
 %% @doc Determine transaction unique key
 %% @end
@@ -200,12 +222,7 @@ tx_module(server, #sip_request{method = 'INVITE'}) -> sip_transaction_server_inv
 tx_module(server, #sip_request{method = 'ACK'}) -> sip_transaction_server_invite;
 tx_module(server, #sip_request{}) -> sip_transaction_server.
 
-tx_send(Key, Msg) ->
-    {Kind, Param} =
-        case Msg of
-            #sip_request{method = Method} -> {request, Method};
-            #sip_response{status = Status} -> {response, Status}
-        end,
+tx_send(Key, Info) ->
     % RFC 17.1.3/17.2.3
     case gproc:lookup_local_name({tx, Key}) of
         % no transaction
@@ -213,7 +230,7 @@ tx_send(Key, Msg) ->
             not_handled;
 
         Pid when is_pid(Pid) ->
-            ok = try gen_fsm:sync_send_event(Pid, {Kind, Param, Msg})
+            ok = try gen_fsm:sync_send_event(Pid, Info)
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
             {ok, Key}

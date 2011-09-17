@@ -64,7 +64,7 @@ server() ->
 %% Internal functions
 %%%----------------------------------------------------------------
 entry(Key, Default) when is_atom(Key) ->
-    case application:get_env(sip, Key) of
+    case application:get_env(Key) of
         {ok, Value} -> Value;
         undefined -> Default
     end.

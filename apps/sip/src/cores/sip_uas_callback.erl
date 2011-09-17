@@ -6,7 +6,7 @@
 -module(sip_uas_callback).
 
 %% API
--export([allow/2, detect_loops/2, supported/2, server/2, is_applicable/1, 'OPTIONS'/2, handle_info/2]).
+-export([allow/2, detect_loops/2, supported/2, server/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, handle_info/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -23,7 +23,7 @@ is_applicable(#sip_request{} = _Request) ->
 -spec allow(#sip_request{}, context()) -> [atom()].
 %% @doc Return list of methods, supported by this callback
 %% @end
-allow(_Request, _Context) -> ['OPTIONS'].
+allow(_Request, _Context) -> ['OPTIONS', 'CANCEL'].
 
 -spec detect_loops(#sip_request{}, context()) -> boolean().
 %% @doc Should UAS detect loops for this request
@@ -48,6 +48,12 @@ server(_Request, _Context) ->
 'OPTIONS'(Request, Context) ->
     Response = sip_uas:create_response(Request, 501),
     {reply, Response, Context}.
+
+-spec 'CANCEL'(#sip_request{}, context()) -> {noreply, context()} | {reply, #sip_response{}, context()}.
+%% @doc Default implementation of `CANCEL' method.
+%% @end
+'CANCEL'(Request, Context) ->
+    {noreply, Context}.
 
 -spec handle_info(term(), context()) ->
           {noreply, context()} |
