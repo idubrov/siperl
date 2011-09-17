@@ -91,29 +91,28 @@ send_response(Response) when is_record(Response, sip_response) ->
     ok = sip_message:validate_response(Response),
 
     Response2 = add_content_length(Response),
-    Response3 = add_to_tag(Response2),
 
-    Via = sip_message:header_top_value(via, Response3),
+    Via = sip_message:header_top_value(via, Response2),
     case is_reliable(Via#sip_hdr_via.transport) of
         true ->
             % try to lookup the connection
-            Key = sip_transaction:tx_key(server, Response3),
+            Key = sip_transaction:tx_key(server, Response2),
             case gproc:lookup_pids({p, l, {connection, Key}}) of
                 [Pid | _Rest] ->
                     Connection = #sip_connection{transport = Via#sip_hdr_via.transport, connection = Pid},
-                    case transport_send(Connection, Response3) of
+                    case transport_send(Connection, Response2) of
                         ok -> ok;
                         {error, _Reason} ->
                             % try to send to address in `received'
-                            send_response_received(Response3)
+                            send_response_received(Response2)
                     end;
                 [] ->
                     % no connections for tx, send to address `received'
-                    send_response_received(Response3)
+                    send_response_received(Response2)
             end;
         false ->
             % not reliable -- send to address in `received'
-            send_response_received(Response3)
+            send_response_received(Response2)
     end.
 
 %% @doc See RFC 3261 18.2.2 Sending Responses
@@ -322,20 +321,6 @@ add_content_length(Msg) ->
            (Value) -> Value
         end,
     sip_message:update_top_header('content-length', Fun, Msg).
-
-
-%% Add To: header tag, if not present and response status is not "100 Trying"
-add_to_tag(Msg) ->
-    % FIXME: Move to UAC implementation?
-    To = sip_message:header_top_value(to, Msg),
-    Params = To#sip_hdr_address.params,
-    case lists:keyfind(tag, 1, Params) of
-        false ->
-            To2 = To#sip_hdr_address{params = [{tag, sip_idgen:generate_tag()} | Params]},
-            sip_message:replace_top_header(to, To2, Msg);
-        _Other ->
-            Msg
-    end.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
