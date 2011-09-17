@@ -1,0 +1,4 @@
+Several demonstrational projects.
+
+busy    -- replies with busy after 10 seconds of ringing
+hang    -- calls, then hangs after 10 seconds
