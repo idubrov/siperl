@@ -1,4 +1,4 @@
 #!/bin/sh
 
-erl -pa apps/*/ebin deps/*/ebin/ -boot start_sasl "$@"
+erl -pa apps/*/ebin demos/*/ebin deps/*/ebin/ -boot start_sasl "$@"
 
