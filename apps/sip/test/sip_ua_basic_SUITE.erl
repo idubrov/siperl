@@ -39,7 +39,9 @@ end_per_testcase(_TestCase, Config) ->
     ok = sip_test:shutdown(?config(uac, Config)),
     ok.
 
-options_200(_Config) ->
+options_200(Config) ->
+    UAC = ?config(uac, Config),
+
     % Start UAS to reply with 200 Ok
     Handler =
         fun (Request) ->
@@ -49,8 +51,8 @@ options_200(_Config) ->
 
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request('OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(Request),
+    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -70,7 +72,9 @@ options_200(_Config) ->
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
-options_302(_Config) ->
+options_302(Config) ->
+    UAC = ?config(uac, Config),
+
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
     Handler =
@@ -84,14 +88,16 @@ options_302(_Config) ->
     sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    Request = sip_uac:create_request('OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(Request),
+    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_302_failed(_Config) ->
+options_302_failed(Config) ->
+    UAC = ?config(uac, Config),
+
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
     Handler =
@@ -108,28 +114,32 @@ options_302_failed(_Config) ->
     sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    Request = sip_uac:create_request('OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(Request),
+    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
 
     % validate status code
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_501(_Config) ->
+options_501(Config) ->
+    UAC = ?config(uac, Config),
+
     % configure UAS to reply with 501 Not Implemented
     Handler = fun (Request) -> sip_message:create_response(Request, 501) end,
     sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request('OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(Request),
+    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
 
     % validate status
     #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
     ok.
 
 %% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
-options_503_next_200(_Config) ->
+options_503_next_200(Config) ->
+    UAC = ?config(uac, Config),
+
     % Mock sip_resolve to return two destinations for fake URI
     % Both destinations point to 127.0.0.1, but have different transports
     ok = meck:new(sip_resolve, [passthrough]),
@@ -153,8 +163,8 @@ options_503_next_200(_Config) ->
     sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:example.test">>, []),
-    Request = sip_uac:create_request('OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(Request),
+    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
+    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,

@@ -44,21 +44,18 @@ start_client_tx(TU, To, Request, Options)
        is_record(Request, sip_request),
        is_list(Options) ->
 
-    % Every new client transaction has its own branch value
-    Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
-
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(To#sip_destination.transport),
 
-    TxKey = tx_key(client, Request2),
-    Module = tx_module(client, Request2),
+    TxKey = tx_key(client, Request),
+    Module = tx_module(client, Request),
     TxState = #tx_state{to = To,
                         tx_key = TxKey,
                         tx_user = TU,
-                        request = Request2,
+                        request = Request,
                         reliable = Reliable,
                         options = Options,
-                        props = tx_props(client, TxKey, Request2)},
+                        props = tx_props(client, TxKey, Request)},
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
     ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
     {ok, TxKey}.
@@ -92,9 +89,15 @@ list_tx() ->
     gproc:select(names, MS).
 
 -spec cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false.
-%% @doc Cancel server transaction based on the `CANCEL' request (see 9.2)
+%% @doc Cancel client or server transaction based on the request (see 9.1/9.2)
 %%
-%% This functionality was moved from the UAS here, because transaction
+%% If request have `CANCEL' method, cancel server transaction (request was received
+%% from outside).
+%%
+%% If request have non-`CANCEL' method, cancel client transaction matching the
+%% request. The client transaction will generate `CANCEL' request on its own.
+%%
+%% This functionality was moved from the UAC/UAS here, because transaction
 %% layer have the information if request was replied and can process
 %% cancellation atomically (in transaction FSM process).
 %% @end
@@ -113,7 +116,14 @@ cancel(#sip_request{method = 'CANCEL'} = Request) ->
             tx_send(TxKey, cancel),
             {ok, TxKey};
         [] -> false
+    end;
+cancel(#sip_request{} = Request) ->
+    TxKey = tx_key(client, Request),
+    case tx_send(TxKey, cancel) of
+        {ok, TxKey} -> {ok, TxKey};
+        not_handled -> false % FIXME: use false instead of not_handled?
     end.
+
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled

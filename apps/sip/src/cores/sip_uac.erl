@@ -21,13 +21,11 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/0, create_request/2, send_request/1, send_request/2, send_request_sync/1]).
+-export([start_link/0, create_request/3, send_request/2, send_request/3, send_request_sync/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_call/3, handle_cast/2]).
-
--define(SERVER, ?MODULE).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -46,7 +44,7 @@
 
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
+    gen_server:start_link(?MODULE, {}, []).
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
@@ -56,34 +54,34 @@ start_link() ->
 %%
 %% Clients are free to modify any part of the request according to their needs.
 %% @end
--spec create_request(sip_name(), #sip_hdr_address{}) -> #sip_request{}.
-create_request(Method, To) when is_record(To, sip_hdr_address) ->
-    gen_server:call(?SERVER, {create_request, Method, To}).
+-spec create_request(atom() | pid(), sip_name(), #sip_hdr_address{}) -> #sip_request{}.
+create_request(UAC, Method, To) when is_record(To, sip_hdr_address) ->
+    gen_server:call(UAC, {create_request, Method, To}).
 
 %% @doc Send the request asynchronously. Responses will be provided via
 %% `Callback' function calls.
 %% <em>Note: callback function will be evaluated on a different process!</em>
 %% @end
--spec send_request(sip_message(), fun((#sip_response{}) -> ok)) -> ok.
-send_request(Request, Callback) when is_record(Request, sip_request) ->
-    ok = gen_server:cast(?SERVER, {send_request, Request, Callback}).
+-spec send_request(atom() | pid(), sip_message(), fun((#sip_response{}) -> ok)) -> ok.
+send_request(UAC, Request, Callback) when is_record(Request, sip_request), is_function(Callback, 1) ->
+    ok = gen_server:cast(UAC, {send_request, Request, Callback}).
 
 %% @doc Send the request asynchronously. Responses will be provided via
 %% `{response, Response}' messages delivered to the caller
 %% @end
--spec send_request(sip_message()) -> ok.
-send_request(Request) when is_record(Request, sip_request) ->
+-spec send_request(atom() | pid(), sip_message()) -> ok.
+send_request(UAC, Request) when is_record(Request, sip_request) ->
     Pid = self(),
     Callback = fun({ok, Response}) -> Pid ! {response, Response} end,
-    ok = gen_server:cast(?SERVER, {send_request, Request, Callback}).
+    ok = gen_server:cast(UAC, {send_request, Request, Callback}).
 
 
 %% @doc Send the request synchronously
 %% FIXME: Does not work with provisional responses!!!
 %% @end
--spec send_request_sync(sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
-send_request_sync(Request) when is_record(Request, sip_request) ->
-    gen_server:call(?SERVER, {send_request, Request}).
+-spec send_request_sync(atom() | pid(), sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
+send_request_sync(UAC, Request) when is_record(Request, sip_request) ->
+    gen_server:call(UAC, {send_request, Request}).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -148,8 +146,8 @@ do_create_request(Method, ToAddress) ->
     RequestURI = ToAddress#sip_hdr_address.uri,
 
     % will be updated later (by transport layer)
-    % branch will be added before sending
-    Via = {via, #sip_hdr_via{}},
+    % FIXME: Branch should be generated before sending the reuest!
+    Via = {via, #sip_hdr_via{params = [{branch, sip_idgen:generate_branch()}]}},
     MaxForwards = {'max-forwards', 70},
     From = {from, sip_headers:address(<<"Anonymous">>,
                                         <<"sip:thisis@anonymous.invalid">>,
@@ -213,6 +211,9 @@ validate_vias(Msg) ->
 %% @doc Automatic handling of 3xx-6xx responses valve
 %% @end
 -spec handle_response(#req_info{}, #sip_response{}) -> error_m:monad(ok).
+handle_response(cancel, #sip_response{}) ->
+    % ignore responses for CANCEL trasactions
+    error_m:fail(ignore_cancel);
 handle_response(ReqInfo, #sip_response{status = Status} = Response)
   when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
@@ -255,7 +256,12 @@ next_destination(#req_info{destinations = []}, _Response) ->
 next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response) ->
     % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
+
+    %% FIXME: Every new client transaction must have its own branch value!!!!!
+%%     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
+    %%
     {ok, _TxKey} = sip_transaction:start_client_tx(self(), Top, Request, [{user_data, ReqInfo2}]),
+
     % stop processing
     error_m:fail(processed).
 

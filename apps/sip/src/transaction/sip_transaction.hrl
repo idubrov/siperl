@@ -28,7 +28,9 @@
          to,            % Address to send request to
          reliable,      % If request was made via reliable connection
          options = [],  % Options
-         props          % Any gproc properties to register
+         props,         % Any gproc properties to register
+         cancel = false,    % If transaction should be cancelled (but probably was not cancelled yet)
+         cancelled = false  % If transaction was cancelled
         }).
 
 -define(CANCEL(Timer, TxState), sip_transaction_base:cancel_timer(#tx_state.Timer, TxState)).

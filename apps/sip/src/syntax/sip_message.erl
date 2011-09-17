@@ -14,7 +14,7 @@
 -export([method/1, is_secure/1, is_dialog_establishing/1]).
 -export([validate_request/1, validate_response/1, validate_contact/2]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
--export([create_ack/2, create_response/2, create_response/3]).
+-export([create_ack/2, create_cancel/1, create_response/2, create_response/3]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
 -export([with_branch/2, foldl_headers/4]).
@@ -254,6 +254,36 @@ create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
                  uri = RequestURI,
                  headers = [{'via', [Via]}, {'to', To} | ACKHeaders]}.
 
+%% @doc RFC 3261, 9.1 Constructing CANCEL requests
+%% @end
+-spec create_cancel(#sip_request{}) -> #sip_request{}.
+create_cancel(#sip_request{method = Method, uri = RequestURI} = Request) ->
+    % Request-URI, Call-ID, To, the numeric part of CSeq, and From
+    CancelHeaders =
+        [case Name of
+             'call-id' -> {Name, Value};
+             from -> {Name, Value};
+             to -> {Name, Value};
+             cseq ->
+                 CSeq = sip_headers:parse(cseq, Value),
+                 CSeq2 = CSeq#sip_hdr_cseq{method = 'CANCEL'},
+                 {Name, CSeq2};
+             route ->
+                 {Name, Value};
+             % Also, Max-Forwards is copied as well. Although this is not explicitly
+             % required in 9.1, it is required by 8.1.1
+             'max-forwards' -> {Name, Value}
+         end || {Name, Value} <- Request#sip_request.headers,
+                (Name =:= 'call-id' orelse Name =:= to orelse
+                 Name =:= cseq orelse Name =:= route orelse
+                 Name =:= from orelse Name =:= 'max-forwards')],
+
+    % Via is taken from top Via of the original request
+    Via = header_top_value(via, Request),
+
+    #sip_request{method = 'CANCEL',
+                 uri = RequestURI,
+                 headers = [{'via', [Via]} | CancelHeaders]}.
 
 %% @doc Create response for given request
 %% @end

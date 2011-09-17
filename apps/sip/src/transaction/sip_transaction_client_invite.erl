@@ -54,17 +54,29 @@
     TxState3 = ?START(timerA, 2 * Interval, TxState2),
     {next_state, 'CALLING', TxState3};
 
-%% @doc
-%% Transaction timed out.
+%% @doc Transaction timed out.
 %% @end
+'CALLING'({timeout, _Ref, {timerB, _}}, #tx_state{cancelled = true} = TxState) ->
+    % Client should consider transaction as cancelled, since RFC 2543 compliant
+    % UAS will not generate explicit 487 Request Terminated response
+    {stop, cancelled, TxState};
 'CALLING'({timeout, _Ref, {timerB, _}}, TxState) ->
     {stop, {timeout, timerB}, TxState}.
+
+%% @doc Handle provisional (1xx) responses (transaction was cancelled).
+%% @end
+-spec 'CALLING'(term(), term(), #tx_state{}) -> term().
+'CALLING'({response, Status, Response}, From, #tx_state{cancel = true, cancelled = false} = TxState)
+  when Status >= 100, Status =< 199 ->
+    {ok, TxState2} = start_cancel_transaction(TxState),
+
+    % continue as usual (now with cancelled set to true, so we will not start another CANCEL tx)
+    'CALLING'({response, Status, Response}, From, TxState2);
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'CALLING' and 'PROCEEDING'
 %% states as they are similar.
 %% @end
--spec 'CALLING'(term(), term(), #tx_state{}) -> term().
 'CALLING'({response, Status, Response}, _From, TxState)
   when Status >= 100, Status =< 199 ->
     %% Provisional response, transition to PROCEEDING state.
@@ -73,7 +85,6 @@
     % stop retransmissions in 'PROCEEDING' state
     TxState2 = ?CANCEL(timerA, TxState),
     {reply, ok, 'PROCEEDING', TxState2};
-
 
 %% @doc
 %% Error response, transition to COMPLETED state.
@@ -104,7 +115,13 @@
     %% 2xx response, transition to the 'TERMINATED' state
 
     ?TU(Response, TxState),
-    {stop, normal, ok, TxState}.
+    {stop, normal, ok, TxState};
+
+%% @doc Transaction cancellation, Section 9.1
+%% Set 'cancel' flag to true
+%% @end
+'CALLING'(cancel, _From, TxState) ->
+    {reply, ok, 'CALLING', TxState#tx_state{cancel = true}}.
 
 %% @doc
 %% In 'PROCEEDING' state, act the same way as in 'CALLING' state.
@@ -113,14 +130,26 @@
 %% @end
 -spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 'PROCEEDING'({response, Status, Msg}, From, TxState) ->
-    'CALLING'({response, Status, Msg}, From, TxState).
+    'CALLING'({response, Status, Msg}, From, TxState);
 
-%% @doc
-%% Transaction timed out
+%% @doc Transaction cancellation, Section 9.1
+%% Handle transaction cancellation
+%% @end
+'PROCEEDING'(cancel, _From, #tx_state{cancelled = true} = TxState) ->
+    % already cancelled
+    {reply, ok, 'PROCEEDING', TxState};
+'PROCEEDING'(cancel, _From, #tx_state{cancelled = false} = TxState) ->
+    % start CANCEL transaction
+    {ok, TxState2} = start_cancel_transaction(TxState),
+    {reply, ok, 'PROCEEDING', TxState2}.
+
+
+%% @doc Transaction timed out
+%% Same handling as in `CALLING' state.
 %% @end
 -spec 'PROCEEDING'(term(), #tx_state{}) -> {stop, {timeout, timerB}, #tx_state{}}.
-'PROCEEDING'({timeout, _Ref, {timerB, _}}, TxState) ->
-    {stop, {timeout, timerB}, TxState}.
+'PROCEEDING'({timeout, Ref, {timerB, Interval}}, TxState) ->
+    'CALLING'({timeout, Ref, {timerB, Interval}}, TxState).
 
 %% @doc
 %% In 'COMPLETED' state transaction re-sends ACK without passing the response
@@ -129,7 +158,13 @@
 -spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
 'COMPLETED'({response, _Status, Response}, _From, TxState) ->
     TxState2 = ?ACK(Response, TxState),
-    {reply, ok, 'COMPLETED', TxState2}.
+    {reply, ok, 'COMPLETED', TxState2};
+
+%% @doc Transaction cancellation, Section 9.1
+%% Do nothing, since we have already received final response.
+%% @end
+'COMPLETED'(cancel, _From, TxState) ->
+    {reply, ok, 'COMPLETED', TxState}.
 
 %% @doc
 %% When Timer D fires while in 'COMPLETED' state, transition to the 'TERMINATED'
@@ -138,3 +173,12 @@
 -spec 'COMPLETED'(term(), #tx_state{}) -> term().
 'COMPLETED'({timeout, _Ref, {timerD, _}}, TxState) ->
     {stop, normal, TxState}.
+
+start_cancel_transaction(TxState) ->
+    % start separate CANCEL transaction, with same Via
+    % this transaction will report to the same TU
+    Cancel = sip_message:create_cancel(TxState#tx_state.request),
+    % FIXME: hack... UAC will ignore responses from such tx
+    Options = lists:keystore(user_data, 1, TxState#tx_state.options, {user_data, cancel}),
+    {ok, _TxKey} = sip_transaction:start_client_tx(TxState#tx_state.tx_user, TxState#tx_state.to, Cancel, Options),
+    {ok, TxState#tx_state{cancelled = true}}.
