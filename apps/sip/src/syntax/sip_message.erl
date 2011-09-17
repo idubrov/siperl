@@ -825,6 +825,7 @@ validation_test_() ->
 
      % Response validation
      ?_assertEqual(ok, validate_dialog_response(ValidRequest2, ValidResponse2)),
+     ?_assertEqual({error, {invalid, via}}, validate_dialog_response(ValidRequest, InvalidResponse)),
      ?_assertEqual({error, {invalid, contact}}, validate_dialog_response(ValidRequest2, InvalidResponse2)),
      ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_dialog_response(InvalidRequest3, InvalidResponse3))
      ].
