@@ -466,6 +466,7 @@ parse_start_line(StartLine) when is_binary(StartLine) ->
                           reason = ReasonPhrase}
     end.
 
+-spec default_reason(sip_status()) -> binary().
 default_reason(Status) ->
     case Status of
         100 -> <<"Trying">>;

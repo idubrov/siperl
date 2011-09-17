@@ -50,6 +50,14 @@
 
 %% SIP message types.
 
+-type sip_status()  :: 100..699.
+%% 1xx Provisional responses
+%% 2xx
+%% 3xx
+%% 4xx
+%% 5xx
+%% 6xx
+
 -record(sip_request, {method        :: sip_name(),
                       uri           :: sip_uri(),
                       headers = []  :: sip_headers(),
