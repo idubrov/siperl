@@ -8,7 +8,7 @@
 -module(sip_config).
 
 %% Exports
--export([t1/0, t2/0, t4/0, ports/1, self/0, routes/0, connection_timeout/0]).
+-export([t1/0, t2/0, t4/0, ports/1, self/0, routes/0, connection_timeout/0, server/0]).
 
 %% Includes
 -include("sip_common.hrl").
@@ -56,11 +56,15 @@ routes() ->
 connection_timeout() ->
     sip_config:t1() * 64. % See RFC 3261, Section 18
 
+-spec server() -> binary().
+server() ->
+    list_to_binary(entry(server, "")).
+
 %%%----------------------------------------------------------------
 %% Internal functions
 %%%----------------------------------------------------------------
 entry(Key, Default) when is_atom(Key) ->
-    case application:get_env(Key) of
+    case application:get_env(sip, Key) of
         {ok, Value} -> Value;
         undefined -> Default
     end.

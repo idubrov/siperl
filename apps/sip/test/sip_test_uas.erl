@@ -14,7 +14,7 @@
 -include("sip_test.hrl").
 
 %% API
--export([init/1, detect_loops/2, allowed_methods/2, 'OPTIONS'/2, 'INVITE'/2]).
+-export([init/1, detect_loops/2, allow/2, 'OPTIONS'/2, 'INVITE'/2]).
 
 -record(context, {handler}).
 
@@ -24,8 +24,8 @@ init(Handler) ->
 detect_loops(_Request, _State) ->
     false.
 
--spec allowed_methods(#sip_request{}, #context{}) -> [atom()].
-allowed_methods(_Request, _Context) -> ['INVITE', 'OPTIONS'].
+-spec allow(#sip_request{}, #context{}) -> [atom()].
+allow(_Request, _Context) -> ['INVITE', 'OPTIONS'].
 
 'OPTIONS'(Request, #context{handler = Handler} = Context) ->
     Response = Handler(Request),

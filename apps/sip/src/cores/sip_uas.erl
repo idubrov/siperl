@@ -48,16 +48,7 @@ create_response(Request, Status) ->
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(Request, Status, Reason) ->
     Response = sip_message:create_response(Request, Status, Reason),
-    Response2 =
-        case sip_dialog:is_dialog_establishing(Request, Response) of
-            true ->
-                % Copy all Record-Route headers
-                RecordRoutes = [{'record-route', Value} ||
-                                {'record-route', Value} <- Request#sip_request.headers],
-                Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
-            false ->
-                Response
-        end,
+    Response2 = copy_record_route(Request, Response),
     add_to_tag(Response2, Status).
 
 %%-----------------------------------------------------------------
@@ -127,7 +118,7 @@ do_request(Request, State) ->
     % validate message
     Result =
         do([error_m ||
-            validate_allowed(Request, State),
+            validate_method(Request, State),
             validate_loop(Request, State),
             validate_required(Request, State)]),
     case Result of
@@ -138,15 +129,15 @@ do_request(Request, State) ->
     end.
 
 %% Validate message according to the 8.2.1
--spec validate_allowed(#sip_request{}, #state{}) -> error_m:monad(ok).
-validate_allowed(Request, #state{callback = Callback} = State) ->
-    Allow = Callback:allowed_methods(Request, State#state.context),
+-spec validate_method(#sip_request{}, #state{}) -> error_m:monad(ok).
+validate_method(Request, #state{callback = Callback} = State) ->
+    Allow = Callback:allow(Request, State#state.context),
     case lists:member(Request#sip_request.method, Allow) of
         true ->
             error_m:return(ok);
         false ->
             % Send "405 Method Not Allowed"
-            Response = sip_message:create_response(Request, 405),
+            Response = create_response(Request, 405),
             ok = do_send_response(Request, Response, State),
             error_m:fail(not_allowed)
     end.
@@ -161,7 +152,7 @@ validate_loop(Request, #state{callback = Callback} = State) ->
             error_m:return(ok);
         true ->
             % Send "482 Loop Detected"
-            Response = sip_message:create_response(Request, 482),
+            Response = create_response(Request, 482),
             ok = do_send_response(Request, Response, State),
             error_m:fail(loop_detected)
     end.
@@ -169,7 +160,7 @@ validate_loop(Request, #state{callback = Callback} = State) ->
 %% Validate message according to the 8.2.2.3
 -spec validate_required(#sip_request{}, #state{}) -> error_m:monad(ok).
 validate_required(Request, #state{callback = Callback} = State) ->
-    Supported = Callback:extensions(Request, State#state.context),
+    Supported = Callback:supported(Request, State#state.context),
     IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
 
     %% FIXME: Ignore for CANCEL requests/ACKs for non-2xx
@@ -179,25 +170,23 @@ validate_required(Request, #state{callback = Callback} = State) ->
             error_m:return(ok);
         Unsupported ->
             % Send "420 Bad Extension"
-            Response = sip_message:create_response(Request, 420),
+            Response = create_response(Request, 420),
             Response2 = sip_message:append_header('unsupported', Unsupported, Response),
             ok = do_send_response(Request, Response2, State),
             error_m:fail(bad_extension)
     end.
 
 -spec do_send_response(#sip_request{}, #sip_response{}, #state{}) -> ok | {error, Reason :: term()}.
-do_send_response(Request, #sip_response{} = Response, #state{callback = Callback} = State) ->
+do_send_response(Request, #sip_response{} = Response, State) ->
 
     case do_pre_send(Request, Response) of
         ok ->
-            % Append Supported and Allow headers
-            Allow = Callback:allowed_methods(Request, State#state.context),
-            Extensions = Callback:extensions(Request, State#state.context),
-            Response2 = sip_message:append_header(allow, Allow, Response),
-            Response3 = sip_message:append_header(supported, Extensions, Response2),
+            % Append Supported, Allow and Server headers, but only if they were not
+            % added explicitly
+            Response2 = add_from_callback([allow, supported, server], State, Request, Response),
 
             % send
-            {ok, _TxKey} = sip_transaction:send_response(Response3),
+            {ok, _TxKey} = sip_transaction:send_response(Response2),
             ok;
         {error, Reason} -> {error, Reason}
     end.
@@ -227,6 +216,19 @@ do_pre_send(Request, Response) ->
             sip_message:validate_response(Response)
     end.
 
+%% @doc Copy Record-Route for dialog-establishing responses
+%% @end
+copy_record_route(Request, Response) ->
+    case sip_dialog:is_dialog_establishing(Request, Response) of
+        true ->
+            % Copy all Record-Route headers
+            RecordRoutes = [{'record-route', Value} ||
+                            {'record-route', Value} <- Request#sip_request.headers],
+            Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
+        false ->
+            Response
+    end.
+
 %% @doc Append `To:' header tag if not present and response is not provisional response
 %% @end
 add_to_tag(Response, Status) when Status >= 100, Status =< 199 -> Response;
@@ -241,3 +243,12 @@ add_to_tag(Response, _Status) ->
                 end
         end,
     sip_message:update_top_header(to, Fun, Response).
+
+add_from_callback([], #state{} = _State, _Request, Response) -> Response;
+add_from_callback([Header | Rest], #state{callback = Callback, context = Context} = State, Request, Response) ->
+    case sip_message:has_header(Header, Response) of
+        true -> Response;
+        false ->
+            Response2 = sip_message:append_header(Header, Callback:Header(Request, Context), Response),
+            add_from_callback(Rest, State, Request, Response2)
+    end.

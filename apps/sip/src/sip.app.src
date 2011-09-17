@@ -17,5 +17,6 @@
 		  {t1, 500},
 		  {t2, 4000},
 		  {t4, 5000},
-		  {routes, []} % pre-existing configured routes
+		  {routes, []}, % pre-existing configured routes
+		  {server, "SIPErl 0.1.0"}
 		 ]}]}.
