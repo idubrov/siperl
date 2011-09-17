@@ -196,34 +196,40 @@ has_header(Name, Msg) when is_record(Msg, sip_request); is_record(Msg, sip_respo
         false -> false
     end.
 
-%% @doc
-%% RFC 3261, 17.1.1.3 Construction of the ACK Request
+%% @doc RFC 3261, 17.1.1.3 Construction of the ACK Request
 %% @end
 -spec create_ack(#sip_request{}, #sip_response{}) -> #sip_request{}.
 create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
            #sip_response{} = Response) ->
     % Call-Id, From, CSeq (with method changed to 'ACK') and Route (for 'INVITE'
     % response ACKs) are taken from the original request
-    FoldFun = fun ({'call-id', _} = H, List) -> [H|List];
-                  ({'from', _} = H, List) -> [H|List];
-                  ({cseq, Value}, List) ->
-                       CSeq = sip_headers:parse(cseq, Value),
-                       CSeq2 = CSeq#sip_hdr_cseq{method = 'ACK'},
-                       [{cseq, CSeq2} | List];
-                  ({'route', _} = H, List) when Method =:= 'INVITE' -> [H|List];
-                  (_, List) -> List
-           end,
-    ReqHeaders = lists:reverse(lists:foldl(FoldFun, [], Request#sip_request.headers)),
+    ACKHeaders =
+        [case Name of
+             'call-id' -> {Name, Value};
+             from -> {Name, Value};
+             cseq ->
+                 CSeq = sip_headers:parse(cseq, Value),
+                 CSeq2 = CSeq#sip_hdr_cseq{method = 'ACK'},
+                 {Name, CSeq2};
+             route ->
+                 {Name, Value};
+             % Also, Max-Forwards is copied as well. Although this is not explicitly
+             % required by 17.1.1.3, it is required by 8.1.1
+             'max-forwards' -> {Name, Value}
+         end || {Name, Value} <- Request#sip_request.headers,
+                (Name =:= 'call-id' orelse Name =:= from orelse
+                 Name =:= cseq orelse (Name =:= route andalso Method =:= 'INVITE') orelse
+                 Name =:= 'max-forwards')],
 
     % Via is taken from top Via of the original request
-    Via = header_top_value('via', Request),
+    Via = header_top_value(via, Request),
 
     % To goes from the response
     To = header_top_value('to', Response),
 
     #sip_request{method = 'ACK',
                  uri = RequestURI,
-                 headers = [{'via', [Via]}, {'to', To} | ReqHeaders]}.
+                 headers = [{'via', [Via]}, {'to', To} | ACKHeaders]}.
 
 
 %% @doc Create response for given request
@@ -730,24 +736,33 @@ create_response_test_() ->
 
 -spec create_ack_test_() -> list().
 create_ack_test_() ->
-    ReqHeaders = [
-                  {'via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
-                  {'to', <<"Bob <sip:bob@biloxi.com>">>},
-                  {'from', <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+    ReqHeaders = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                  {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+                  {to, <<"Bob <sip:bob@biloxi.com>">>},
+                  {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
                   {'call-id', <<"987asjd97y7atg">>},
                   {cseq, <<"986759 INVITE">>},
-                  {'route', <<"<sip:alice@atlanta.com>">>},
-                  {'route', <<"<sip:bob@biloxi.com>">>}
-                  ],
-    OrigRequest = #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>, headers = ReqHeaders},
+                  {route, <<"<sip:alice@atlanta.com>">>},
+                  {route, <<"<sip:bob@biloxi.com>">>},
+                  {'content-length', 5},
+                  {'max-forwards', 15}],
+    Request = #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>, headers = ReqHeaders, body = <<"Hello">>},
 
-    RespHeaders = lists:keyreplace('to', 1, ReqHeaders, {'to', <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>}),
-    Response = #sip_response{status = 500, reason = <<"Internal error">>, headers = RespHeaders},
+    Response = create_response(Request, 500),
+    Response2 = replace_top_header(to, <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>, Response),
 
-    ACKHeaders = lists:keyreplace(cseq, 1, RespHeaders, {cseq, <<"986759 ACK">>}),
+    ACKHeaders = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                  {to, <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>},
+                  {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+                  {'call-id', <<"987asjd97y7atg">>},
+                  {cseq, <<"986759 ACK">>},
+                  {route, <<"<sip:alice@atlanta.com>">>},
+                  {route, <<"<sip:bob@biloxi.com>">>},
+                  {'max-forwards', 15}],
+
     ACK = #sip_request{method = 'ACK', uri = <<"sip:bob@biloxi.com">>, headers = ACKHeaders},
     [
-     ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(OrigRequest, Response)))
+     ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(Request, Response2)))
      ].
 
 -spec helpers_test_() -> list().
