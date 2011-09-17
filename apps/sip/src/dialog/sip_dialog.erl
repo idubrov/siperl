@@ -70,7 +70,7 @@ init({}) ->
 handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
         true -> {reply, ok, State};
-        false -> {reply, {error, already_exist}, State}
+        false -> {reply, {error, dialog_exists}, State}
     end;
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.

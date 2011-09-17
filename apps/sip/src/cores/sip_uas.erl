@@ -58,17 +58,7 @@ create_response(Request, Status, Reason) ->
             false ->
                 Response
         end,
-
-    % Add `To' Tag if not present
-    Fun = fun(#sip_hdr_address{params = Params} = Addr) ->
-                  case lists:keyfind(tag, 1, Params) of
-                      false ->
-                          ToTag = sip_idgen:generate_tag(),
-                          Addr#sip_hdr_address{params = [{tag, ToTag} | Params]};
-                      {tag, _ToTag} -> Addr
-                  end
-          end,
-    sip_message:update_top_header(to, Fun, Response2).
+    add_to_tag(Response2, Status).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -236,3 +226,18 @@ do_pre_send(Request, Response) ->
         false ->
             sip_message:validate_response(Response)
     end.
+
+%% @doc Append `To:' header tag if not present and response is not provisional response
+%% @end
+add_to_tag(Response, Status) when Status >= 100, Status =< 199 -> Response;
+add_to_tag(Response, _Status) ->
+    Fun =
+        fun(#sip_hdr_address{params = Params} = To) ->
+                case lists:keyfind(tag, 1, Params) of
+                    false ->
+                        ToTag = sip_idgen:generate_tag(),
+                        To#sip_hdr_address{params = [{tag, ToTag} | Params]};
+                    {tag, _ToTag} -> To
+                end
+        end,
+    sip_message:update_top_header(to, Fun, Response).
