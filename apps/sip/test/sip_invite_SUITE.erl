@@ -39,7 +39,8 @@ end_per_testcase(_TestCase, Config) ->
     ok = sip_test:shutdown(?config(uac, Config)),
     ok.
 
-invite_200(_Config) ->
+invite_200(Config) ->
+    UACPid = ?config(uac, Config),
     UAC = sip_headers:address(<<>>, <<"sip:uac@127.0.0.1">>, []),
     UAS = sip_headers:address(<<>>, <<"sip:uas@127.0.0.1">>, []),
 
@@ -52,11 +53,11 @@ invite_200(_Config) ->
     sip_uas:start_link(sip_test_uas, Handler),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request('INVITE', To),
+    Request = sip_uac:create_request(UACPid, 'INVITE', To),
     Request2 = sip_message:append_header(contact, UAC, Request),
 
     % Responses will be delivered via messages
-    ok = sip_uac:send_request(Request2),
+    ok = sip_uac:send_request(UACPid, Request2),
     ok = receive
              {response, #sip_response{status = 200}} ->
                  ok
