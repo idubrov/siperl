@@ -10,7 +10,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/2, create_response/2, create_response/3, send_response/2]).
+-export([start_link/2, create_response/2, create_response/3, send_response/3]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -20,10 +20,7 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(req_info, {request          :: #sip_request{},
-                   tag              :: binary()}).       % Tag for the `To:' header
 -record(state, {callback      :: module(),
-                requests = [] :: [{#sip_tx_server{}, #req_info{}}],
                 context       :: term()}).      % Callback context
 
 -type gen_from() :: {pid(), term()}.
@@ -38,9 +35,9 @@ start_link(Callback, Param) when is_atom(Callback) ->
 
 %% @doc Initiate a response from the UAS
 %% @end
--spec send_response(pid() | atom(), #sip_response{}) -> ok.
-send_response(UAS, Response) when is_record(Response, sip_response) ->
-    gen_server:cast(UAS, {send_response, Response}),
+-spec send_response(pid() | atom(), #sip_request{}, #sip_response{}) -> ok.
+send_response(UAS, Request, Response) when is_record(Response, sip_response) ->
+    gen_server:cast(UAS, {send_response, Request, Response}),
     ok.
 
 -spec create_response(#sip_request{}, integer()) -> #sip_response{}.
@@ -50,8 +47,7 @@ create_response(Request, Status) ->
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(Request, Status, Reason) ->
     Response = sip_message:create_response(Request, Status, Reason),
-    Response2 = copy_record_route(Request, Response),
-    add_to_tag(Response2, Status).
+    copy_record_route(Request, Response).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -76,9 +72,9 @@ handle_call(Request, _From, State) ->
 
 %% @private
 -spec handle_cast({send_response, #sip_response{}}, #state{}) -> {noreply, #state{}}.
-handle_cast({send_response, Response}, State) ->
-    {ok, State2} = do_send_response(Response, State),
-    {noreply, State2};
+handle_cast({send_response, Request, Response}, State) ->
+    ok = do_send_response(Request, Response, State),
+    {noreply, State};
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
 
@@ -94,9 +90,6 @@ handle_info(Info, #state{callback = Callback} = State) ->
     case Callback:handle_info(Info, State#state.context) of
         {noreply, Context} ->
             {noreply, State#state{context = Context}};
-        {reply, Response, Context} ->
-            {ok, State2} = do_send_response(Response, State),
-            {noreply, State2#state{context = Context}};
         {stop, Reason, Context} ->
             {stop, Reason, State#state{context = Context}}
     end.
@@ -115,21 +108,17 @@ code_change(_OldVsn, State, _Extra) ->
 
 do_request(Request, State) ->
     % start server transaction
-    {ok, TxKey} = sip_transaction:start_server_tx(self(), Request),
+    {ok, _TxKey} = sip_transaction:start_server_tx(self(), Request),
 
     % validate message
     Result =
         do([error_m ||
-            S1 <- validate_method(Request, State),
-            S2 <- validate_loop(Request, S1),
-            S3 <- validate_required(Request, S2),
-            S4 <- record_request(TxKey, Request, S3),
-            process_cancel(Request, S4)]),
+            validate_method(Request, State),
+            validate_loop(Request, State),
+            validate_required(Request, State)]),
     case Result of
-        {ok, State2} ->
-            invoke_callback(Request, State2);
-        {error, {State2, _Reason}} ->
-            {ok, State2}
+        ok -> invoke_callback(Request, State);
+        {error, _Reason} -> {ok, State}
     end.
 
 %% Validate message according to the 8.2.1
@@ -138,12 +127,12 @@ validate_method(Request, #state{callback = Callback} = State) ->
     Allow = Callback:allow(Request, State#state.context),
     case lists:member(Request#sip_request.method, Allow) of
         true ->
-            error_m:return(State);
+            error_m:return(ok);
         false ->
             % Send "405 Method Not Allowed"
-            Response = create_response(Request, 405),
-            {ok, State2} = do_send_response(Response, State),
-            error_m:fail({State2, not_allowed})
+            % FIXME: log request?
+            ok = internal_send(Request, 405, State),
+            error_m:fail(not_allowed)
     end.
 
 %% Validate message according to the 8.2.2.2
@@ -153,19 +142,19 @@ validate_loop(Request, #state{callback = Callback} = State) ->
     IsLoop = DetectLoops andalso sip_transaction:is_loop_detected(Request),
     case IsLoop of
         false ->
-            error_m:return(State);
+            error_m:return(ok);
         true ->
             % Send "482 Loop Detected"
-            Response = create_response(Request, 482),
-            {ok, State2} = do_send_response(Response, State),
-            error_m:fail({State2, loop_detected})
+            % FIXME: log request?
+            ok = internal_send(Request, 482, State),
+            error_m:fail(loop_detected)
     end.
 
 %% Validate message according to the 8.2.2.3
 -spec validate_required(#sip_request{}, #state{}) -> error_m:monad(ok).
-validate_required(#sip_request{method = 'CANCEL'}, State) ->
+validate_required(#sip_request{method = 'CANCEL'}, _State) ->
     % ignore Require: for CANCEL requests
-    error_m:return(State);
+    error_m:return(ok);
 validate_required(Request, #state{callback = Callback} = State) ->
     Supported = Callback:supported(Request, State#state.context),
     IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
@@ -174,58 +163,28 @@ validate_required(Request, #state{callback = Callback} = State) ->
     Require = sip_message:header_values(require, Request),
     case lists:filter(IsNotSupported, Require) of
         [] ->
-            error_m:return(State);
+            error_m:return(ok);
         Unsupported ->
             % Send "420 Bad Extension"
+            % FIXME: log request?
             Response = create_response(Request, 420),
-            Response2 = sip_message:append_header('unsupported', Unsupported, Response),
-            {ok, State2} = do_send_response(Response2, State),
-            error_m:fail({State2, bad_extension})
+            Response2 = sip_message:append_header(unsupported, Unsupported, Response),
+            ok = internal_send(Request, Response2, State),
+            error_m:fail(bad_extension)
     end.
 
--spec do_send_response(#sip_response{}, #state{}) -> {ok, #state{}} | {error, Reason :: term()}.
-do_send_response(#sip_response{status = Status} = Response, State) ->
-    TxKey = sip_transaction:tx_key(server, Response),
-    case lists:keyfind(TxKey, 1, State#state.requests) of
-        {_, ReqInfo} ->
-            case do_pre_send(ReqInfo#req_info.request, Response) of
-                ok ->
-                    % Append Supported, Allow and Server headers, but only if they were not
-                    % added explicitly
-                    Response2 = add_from_callback([allow, supported, server], State, ReqInfo#req_info.request, Response),
 
-                    % send
-                    {ok, _TxKey} = sip_transaction:send_response(Response2),
-                    if Status >= 100, Status =< 199 -> {ok, State};
-                    true ->
-                        % final response
-                        Requests = lists:keydelete(TxKey, 1, State#state.requests),
-                        {ok, State#state{requests = Requests}}
-                    end;
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        false ->
-            {ok, State} % FIXME: ....Ignore for now....
-    end.
+do_send_response(Request, Response, State) ->
+    % Add `To:' header tag automatically (only for non-provisional responses!)
+    % FIXME: Do we need different handling of `To:' tag? For example, for 100rel tag should be
+    % generated for provisional responses. However, we, probably, do not want to delegate that
+    % to the callback module. Maybe we should add tag to incoming request?
+    Response2 = add_to_tag(Response),
 
-process_cancel(#sip_request{method = 'CANCEL'} = Request, State) ->
-    % 9.2, process CANCEL requests
-    {State2, Status} =
-        case sip_transaction:lookup_cancel(Request) of
-            false ->
-                {State, 481};    % Call/Transaction Does Not Exist
-            {ok, TxKey} ->
-                {ok, S} = cancel_transaction(TxKey, State),
-                {S, 200}         % Ok
-        end,
-    % Reply to CANCEL
-    Response = create_response(Request, Status),
-    {ok, State3} = do_send_response(Response, State2),
-
-    error_m:fail({State3, cancel}); % do not continue to UAS callback
-process_cancel(_Request, State) ->
-    error_m:return(State).
+    do([error_m ||
+        sip_message:validate_response(Response2),
+        create_dialog(Request, Response2),
+        internal_send(Request, Response2, State)]).
 
 invoke_callback(Request, #state{callback = Callback} = State) ->
     Method = Request#sip_request.method,
@@ -233,23 +192,19 @@ invoke_callback(Request, #state{callback = Callback} = State) ->
         {noreply, Context} ->
             {ok, State#state{context = Context}};
         {reply, Response, Context} ->
-            {ok, State2} = do_send_response(Response, State),
-            {ok, State2#state{context = Context}}
+            ok = do_send_response(Request, Response, State),
+            {ok, State#state{context = Context}}
     end.
 
 
-%% @doc Validates response, creates dialog if response is dialog creating response
+%% @doc Create dialog if response is dialog creating response
 %% @end
-do_pre_send(Request, Response) ->
-    case sip_dialog:is_dialog_establishing(Request, Response) of
-        true ->
-            case sip_message:validate_dialog_response(Request, Response) of
-                ok ->
-                    sip_dialog:create_dialog(uas, Request, Response);
-                {error, Reason} -> {error, Reason}
-            end;
-        false ->
-            sip_message:validate_response(Response)
+create_dialog(#sip_request{} = Request, #sip_response{status = Status} = Response) ->
+    case sip_message:is_dialog_establishing(Request) of
+        true when Status >= 200, Status =< 299 ->
+            sip_dialog:create_dialog(uas, Request, Response);
+        _Other ->
+            error_m:return(ok)
     end.
 
 %% @doc Copy Record-Route for dialog-establishing responses
@@ -267,8 +222,8 @@ copy_record_route(Request, Response) ->
 
 %% @doc Append `To:' header tag if not present and response is not provisional response
 %% @end
-add_to_tag(Response, Status) when Status >= 100, Status =< 199 -> Response;
-add_to_tag(Response, _Status) ->
+add_to_tag(#sip_response{status = Status} = Response) when Status >= 100, Status =< 199 -> Response;
+add_to_tag(Response) ->
     Fun =
         fun(#sip_hdr_address{params = Params} = To) ->
                 case lists:keyfind(tag, 1, Params) of
@@ -280,6 +235,20 @@ add_to_tag(Response, _Status) ->
         end,
     sip_message:update_top_header(to, Fun, Response).
 
+%% @doc Send with `Server:', `Allow:' and `Supported:' headers added to the response
+%% @end
+internal_send(Request, Status, State) when is_integer(Status) ->
+    internal_send(Request, create_response(Request, Status), State);
+internal_send(Request, Response, State) ->
+    % Append Supported, Allow and Server headers, but only if they were not
+    % added explicitly
+    Response2 = add_from_callback([allow, supported, server], State, Request, Response),
+
+    {ok, _TxKey} = sip_transaction:send_response(Response2),
+    ok.
+
+%% @doc Add header, retrieved from the callback, to the response
+%% @end
 add_from_callback([], #state{} = _State, _Request, Response) -> Response;
 add_from_callback([Header | Rest], #state{callback = Callback, context = Context} = State, Request, Response) ->
     case sip_message:has_header(Header, Response) of
@@ -287,16 +256,4 @@ add_from_callback([Header | Rest], #state{callback = Callback, context = Context
         false ->
             Response2 = sip_message:append_header(Header, Callback:Header(Request, Context), Response),
             add_from_callback(Rest, State, Request, Response2)
-    end.
-
-record_request(TxKey, Request, State) ->
-    ReqInfo = #req_info{request = Request},
-    error_m:return(State#state{requests = [{TxKey, ReqInfo} | State#state.requests]}).
-
-cancel_transaction(TxKey, State) ->
-    case lists:keyfind(TxKey, 1, State#state.requests) of
-        false -> {ok, State}; % Final response was already sent, do nothing
-        {_, ReqInfo} ->
-            Response = create_response(ReqInfo#req_info.request, 487),
-            do_send_response(Response, State)
     end.

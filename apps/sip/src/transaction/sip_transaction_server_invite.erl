@@ -103,7 +103,15 @@
             end,
     % start Timer H
     TxState5 = ?START(timerH, 64 * ?T1, TxState4),
-    {reply, ok, 'COMPLETED', TxState5}.
+    {reply, ok, 'COMPLETED', TxState5};
+
+%% @doc Transaction cancellation, Section 9.2
+%% Sends "487 Request Terminated"
+%% @end
+'PROCEEDING'(cancel, From, TxState) ->
+    % Simply act as we have received final response from the TU
+    Response = sip_message:create_response(TxState#tx_state.request, 487),
+    'PROCEEDING'({response, 487, Response}, From, TxState).
 
 %% @doc
 %% If timer G fires, the response is passed to the transport layer once
@@ -154,7 +162,13 @@
 %% @end
 'COMPLETED'({request, _Method, _Request}, _From, TxState) ->
     TxState2 = ?RESPONSE(TxState),
-    {reply, ok, 'COMPLETED', TxState2}.
+    {reply, ok, 'COMPLETED', TxState2};
+
+%% @doc Transaction cancellation, Section 9.2
+%% Effectively does nothing, as we have already sent the final response
+%% @end
+'COMPLETED'(cancel, _From, TxState) ->
+    {reply, ok, 'COMPLETED', TxState}.
 
 %% @doc
 %% The purpose of the "Confirmed" state is to absorb any additional ACK
@@ -171,4 +185,10 @@
 %% @end
 -spec 'CONFIRMED'(term(), term(), #tx_state{}) -> term().
 'CONFIRMED'({request, _Method, _Response}, _From, TxState) ->
+    {reply, ok, 'CONFIRMED', TxState};
+
+%% @doc Transaction cancellation, Section 9.2
+%% Effectively does nothing, as we have already sent the final response
+%% @end
+'CONFIRMED'(cancel, _From, TxState) ->
     {reply, ok, 'CONFIRMED', TxState}.

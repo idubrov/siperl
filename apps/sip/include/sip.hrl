@@ -197,4 +197,5 @@
 %%-----------------------------------------------------------------
 
 -define(CORE_PROPERTY, core_registration).
+
 -record(sip_core_info, {is_applicable :: fun((sip_message()) -> boolean())}). % check if message is applicable

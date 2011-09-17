@@ -11,8 +11,8 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([method/1]).
--export([validate_request/1, validate_response/1, validate_dialog_response/2]).
+-export([method/1, is_secure/1, is_dialog_establishing/1]).
+-export([validate_request/1, validate_response/1, validate_contact/2]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_response/2, create_response/3]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
@@ -41,6 +41,29 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
+
+-spec is_secure(#sip_request{}) -> boolean().
+%% @doc Check if SIP request requires TLS
+%% @end
+is_secure(Request) when is_record(Request, sip_request) ->
+    % either Record-Route or Contact, if Record-Route is not present, 12.1.1
+    #sip_hdr_address{uri = RROrContactURI} =
+        case sip_message:has_header('record-route', Request) of
+            true -> sip_message:header_top_value('record-route', Request);
+            false -> sip_message:header_top_value(contact, Request)
+        end,
+
+    sip_uri:is_sips(Request#sip_request.uri) orelse sip_uri:is_sips(RROrContactURI).
+
+-spec is_dialog_establishing(#sip_request{}) -> boolean().
+%% @doc Check if SIP request is dialog-establishing
+%% @end
+is_dialog_establishing(#sip_request{method = Method} = Request) ->
+    To = sip_message:header_top_value(to, Request),
+    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
+        false when Method =:= 'INVITE' -> true;
+        _Other -> false
+    end.
 
 %% @doc Retrieve method of SIP message
 %%
@@ -346,35 +369,11 @@ validate_response(#sip_response{} = Response) ->
         check(count('call-id', Response) =:= 1, {invalid, 'call-id'}),
         check(count(via, Response) >= 1, {invalid, via})]).
 
--spec validate_dialog_response(#sip_request{}, #sip_response{}) -> ok | {error, Reason :: term()}.
-%% @doc Validate dialog establishing response.
-%%
-%% Validate that response is both valid response and matches requirements
-%% from 12.1.1 (has proper `Contact:' header).
-%% @end
-validate_dialog_response(Request, Response) ->
-    case validate_response(Response) of
-        ok ->
-            validate_dialog_contact(Request, Response);
-        {error, Reason} -> {error, Reason}
-    end.
 
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------
-
-
+-spec validate_contact(boolean(), sip_message()) -> ok | {error, Reason :: term()}.
 %% @doc Validate the Contact header according to the 12.1.1
 %% @end
-validate_dialog_contact(Request, Response) ->
-    RequestURI = Request#sip_request.uri,
-
-    % either Record-Route or Contact, if Record-Route is not present
-    #sip_hdr_address{uri = RRURI} =
-        case has_header('record-route', Request) of
-            true -> header_top_value('record-route', Request);
-            false -> header_top_value(contact, Request)
-        end,
+validate_contact(Secure, Response) ->
     do([error_m ||
         % Must be exactly one Contact with SIP/SIPS uri
         ContactURI <-
@@ -382,12 +381,16 @@ validate_dialog_contact(Request, Response) ->
                 [#sip_hdr_address{uri = #sip_uri{} = C}] -> return(C);
                 _Other -> fail({invalid, contact})
             end,
-        % either Contact is SIPS or both Request-URI and Record-Route(Contact) are not SIPS
-        case sip_uri:is_sips(ContactURI) orelse (not sip_uri:is_sips(RequestURI) andalso not sip_uri:is_sips(RRURI)) of
-            true -> return(ok);
-            false -> fail({invalid, contact_must_be_sips})
+        % if Secure is true, Contact MUST be SIPS
+        case sip_uri:is_sips(ContactURI) of
+            false when Secure -> fail({invalid, contact_must_be_sips});
+            _Other -> return(ok)
         end]).
 
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
 
 parse_stream_internal({'BEFORE', <<"\r\n", Rest/binary>>}, _From) ->
     % RFC 3261 7.5  Implementations processing SIP messages over
@@ -826,7 +829,6 @@ validation_test_() ->
     ValidResponse2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse2),
 
     % Record-Route is SIPS, so Contact must be sips
-    InvalidRequest3 = append_header('record-route', sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
     InvalidResponse3 = ValidResponse2,
 
     [% Request validation
@@ -841,11 +843,10 @@ validation_test_() ->
      ?_assertEqual(ok, validate_response(ValidResponse)),
      ?_assertEqual({error, {invalid, via}}, validate_response(InvalidResponse)),
 
-     % Response validation
-     ?_assertEqual(ok, validate_dialog_response(ValidRequest2, ValidResponse2)),
-     ?_assertEqual({error, {invalid, via}}, validate_dialog_response(ValidRequest, InvalidResponse)),
-     ?_assertEqual({error, {invalid, contact}}, validate_dialog_response(ValidRequest2, InvalidResponse2)),
-     ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_dialog_response(InvalidRequest3, InvalidResponse3))
+     % Contact validation
+     ?_assertEqual(ok, validate_contact(false, ValidResponse2)),
+     ?_assertEqual({error, {invalid, contact}}, validate_contact(false, InvalidResponse2)),
+     ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_contact(true, InvalidResponse3))
      ].
 
 -spec update_header_test() -> ok.

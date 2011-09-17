@@ -6,7 +6,7 @@
 -module(sip_uas_callback).
 
 %% API
--export([allow/2, detect_loops/2, supported/2, server/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, handle_info/2]).
+-export([allow/2, supported/2, server/2, detect_loops/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, handle_info/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -53,7 +53,13 @@ server(_Request, _Context) ->
 %% @doc Default implementation of `CANCEL' method.
 %% @end
 'CANCEL'(Request, Context) ->
-    {noreply, Context}.
+    Status =
+        case sip_transaction:cancel(Request) of
+            false -> 481;       % Call/Transaction Does Not Exist
+            {ok, _TxKey} -> 200 % Ok
+        end,
+    Response = sip_uas:create_response(Request, Status),
+    {reply, Response, Context}.
 
 -spec handle_info(term(), context()) ->
           {noreply, context()} |
