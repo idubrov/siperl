@@ -1,7 +1,7 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Basic regression tests for UAC/UAS
 %%%
-%%% Dialogless requests, simple redirects, going to fallback destinations. 
+%%% Dialogless requests, simple redirects, going to fallback destinations.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_basic_SUITE).

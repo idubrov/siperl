@@ -54,7 +54,7 @@ invite_200(_Config) ->
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     Request = sip_uac:create_request('INVITE', To),
     Request2 = sip_message:append_header(contact, UAC, Request),
-    
+
     % Responses will be delivered via messages
     ok = sip_uac:send_request(Request2),
     ok = receive
