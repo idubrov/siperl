@@ -164,7 +164,7 @@ do_create_request(Method, ToAddress) ->
 
     #sip_request{method = Method,
                  uri = RequestURI,
-                 headers = [Via, MaxForwards, From, To, CSeq, CallId] ++ Routes}.
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
 
 % Put Request URI into the target set
 do_send_request(Request, Callback) ->
