@@ -181,7 +181,7 @@ process(p, 'accept', Bin) ->
 process(f, 'accept', Accept) when is_record(Accept, sip_hdr_mediatype) ->
     Type = sip_syntax:format_name(Accept#sip_hdr_mediatype.type),
     SubType = sip_syntax:format_name(Accept#sip_hdr_mediatype.subtype),
-    append_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
+    format_params(<<Type/binary, ?SLASH, SubType/binary>>, Accept#sip_hdr_mediatype.params);
 
 %% 20.2 Accept-Encoding
 %% http://tools.ietf.org/html/rfc3261#section-20.2
@@ -193,7 +193,7 @@ process(p, 'accept-encoding', Bin) ->
 
 process(f, 'accept-encoding', Accept) when is_record(Accept, sip_hdr_encoding) ->
     Encoding = sip_syntax:format_name(Accept#sip_hdr_encoding.encoding),
-    append_params(Encoding, Accept#sip_hdr_encoding.params);
+    format_params(Encoding, Accept#sip_hdr_encoding.params);
 
 %% 20.3 Accept-Language
 %% http://tools.ietf.org/html/rfc3261#section-20.3
@@ -205,7 +205,7 @@ process(p, 'accept-language', Bin) ->
 
 process(f, 'accept-language', Accept) when is_record(Accept, sip_hdr_language) ->
     LangBin = sip_syntax:format_name(Accept#sip_hdr_language.language),
-    append_params(LangBin, Accept#sip_hdr_language.params);
+    format_params(LangBin, Accept#sip_hdr_language.params);
 
 %% 20.4 Alert-Info
 %% http://tools.ietf.org/html/rfc3261#section-20.4
@@ -216,7 +216,7 @@ process(p, 'alert-info', Bin) ->
 process(f, 'alert-info', Info) when is_record(Info, sip_hdr_info) ->
     URI = sip_uri:format(Info#sip_hdr_info.uri),
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
-    append_params(Bin, Info#sip_hdr_info.params);
+    format_params(Bin, Info#sip_hdr_info.params);
 
 %% 20.5 Allow
 %% http://tools.ietf.org/html/rfc3261#section-20.5
@@ -273,7 +273,7 @@ process(p, 'call-info', Bin) ->
 process(f, 'call-info', Info) when is_record(Info, sip_hdr_info) ->
     URI = sip_uri:format(Info#sip_hdr_info.uri),
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
-    append_params(Bin, Info#sip_hdr_info.params);
+    format_params(Bin, Info#sip_hdr_info.params);
 
 %% 20.10 Contact
 %% http://tools.ietf.org/html/rfc3261#section-20.10
@@ -302,7 +302,7 @@ process(p, 'content-disposition', Bin) ->
 
 process(f, 'content-disposition', Disp) when is_record(Disp, sip_hdr_disposition) ->
     TypeBin = sip_syntax:format_name(Disp#sip_hdr_disposition.type),
-    append_params(TypeBin, Disp#sip_hdr_disposition.params);
+    format_params(TypeBin, Disp#sip_hdr_disposition.params);
 
 %% 20.12 Content-Encoding
 %% http://tools.ietf.org/html/rfc3261#section-20.12
@@ -348,7 +348,7 @@ process(p, 'content-type', Bin) ->
 process(f, 'content-type', CType) when is_record(CType, sip_hdr_mediatype) ->
     Type = sip_syntax:format_name(CType#sip_hdr_mediatype.type),
     SubType = sip_syntax:format_name(CType#sip_hdr_mediatype.subtype),
-    append_params(<<Type/binary, ?SLASH, SubType/binary>>, CType#sip_hdr_mediatype.params);
+    format_params(<<Type/binary, ?SLASH, SubType/binary>>, CType#sip_hdr_mediatype.params);
 
 %% 20.16 CSeq
 %% http://tools.ietf.org/html/rfc3261#section-20.16
@@ -383,7 +383,7 @@ process(p, 'error-info', Bin) ->
 process(f, 'error-info', Info) when is_record(Info, sip_hdr_info) ->
     URI = sip_uri:format(Info#sip_hdr_info.uri),
     Bin = <<?LAQUOT, URI/binary, ?RAQUOT>>,
-    append_params(Bin, Info#sip_hdr_info.params);
+    format_params(Bin, Info#sip_hdr_info.params);
 
 %% 20.19 Expires
 %% http://tools.ietf.org/html/rfc3261#section-20.19
@@ -551,7 +551,7 @@ process(f, 'retry-after', Retry) when is_record(Retry, sip_hdr_retry) ->
                Comment ->
                    <<Bin/binary, ?SP, Comment/binary>>
            end,
-    append_params(Bin2, Retry#sip_hdr_retry.params);
+    format_params(Bin2, Retry#sip_hdr_retry.params);
 
 %% 20.34 Route
 %% http://tools.ietf.org/html/rfc3261#section-20.34
@@ -662,7 +662,7 @@ process(f, 'via', Via) when is_record(Via, sip_hdr_via) ->
             undefined -> <<Bin/binary, ?SP, Host/binary>>;
             Port -> <<Bin/binary, ?SP, Host/binary, ?HCOLON, (sip_binary:integer_to_binary(Port))/binary>>
         end,
-    append_params(Bin2, Via#sip_hdr_via.params);
+    format_params(Bin2, Via#sip_hdr_via.params);
 
 %% 20.43 Warning
 %% http://tools.ietf.org/html/rfc3261#section-20.43
@@ -722,18 +722,16 @@ parse_params(Bin, ParseFun) ->
 parse_params_loop(<<?SEMI, Bin/binary>>, ParseFun, List) ->
     {NameBin, MaybeValue} = sip_syntax:parse_token(Bin),
     Name = sip_syntax:parse_name(NameBin),
-    {Value, Rest} =
-        case MaybeValue of
-            % Parameter with value
-            <<?EQUAL, Bin2/binary>> ->
-                parse_token_or_quoted(Bin2);
-            % Parameter without a value ('true' value)
-            Next ->
-                {true, Next}
-        end,
-    ParsedValue = ParseFun(Name, Value),
-    Property = proplists:property(Name, ParsedValue),
-    parse_params_loop(Rest, ParseFun, [Property | List]);
+    case MaybeValue of
+        % Parameter with value
+        <<?EQUAL, Bin2/binary>> ->
+            {Value, Rest} = parse_token_or_quoted(Bin2),
+            Prop = {Name, ParseFun(Name, Value)},
+            parse_params_loop(Rest, ParseFun, [Prop | List]);
+        % Parameter without a value
+        Rest ->
+            parse_params_loop(Rest, ParseFun, [Name | List])
+    end;
 parse_params_loop(Bin, _ParseFun, List) ->
     {lists:reverse(List), sip_binary:trim_leading(Bin)}.
 
@@ -787,7 +785,7 @@ format_address(Addr) ->
                   Quoted = sip_syntax:quote_string(DisplayName),
                   <<Quoted/binary, " ", ?LAQUOT, URIBin/binary, ?RAQUOT>>
           end,
-    append_params(Bin, Addr#sip_hdr_address.params).
+    format_params(Bin, Addr#sip_hdr_address.params).
 
 
 %% Parse accept-range or media-type grammar
@@ -831,7 +829,7 @@ parse_accept(Bin) ->
 
 %% @doc Append parameters to the binary
 %% @end
-append_params(Bin, Params) ->
+format_params(Bin, Params) ->
     lists:foldl(fun format_param/2, Bin, Params).
 
 %% @doc
@@ -1622,7 +1620,11 @@ parse_headers_test_() ->
      ?_assertEqual(<<"123.35">>, format_value(123.35)),
      ?_assertEqual(<<"example.com">>, format_value("example.com")),
      ?_assertEqual(<<"10.0.0.1">>, format_value({10, 0, 0, 1})),
-     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, format_value({8193,3512,4515,2519,7988,35374,1952,30301}))
+     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, format_value({8193,3512,4515,2519,7988,35374,1952,30301})),
+
+     % Check parameter without values are parsed as atoms/binaries inside list
+     ?_assertEqual({[rport, <<"another">>], <<>>}, parse_params(<<";rport;another">>, fun parse_generic_param/2)),
+     ?_assertEqual(<<";rport;another=true">>, format_params(<<>>, [rport, {<<"another">>, true}]))
     ].
 
 -spec utility_test_() -> list().
