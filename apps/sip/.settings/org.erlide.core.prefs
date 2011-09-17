@@ -1,6 +1,6 @@
-#Thu Sep 15 17:38:43 OMSST 2011
+#Sat Sep 17 10:20:43 OMSST 2011
 backend_version=R14B
-compiler/allOptions={pa, "/home/wfrag/Projects/siperl/deps/erlando/ebin"}, compile_args, {d, 'TEST',"true"}, warn_missing_spec
+compiler/allOptions={pa, "/home/wfrag/Projects/siperl/deps/erlando/ebin"}, compile_args, {d, 'TEST',"true"}
 eclipse.preferences.version=1
 external_includes=
 external_modules=

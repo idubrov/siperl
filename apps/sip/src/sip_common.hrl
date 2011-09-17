@@ -7,3 +7,5 @@
 -include_lib("eunit/include/eunit.hrl").
 -spec test() -> term().
 -endif.
+
+-compile([warn_missing_spec]).
