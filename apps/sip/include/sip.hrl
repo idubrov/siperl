@@ -51,12 +51,12 @@
 %% SIP message types.
 
 -type sip_status()  :: 100..699.
-%% 1xx Provisional responses
-%% 2xx
-%% 3xx
-%% 4xx
-%% 5xx
-%% 6xx
+%% 1xx Provisional
+%% 2xx Success
+%% 3xx Redirection
+%% 4xx Client Error
+%% 5xx Server Error
+%% 6xx Global Failure
 
 -record(sip_request, {method        :: sip_name(),
                       uri           :: sip_uri(),
