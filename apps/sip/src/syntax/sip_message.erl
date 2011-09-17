@@ -371,14 +371,14 @@ validate_dialog_contact(Request, Response) ->
 
     % either Record-Route or Contact, if Record-Route is not present
     #sip_hdr_address{uri = RRURI} =
-        case sip_message:has_header('record-route', Request) of
-            true -> sip_message:header_top_value('record-route', Request);
-            false -> sip_message:header_top_value(contact, Request)
+        case has_header('record-route', Request) of
+            true -> header_top_value('record-route', Request);
+            false -> header_top_value(contact, Request)
         end,
     do([error_m ||
         % Must be exactly one Contact with SIP/SIPS uri
         ContactURI <-
-            case sip_message:header_values(contact, Response) of
+            case header_values(contact, Response) of
                 [#sip_hdr_address{uri = #sip_uri{} = C}] -> return(C);
                 _Other -> fail({invalid, contact})
             end,
@@ -800,33 +800,33 @@ validation_test_() ->
                                 {'max-forwards', 70},
                                 {via, sip_headers:via(udp, "localhost", [])},
                                 {require, <<"foo">>}]},
-    ValidResponse = sip_message:create_response(ValidRequest, 200),
+    ValidResponse = create_response(ValidRequest, 200),
 
     % No contact in dialog-establishing request
-    InvalidRequest = sip_message:replace_top_header(
+    InvalidRequest = replace_top_header(
                        cseq,
                        sip_headers:cseq(1, 'INVITE'),
                        ValidRequest#sip_request{method = 'INVITE'}),
 
     % with added contact header
-    ValidRequest2 = sip_message:append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidRequest),
+    ValidRequest2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidRequest),
 
     % Contact is not sips URI, but top route is
-    InvalidRequest2 = sip_message:append_header(route, sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
-    ValidRequest3 = sip_message:replace_top_header(contact, sip_headers:address(<<>>, <<"sips:alice@localhost">>, []), InvalidRequest2),
+    InvalidRequest2 = append_header(route, sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
+    ValidRequest3 = replace_top_header(contact, sip_headers:address(<<>>, <<"sips:alice@localhost">>, []), InvalidRequest2),
 
     % Valid response
-    ValidResponse = sip_message:create_response(ValidRequest, 200),
+    ValidResponse = create_response(ValidRequest, 200),
 
     % Without a Via header
     InvalidResponse = ValidResponse#sip_response{headers = [{Name, Value} || {Name, Value} <- ValidResponse#sip_response.headers, Name =/= via]},
 
     % Invalid dialog response, no contact
-    InvalidResponse2 = sip_message:create_response(ValidRequest2, 200),
-    ValidResponse2 = sip_message:append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse2),
+    InvalidResponse2 = create_response(ValidRequest2, 200),
+    ValidResponse2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse2),
 
     % Record-Route is SIPS, so Contact must be sips
-    InvalidRequest3 = sip_message:append_header('record-route', sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
+    InvalidRequest3 = append_header('record-route', sip_headers:address(<<>>, <<"sips:proxy@localhost">>, []), ValidRequest2),
     InvalidResponse3 = ValidResponse2,
 
     [% Request validation
