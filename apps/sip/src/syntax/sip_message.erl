@@ -324,7 +324,9 @@ validate_request(#sip_request{method = Method} = Msg) ->
         check(count(from, Msg) =:= 1, {invalid, from}),
         check(count(cseq, Msg) =:= 1, {invalid, cseq}),
         check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
-        check(count('max-forwards', Msg) =:= 1, {invalid, 'max-forwards'}),
+        % 17.1.1.3 does not explicitly requires Max-Forwards in ACK's
+        % so we do not enforce it here
+        check(count('max-forwards', Msg) =:= 1 orelse Method =:= 'ACK', {invalid, 'max-forwards'}),
         check(count(via, Msg) >= 1, {invalid, via}),
         check(Method =/= 'INVITE' orelse is_single_contact(Msg), {invalid, contact}), % 8.1.1.8
         check(is_contact_secure(Msg), {invalid, contact_must_be_sips})]).
