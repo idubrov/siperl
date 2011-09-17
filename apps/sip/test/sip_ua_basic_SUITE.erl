@@ -1,8 +1,10 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc Simple (dialogless) regression tests for UA
+%%% @doc Basic regression tests for UAC/UAS
+%%%
+%%% Dialogless requests, simple redirects, going to fallback destinations. 
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
--module(sip_simple_ua_SUITE).
+-module(sip_ua_basic_SUITE).
 
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
@@ -37,7 +39,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = sip_test:shutdown(?config(uac, Config)),
     ok.
 
-options_200(Config) ->
+options_200(_Config) ->
     % Start UAS to reply with 200 Ok
     Handler =
         fun (Request) ->
@@ -68,7 +70,7 @@ options_200(Config) ->
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
-options_302(Config) ->
+options_302(_Config) ->
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
     Handler =
@@ -89,7 +91,7 @@ options_302(Config) ->
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_302_failed(Config) ->
+options_302_failed(_Config) ->
     % configure UAS to reply with "301 Moved Temporarily" for username "first" and
     % to reply "200 Ok" on username "second".
     Handler =
@@ -113,7 +115,7 @@ options_302_failed(Config) ->
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_501(Config) ->
+options_501(_Config) ->
     % configure UAS to reply with 501 Not Implemented
     Handler = fun (Request) -> sip_message:create_response(Request, 501) end,
     sip_uas:start_link(sip_test_uas, Handler),
@@ -127,7 +129,7 @@ options_501(Config) ->
     ok.
 
 %% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
-options_503_next_200(Config) ->
+options_503_next_200(_Config) ->
     % Mock sip_resolve to return two destinations for fake URI
     % Both destinations point to 127.0.0.1, but have different transports
     ok = meck:new(sip_resolve, [passthrough]),
@@ -143,7 +145,7 @@ options_503_next_200(Config) ->
                  Via = sip_message:header_top_value(via, Request),
                  case Via#sip_hdr_via.transport of
                      udp ->
-                         sip_message:create_response(Request, 503);
+                         sip_message:create_response(Request, 408);
                      tcp ->
                          sip_message:create_response(Request, 200)
                  end

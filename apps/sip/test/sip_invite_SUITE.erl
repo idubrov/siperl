@@ -39,7 +39,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = sip_test:shutdown(?config(uac, Config)),
     ok.
 
-invite_200(Config) ->
+invite_200(_Config) ->
     UAC = sip_headers:address(<<>>, <<"sip:uac@127.0.0.1">>, []),
     UAS = sip_headers:address(<<>>, <<"sip:uas@127.0.0.1">>, []),
 
