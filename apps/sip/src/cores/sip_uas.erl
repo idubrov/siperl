@@ -30,8 +30,8 @@
 %% @doc Creates UAS as part of the supervision tree.
 %% @end
 -spec start_link(module(), term()) -> {ok, pid()} | {error, term()}.
-start_link(Callback, Context) when is_atom(Callback) ->
-    gen_server:start_link(?MODULE, {Callback, Context}, []).
+start_link(Callback, Param) when is_atom(Callback) ->
+    gen_server:start_link(?MODULE, {Callback, Param}, []).
 
 %% @doc Initiate a response from the UAS
 %% @end
@@ -107,8 +107,16 @@ handle_info({request, Request}, State) ->
 handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
     % FIXME: should we handle terminated transactions?
     {noreply, State};
-handle_info(Info, State) ->
-    {stop, {unexpected, Info}, State}.
+handle_info(Info, #state{callback = Callback} = State) ->
+    case Callback:handle_info(Info, State#state.context) of
+        {noreply, Context} ->
+            {noreply, State#state{context = Context}};
+        {reply, Request, Response, Context} ->
+            ok = do_send_response(Request, Response, State),
+            {noreply, State#state{context = Context}};
+        {stop, Reason, Context} ->
+            {stop, Reason, State#state{context = Context}}
+    end.
 
 %% @private
 -spec terminate(term(), #state{}) -> ok.
