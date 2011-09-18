@@ -57,9 +57,9 @@ invite_200(Config) ->
     Request2 = sip_message:append_header(contact, UAC, Request),
 
     % Responses will be delivered via messages
-    ok = sip_uac:send_request(UACPid, Request2),
+    {ok, Ref} = sip_uac:send_request(UACPid, Request2),
     ok = receive
-             {response, #sip_response{status = 200}} ->
+             {response, Ref, #sip_response{status = 200}} ->
                  ok
          after 5000 -> {error, response_expected}
          end,
