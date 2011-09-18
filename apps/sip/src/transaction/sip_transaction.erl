@@ -88,14 +88,17 @@ list_tx() ->
     MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
     gproc:select(names, MS).
 
--spec cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false.
-%% @doc Cancel client or server transaction based on the request (see 9.1/9.2)
+-spec cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false;
+            (#sip_tx_client{}) -> {ok, #sip_tx_client{}} | false.
+%% @doc Cancel client or server transaction based on the request or transaction
+%% key (see 9.1/9.2)
 %%
-%% If request have `CANCEL' method, cancel server transaction (request was received
-%% from outside).
+%% If request is provided, cancel server transaction (request was received from
+%% outside). The request must have 'CANCEL' method.
 %%
-%% If request have non-`CANCEL' method, cancel client transaction matching the
-%% request. The client transaction will generate `CANCEL' request on its own.
+%% If client transaction key was provided, cancel client transaction matching the
+%% key. The client transaction will initiate `CANCEL' transactions on its own,
+%% based on the conditions described in 9.1.
 %%
 %% This functionality was moved from the UAC/UAS here, because transaction
 %% layer have the information if request was replied and can process
@@ -117,8 +120,8 @@ cancel(#sip_request{method = 'CANCEL'} = Request) ->
             {ok, TxKey};
         [] -> false
     end;
-cancel(#sip_request{} = Request) ->
-    TxKey = tx_key(client, Request),
+
+cancel(TxKey) when is_record(TxKey, sip_tx_client) ->
     case tx_send(TxKey, cancel) of
         {ok, TxKey} -> {ok, TxKey};
         not_handled -> false % FIXME: use false instead of not_handled?

@@ -21,7 +21,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/0, create_request/3, send_request/2, send_request/3, send_request_sync/2]).
+-export([start_link/0, create_request/3, send_request/2, send_request/3, send_request_sync/2, cancel/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -31,12 +31,13 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(req_info, {request :: #sip_request{},                 % SIP request message
+-record(req_info, {ref :: reference(),                        % Unique reference, identifying the request
+                   request :: #sip_request{},                 % SIP request message
                    destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
                    target_set = sip_priority_set:new(),       % URI to visit next (redirects)
                    user_data}).                               % Custom user data associated with request
 
--record(state, {}).
+-record(state, {requests = [] :: [{reference(), #sip_tx_client{}}]}).  % Mapping from unique request referenc to transaction
 
 -type gen_from() :: {pid(), term()}.
 
@@ -62,9 +63,11 @@ create_request(UAC, Method, To) when is_record(To, sip_hdr_address) ->
 %% `Callback' function calls.
 %% <em>Note: callback function will be evaluated on a different process!</em>
 %% @end
--spec send_request(atom() | pid(), sip_message(), fun((#sip_response{}) -> ok)) -> ok.
-send_request(UAC, Request, Callback) when is_record(Request, sip_request), is_function(Callback, 1) ->
-    ok = gen_server:cast(UAC, {send_request, Request, Callback}).
+-spec send_request(atom() | pid(), sip_message(), fun((#sip_response{}) -> ok)) -> {ok, reference()}.
+send_request(UAC, Request, Callback) when is_record(Request, sip_request), is_function(Callback, 2) ->
+    Ref = make_ref(),
+    ok = gen_server:cast(UAC, {send_request, Ref, Request, Callback}),
+    {ok, Ref}.
 
 %% @doc Send the request asynchronously. Responses will be provided via
 %% `{response, Response}' messages delivered to the caller
@@ -72,9 +75,7 @@ send_request(UAC, Request, Callback) when is_record(Request, sip_request), is_fu
 -spec send_request(atom() | pid(), sip_message()) -> ok.
 send_request(UAC, Request) when is_record(Request, sip_request) ->
     Pid = self(),
-    Callback = fun({ok, Response}) -> Pid ! {response, Response} end,
-    ok = gen_server:cast(UAC, {send_request, Request, Callback}).
-
+    send_request(UAC, Request, fun(Ref, {ok, Response}) -> Pid ! {response, Ref, Response} end).
 
 %% @doc Send the request synchronously
 %% FIXME: Does not work with provisional responses!!!
@@ -82,6 +83,12 @@ send_request(UAC, Request) when is_record(Request, sip_request) ->
 -spec send_request_sync(atom() | pid(), sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
 send_request_sync(UAC, Request) when is_record(Request, sip_request) ->
     gen_server:call(UAC, {send_request, Request}).
+
+-spec cancel(pid(), reference()) -> ok.
+%% @doc Cancel the request identified by reference
+%% @end
+cancel(UAC, Ref) when is_pid(UAC), is_reference(Ref) ->
+    gen_server:call(UAC, {cancel, Ref}).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -102,26 +109,48 @@ init({}) ->
 handle_call({create_request, Method, To}, _From, State) ->
     Request = do_create_request(Method, To),
     {reply, Request, State};
+
 handle_call({send_request, Request}, From, State) ->
-    Callback = fun(Result) -> gen_server:reply(From, Result) end,
-    ok = do_send_request(Request, Callback),
-    {noreply, State};
+    Callback = fun(_Ref, Result) -> gen_server:reply(From, Result) end,
+    {ok, State2} = do_send_request(make_ref(), Request, Callback, State),
+    {noreply, State2};
+
+handle_call({cancel, Ref}, From, State) ->
+    case lists:keyfind(Ref, 1, State#state.requests) of
+        {Ref, TxKey} ->
+            case sip_transaction:cancel(TxKey) of
+                {ok, TxKey} ->
+                    {reply, ok, State};
+                false ->
+                    % transaction have completed already
+                    % FIXME: We need to notify ourselves to terminate the session!
+                    {reply, {error, not_found}, State}
+            end;
+        false ->
+            {reply, {error, not_found}, State} % could be answered already
+    end;
+
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}} | {stop, term(), #state{}}.
-handle_cast({send_request, Request, Callback}, State) ->
-    ok = do_send_request(Request, Callback),
-    {noreply, State};
+handle_cast({send_request, Ref, Request, Callback}, State) ->
+    {ok, State2} = do_send_request(Ref, Request, Callback, State),
+    {noreply, State2};
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
 
 %% @private
 -spec handle_info(_, #state{}) -> {noreply, #state{}}.
-handle_info({response, Response, ReqInfo}, State) ->
-    do_response(Response, ReqInfo),
+handle_info({response, #sip_response{}, cancel}, State) ->
+    % FIXME: probably, CANCEL transaction should not report to this TU?
     {noreply, State};
+
+handle_info({response, #sip_response{} = Response, #req_info{} = ReqInfo}, State) ->
+    {ok, State2} = do_response(Response, ReqInfo, State),
+    {noreply, State2};
+
 handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
     % FIXME: should we handle terminated transactions?
     {noreply, State};
@@ -165,75 +194,87 @@ do_create_request(Method, ToAddress) ->
                  headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
 
 % Put Request URI into the target set
-do_send_request(Request, Callback) ->
+do_send_request(Ref, Request, Callback, State) ->
     ok = sip_message:validate_request(Request),
 
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
 
-    ReqInfo = #req_info{request = Request,
+    ReqInfo = #req_info{ref = Ref,
+                        request = Request,
                         user_data = Callback,
                         target_set = TargetSet},
     % What if `ok' is returned (meaning request was not processed)?
-    {error, _Reason} = next_uri(ReqInfo, none),
-    ok.
+    {error, {processed, State2}} = next_uri(ReqInfo, none, State),
+    {ok, State2}.
 
-do_response(Response, ReqInfo) ->
+do_response(#sip_response{status = Status} = Response, ReqInfo, State) ->
     Result = do([error_m ||
-                 validate_vias(Response),
-                 handle_response(ReqInfo, Response),
-                 return(ok)]),
+                 S1 <- validate_vias(Response, State),
+                 handle_response(ReqInfo, Response, S1)]),
     case Result of
-        ok ->
+        {ok, State2} when Status >= 100, Status =< 199 ->
+            % Notify about provisional response
             Callback = ReqInfo#req_info.user_data,
-            Callback({ok, Response});
-        {error, _Reason} ->
+            _Ignore = Callback(ReqInfo#req_info.ref, {ok, Response}),
+            {ok, State2};
+
+        {ok, State2} ->
+            % Final response, notify, then delete request from the list of
+            % pending requests
+            Callback = ReqInfo#req_info.user_data,
+            _Ignore = Callback(ReqInfo#req_info.ref, {ok, Response}),
+
+            % Erase request from state if it was a final response
+            % FIXME: What about forked responses?
+            Requests = lists:keydelete(ReqInfo#req_info.ref, 1, State2#state.requests),
+            {ok, State2#state{requests = Requests}};
+        {error, {_Reason, State2}} ->
             % Response was either discarded or is still being
             % processed (following redirect, trying next IP, etc)
             % So, nothing to report to the client callback
-            ok
-    end,
-    ok.
+            {ok, State2}
+    end.
 
 %% Validate message according to the 8.1.3.3
--spec validate_vias(#sip_response{}) -> error_m:monad(ok).
-validate_vias(Msg) ->
+-spec validate_vias(#sip_response{}, #state{}) -> error_m:monad(#state{}).
+validate_vias(Msg, State) ->
     Count = length(sip_message:header_values('via', Msg)),
     case Count of
         1 ->
-            error_m:return(ok);
+            error_m:return(State);
         _Other ->
             % discard response, too much/few Via's
             sip_log:wrong_vias(Msg),
-            error_m:fail(discarded)
+            error_m:fail({discarded, State})
     end.
 
 %% @doc Automatic handling of 3xx-6xx responses valve
 %% @end
--spec handle_response(#req_info{}, #sip_response{}) -> error_m:monad(ok).
-handle_response(cancel, #sip_response{}) ->
+-spec handle_response(#req_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+handle_response(cancel, #sip_response{}, State) ->
     % ignore responses for CANCEL trasactions
-    error_m:fail(ignore_cancel);
-handle_response(ReqInfo, #sip_response{status = Status} = Response)
+    error_m:fail({cancel, State});
+handle_response(ReqInfo, #sip_response{status = Status} = Response, State)
   when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
 
     % try next URI, was redirected
-    next_uri(ReqInfo2, Response);
-handle_response(ReqInfo, #sip_response{status = Status} = Response) when Status =:= 503; Status =:= 408 ->
+    next_uri(ReqInfo2, Response, State);
+handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status =:= 503; Status =:= 408 ->
     % failed with 408 or 503, try next IP address
-    next_destination(ReqInfo, Response);
-handle_response(ReqInfo, #sip_response{status = Status} = Response) when Status > 399 ->
+    next_destination(ReqInfo, Response, State);
+handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status > 399 ->
     % failed, try next URI
-    next_uri(ReqInfo, Response);
-handle_response(_ReqInfo, _Msg) ->
-    error_m:return(ok).
+    next_uri(ReqInfo, Response, State);
+handle_response(_ReqInfo, _Msg, State) ->
+    error_m:return(State).
 
-next_uri(ReqInfo, Response) ->
+next_uri(ReqInfo, Response, State) ->
     case sip_priority_set:take(ReqInfo#req_info.target_set) of
         false ->
             % No more URIs to try, continue processing
-            error_m:return(ok);
+            error_m:return(State);
         {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -242,7 +283,7 @@ next_uri(ReqInfo, Response) ->
             ReqInfo2 = ReqInfo#req_info{request = Request2,
                                         destinations = lookup_destinations(Request2),
                                         target_set = TargetSet2},
-            next_destination(ReqInfo2, Response)
+            next_destination(ReqInfo2, Response, State)
     end.
 
 
@@ -250,20 +291,23 @@ next_uri(ReqInfo, Response) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(#req_info{destinations = []}, _Response) ->
+next_destination(#req_info{destinations = []}, _Response, State) ->
     % no destination IPs to try, continue processing
-    error_m:return(ok);
-next_destination(#req_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response) ->
+    error_m:return(State);
+next_destination(#req_info{ref = Ref, request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
     % send request to the top destination, with new request info
     ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
 
     %% FIXME: Every new client transaction must have its own branch value!!!!!
-%%     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
-    %%
-    {ok, _TxKey} = sip_transaction:start_client_tx(self(), Top, Request, [{user_data, ReqInfo2}]),
+    Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
+    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2, [{user_data, ReqInfo2}]),
+
+    % Record transaction
+    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey}),
+    State2 = State#state{requests = Requests},
 
     % stop processing
-    error_m:fail(processed).
+    error_m:fail({processed, State2}).
 
 lookup_destinations(Request) ->
     RequestURI = Request#sip_request.uri,

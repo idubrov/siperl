@@ -17,7 +17,8 @@
 %% Include files
 -include_lib("sip/include/sip.hrl").
 
--record(state, {uac, calls}).
+-record(state, {uac :: pid(),
+                timers = dict:new()}).
 
 -type gen_from() :: {pid(), term()}.
 
@@ -40,7 +41,7 @@ call(To) ->
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
     {ok, UAC} = sip_uac:start_link(),
-    {ok, #state{uac = UAC, calls = dict:new()}}.
+    {ok, #state{uac = UAC}}.
 
 %% @private
 -spec handle_call({call, #sip_uri{}}, gen_from(), #state{}) -> {reply, #sip_request{}, #state{}}.
@@ -51,16 +52,14 @@ handle_call({call, To}, _From, #state{uac = UAC} = State) ->
 
     % Call
     io:format("Calling to ~s~n", [to(Request)]),
-    Self = self(),
-    Id = sip_idgen:generate_id(8),
-    ok = sip_uac:send_request(UAC, Request2, fun({ok, Response}) -> Self ! {response, Id, Response} end),
+    {ok, Ref} = sip_uac:send_request(UAC, Request2),
 
     % Arm timer to cancel call after 2 seconds
-    {ok, Timer} = timer:send_after(2000, {cancel, Id}),
+    {ok, Timer} = timer:send_after(2000, {cancel, Ref}),
 
-    % Store our request for later use
-    Calls = dict:store(Id, {Timer, Request}, State#state.calls),
-    {reply, ok, State#state{calls = Calls}};
+    % Store timer
+    Timers = dict:store(Ref, Timer, State#state.timers),
+    {reply, ok, State#state{timers = Timers}};
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
 
@@ -71,25 +70,23 @@ handle_cast(Cast, State) ->
 
 %% @private
 -spec handle_info(_, #state{}) -> {noreply, #state{}}.
-handle_info({response, Id, #sip_response{status = Status, reason = Reason}}, State) ->
-    {Timer, Request} = dict:fetch(Id, State#state.calls),
+handle_info({response, Ref, #sip_response{status = Status, reason = Reason} = Response}, State) ->
+    Timer = dict:fetch(Ref, State#state.timers),
     case Status of
         _ when Status >= 100, Status =< 199 ->
-            io:format("Progress from ~s: ~w ~s~n", [to(Request), Status, binary_to_list(Reason)]),
+            io:format("Progress from ~s: ~w ~s~n", [to(Response), Status, binary_to_list(Reason)]),
             {noreply, State};
         _Other ->
-            timer:cancel(Timer),
+            timer:cancel(Timer), % cancel timer in any case of final response
 
-            io:format("Got final response ~s: ~w ~s~n", [to(Request), Status, binary_to_list(Reason)]),
-            Calls = dict:erase(Id, State#state.calls),
-            {noreply, State#state{calls = Calls}}
+            io:format("Got final response ~s: ~w ~s~n", [to(Response), Status, binary_to_list(Reason)]),
+            Timers = dict:erase(Ref, State#state.timers),
+            {noreply, State#state{timers = Timers}}
     end;
 handle_info({cancel, Id}, State) ->
-    {_Timer, Request} = dict:fetch(Id, State#state.calls),
-
-    % Cancel transaction
-    io:format("Hanging up to ~s~n", [to(Request)]),
-    {ok, _TxKey} = sip_transaction:cancel(Request),
+    % Cancel request
+    io:format("Hanging up~n"),
+    ok = sip_uac:cancel(State#state.uac, Id),
     {noreply, State};
 handle_info({response, #sip_response{status = Status, reason = Reason}}, State) ->
     io:format("Got response for CANCEL ~w ~s~n", [Status, binary_to_list(Reason)]),
@@ -107,6 +104,6 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-to(Request) ->
-    #sip_hdr_address{uri = To} = sip_message:header_top_value(to, Request),
+to(Msg) ->
+    #sip_hdr_address{uri = To} = sip_message:header_top_value(to, Msg),
     binary_to_list(sip_uri:format(To)).
