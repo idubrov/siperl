@@ -942,10 +942,42 @@ is_dialog_establishing_test_() ->
                {'content-length', 5},
                {'max-forwards', 15}],
     Request = #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>, headers = Headers, body = <<"Hello">>},
+
+    ToWithTag = sip_headers:address(<<"Bob">>, <<"sip:bob@biloxi.com">>, [{tag, <<"1928301774">>}]),
     [
      ?_assertEqual(true, is_dialog_establishing(Request)),
      ?_assertEqual(false, is_dialog_establishing(Request#sip_request{method = 'OPTIONS'})),
-     ?_assertEqual(false, is_dialog_establishing(replace_top_header(to, <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>, Request)))
+     ?_assertEqual(false, is_dialog_establishing(replace_top_header(to, ToWithTag, Request)))
+     ].
+
+
+-spec is_secure_test_() -> list().
+is_secure_test_() ->
+    Headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+               {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+               {to, <<"Bob <sip:bob@biloxi.com>">>},
+               {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+               {'call-id', <<"987asjd97y7atg">>},
+               {cseq, <<"986759 INVITE">>},
+               {contact, <<"<sip:alice@atlanta.com>">>},
+               {route, <<"<sip:alice@atlanta.com>">>},
+               {route, <<"<sip:bob@biloxi.com>">>},
+               {'content-length', 5},
+               {'max-forwards', 15}],
+    Request = #sip_request{method = 'INVITE', uri = sip_uri:parse(<<"sip:bob@biloxi.com">>), headers = Headers, body = <<"Hello">>},
+
+    SecureURI = sip_uri:parse(<<"sips:bob@biloxi.com">>),
+    SecureContact = sip_headers:address(<<"Alice">>, <<"sips:alice@atlanta.com">>, []),
+    SecureRecordRoute = sip_headers:address(<<>>, <<"sips:proxy@biloxi.com">>, []),
+    RecordRoute = sip_headers:address(<<>>, <<"sip:proxy@biloxi.com">>, []),
+    io:format("Request ~p~n", [replace_top_header(contact, <<"Alice <sips:alice@atlanta.com>">>, Request)]),
+    [
+     ?_assertEqual(false, is_secure(Request)),
+     ?_assertEqual(true, is_secure(Request#sip_request{uri = SecureURI})),
+     ?_assertEqual(true, is_secure(replace_top_header(contact, SecureContact, Request))),
+     ?_assertEqual(true, is_secure(append_header('record-route', SecureRecordRoute, Request))),
+     % Contact is secure, but we look at top Record-Route
+     ?_assertEqual(false, is_secure(append_header('record-route', RecordRoute, replace_top_header(contact, SecureContact, Request))))
      ].
 
 
