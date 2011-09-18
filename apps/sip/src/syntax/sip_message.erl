@@ -748,9 +748,8 @@ create_response_test_() ->
      ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>))
      ].
 
-
--spec create_ack_test_() -> list().
-create_ack_test_() ->
+-spec create_ack_cancel_test_() -> list().
+create_ack_cancel_test_() ->
     ReqHeaders = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
                   {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
                   {to, <<"Bob <sip:bob@biloxi.com>">>},
@@ -775,9 +774,20 @@ create_ack_test_() ->
                   {route, <<"<sip:bob@biloxi.com>">>},
                   {'max-forwards', 15}],
 
+    CancelHeaders = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                  {to, <<"Bob <sip:bob@biloxi.com>">>},
+                  {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+                  {'call-id', <<"987asjd97y7atg">>},
+                  {cseq, <<"986759 CANCEL">>},
+                  {route, <<"<sip:alice@atlanta.com>">>},
+                  {route, <<"<sip:bob@biloxi.com>">>},
+                  {'max-forwards', 15}],
+
     ACK = #sip_request{method = 'ACK', uri = <<"sip:bob@biloxi.com">>, headers = ACKHeaders},
+    Cancel = #sip_request{method = 'CANCEL', uri = <<"sip:bob@biloxi.com">>, headers = CancelHeaders},
     [
-     ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(Request, Response2)))
+     ?_assertEqual(parse_all_headers(ACK), parse_all_headers(create_ack(Request, Response2))),
+     ?_assertEqual(parse_all_headers(Cancel), parse_all_headers(create_cancel(Request)))
      ].
 
 -spec helpers_test_() -> list().
@@ -838,7 +848,7 @@ validation_test_() ->
     InvalidResponse2 = create_response(ValidRequest2, 200),
     ValidResponse2 = append_header(contact, sip_headers:address(<<>>, <<"sip:alice@localhost">>, []), InvalidResponse2),
 
-    % Record-Route is SIPS, so Contact must be sips
+    % Contact is not SIPS
     InvalidResponse3 = ValidResponse2,
 
     [% Request validation
@@ -847,7 +857,6 @@ validation_test_() ->
      ?_assertEqual(ok, validate_request(ValidRequest2)),
      ?_assertEqual({error, {invalid, contact_must_be_sips}}, validate_request(InvalidRequest2)),
      ?_assertEqual(ok, validate_request(ValidRequest3)),
-
 
      % Response validation
      ?_assertEqual(ok, validate_response(ValidResponse)),
