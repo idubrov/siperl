@@ -222,68 +222,48 @@ has_header(Name, Msg) when is_record(Msg, sip_request); is_record(Msg, sip_respo
 %% @doc RFC 3261, 17.1.1.3 Construction of the ACK Request
 %% @end
 -spec create_ack(#sip_request{}, #sip_response{}) -> #sip_request{}.
-create_ack(#sip_request{method = Method, uri = RequestURI} = Request,
-           #sip_response{} = Response) ->
-    % Call-Id, From, CSeq (with method changed to 'ACK') and Route (for 'INVITE'
-    % response ACKs) are taken from the original request
+create_ack(#sip_request{} = Request, #sip_response{} = Response) ->
+    % To goes from the response (because of tag)
+    To = header_top_value(to, Response),
+    create_ack_cancel(Request, To, 'ACK').
+
+%% @doc RFC 3261, 9.1 Constructing CANCEL requests
+%% @end
+-spec create_cancel(#sip_request{}) -> #sip_request{}.
+create_cancel(#sip_request{} = Request) ->
+    To = header_top_value(to, Request),
+    create_ack_cancel(Request, To, 'CANCEL').
+
+
+%% Internal method to create ACK/CANCEL requests (they are similar)
+create_ack_cancel(Request, To, Method) ->
+    % Call-Id, From, CSeq (only numberic part) and Route are taken from
+    % the original request
     ACKHeaders =
         [case Name of
              'call-id' -> {Name, Value};
              from -> {Name, Value};
              cseq ->
                  CSeq = sip_headers:parse(cseq, Value),
-                 CSeq2 = CSeq#sip_hdr_cseq{method = 'ACK'},
+                 CSeq2 = CSeq#sip_hdr_cseq{method = Method},
                  {Name, CSeq2};
              route ->
                  {Name, Value};
              % Also, Max-Forwards is copied as well. Although this is not explicitly
-             % required by 17.1.1.3, it is required by 8.1.1
+             % required by 17.1.1.3 or 9.1, it is required by 8.1.1
              'max-forwards' -> {Name, Value}
          end || {Name, Value} <- Request#sip_request.headers,
                 (Name =:= 'call-id' orelse Name =:= from orelse
-                 Name =:= cseq orelse (Name =:= route andalso Method =:= 'INVITE') orelse
+                 Name =:= cseq orelse Name =:= route orelse
                  Name =:= 'max-forwards')],
 
     % Via is taken from top Via of the original request
     Via = header_top_value(via, Request),
 
-    % To goes from the response
-    To = header_top_value('to', Response),
-
-    #sip_request{method = 'ACK',
-                 uri = RequestURI,
+    #sip_request{method = Method,
+                 uri = Request#sip_request.uri,
                  headers = [{'via', [Via]}, {'to', To} | ACKHeaders]}.
 
-%% @doc RFC 3261, 9.1 Constructing CANCEL requests
-%% @end
--spec create_cancel(#sip_request{}) -> #sip_request{}.
-create_cancel(#sip_request{method = Method, uri = RequestURI} = Request) ->
-    % Request-URI, Call-ID, To, the numeric part of CSeq, and From
-    CancelHeaders =
-        [case Name of
-             'call-id' -> {Name, Value};
-             from -> {Name, Value};
-             to -> {Name, Value};
-             cseq ->
-                 CSeq = sip_headers:parse(cseq, Value),
-                 CSeq2 = CSeq#sip_hdr_cseq{method = 'CANCEL'},
-                 {Name, CSeq2};
-             route ->
-                 {Name, Value};
-             % Also, Max-Forwards is copied as well. Although this is not explicitly
-             % required in 9.1, it is required by 8.1.1
-             'max-forwards' -> {Name, Value}
-         end || {Name, Value} <- Request#sip_request.headers,
-                (Name =:= 'call-id' orelse Name =:= to orelse
-                 Name =:= cseq orelse Name =:= route orelse
-                 Name =:= from orelse Name =:= 'max-forwards')],
-
-    % Via is taken from top Via of the original request
-    Via = header_top_value(via, Request),
-
-    #sip_request{method = 'CANCEL',
-                 uri = RequestURI,
-                 headers = [{'via', [Via]} | CancelHeaders]}.
 
 %% @doc Create response for given request
 %% @end
