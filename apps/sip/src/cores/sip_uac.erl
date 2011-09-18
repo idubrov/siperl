@@ -115,7 +115,7 @@ handle_call({send_request, Request}, From, State) ->
     {ok, State2} = do_send_request(make_ref(), Request, Callback, State),
     {noreply, State2};
 
-handle_call({cancel, Ref}, From, State) ->
+handle_call({cancel, Ref}, _From, State) ->
     case lists:keyfind(Ref, 1, State#state.requests) of
         {Ref, TxKey} ->
             case sip_transaction:cancel(TxKey) of

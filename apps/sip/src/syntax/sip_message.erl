@@ -58,12 +58,14 @@ is_secure(Request) when is_record(Request, sip_request) ->
 -spec is_dialog_establishing(#sip_request{}) -> boolean().
 %% @doc Check if SIP request is dialog-establishing
 %% @end
-is_dialog_establishing(#sip_request{method = Method} = Request) ->
+is_dialog_establishing(#sip_request{method = 'INVITE'} = Request) ->
     To = sip_message:header_top_value(to, Request),
     case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
-        false when Method =:= 'INVITE' -> true;
+        false -> true; % no tag in To: header, method is INVITE
         _Other -> false
-    end.
+    end;
+is_dialog_establishing(#sip_request{}) ->
+    false.
 
 %% @doc Retrieve method of SIP message
 %%
@@ -926,6 +928,26 @@ branch_helpers_test_() ->
                                #sip_request{method = 'INVITE', uri = <<"sip@nowhere.invalid">>,
                                             headers = [{via, [Via1, Via2]}]}))
      ].
+
+-spec is_dialog_establishing_test_() -> list().
+is_dialog_establishing_test_() ->
+    Headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+               {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+               {to, <<"Bob <sip:bob@biloxi.com>">>},
+               {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+               {'call-id', <<"987asjd97y7atg">>},
+               {cseq, <<"986759 INVITE">>},
+               {route, <<"<sip:alice@atlanta.com>">>},
+               {route, <<"<sip:bob@biloxi.com>">>},
+               {'content-length', 5},
+               {'max-forwards', 15}],
+    Request = #sip_request{method = 'INVITE', uri = <<"sip:bob@biloxi.com">>, headers = Headers, body = <<"Hello">>},
+    [
+     ?_assertEqual(true, is_dialog_establishing(Request)),
+     ?_assertEqual(false, is_dialog_establishing(Request#sip_request{method = 'OPTIONS'})),
+     ?_assertEqual(false, is_dialog_establishing(replace_top_header(to, <<"Bob <sip:bob@biloxi.com>;tag=1928301774">>, Request)))
+     ].
+
 
 -spec fake_test() -> ok.
 fake_test() ->
