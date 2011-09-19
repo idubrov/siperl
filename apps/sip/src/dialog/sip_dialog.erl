@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3]).
+-export([start_link/0, create_dialog/3, list_dialogs/0]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -42,6 +42,12 @@ create_dialog(Kind, Request, Response) when
     Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
 
+-spec list_dialogs() -> [#sip_dialog{}].
+%% @doc List all active dialogs
+%% @end
+list_dialogs() ->
+    gen_server:call(?SERVER, list_dialogs).
+
 %%-----------------------------------------------------------------
 %% Server callbacks
 %%-----------------------------------------------------------------
@@ -53,12 +59,18 @@ init({}) ->
     {ok, #state{table = Table}}.
 
 %% @private
--spec handle_call({create_dialog, #sip_dialog{}}, gen_from(), #state{}) -> {reply, ok, #state{}}.
+-spec handle_call({create_dialog, #sip_dialog{}}, gen_from(), #state{}) -> {reply, ok, #state{}};
+                 (list_dialogs, gen_from(), #state{}) -> {reply, [#sip_dialog{}], #state{}}.
 handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
         true -> {reply, ok, State};
         false -> {reply, {error, dialog_exists}, State}
     end;
+
+handle_call(list_dialogs, _Client, State) ->
+    List = ets:tab2list(State#state.table),
+    {reply, List, State};
+
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
 
