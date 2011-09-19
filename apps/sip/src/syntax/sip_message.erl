@@ -359,9 +359,10 @@ validate_request(#sip_request{method = Method} = Msg) ->
         check(count(from, Msg) =:= 1, {invalid, from}),
         check(count(cseq, Msg) =:= 1, {invalid, cseq}),
         check(count('call-id', Msg) =:= 1, {invalid, 'call-id'}),
-        % 17.1.1.3 does not explicitly requires Max-Forwards in ACK's
-        % so we do not enforce it here
-        check(count('max-forwards', Msg) =:= 1 orelse Method =:= 'ACK', {invalid, 'max-forwards'}),
+        % Although Max-Forwards is enforced by 8.1.1, it is not included by all
+        % implementations. Moreover, proxy must pass requests without Max-Forwards
+        % So, we do not enforce it here, see Issue #7.
+        %check(count('max-forwards', Msg) =:= 1, {invalid, 'max-forwards'}),
         check(count(via, Msg) >= 1, {invalid, via}),
         check(Method =/= 'INVITE' orelse is_single_contact(Msg), {invalid, contact}), % 8.1.1.8
         check(is_contact_secure(Msg), {invalid, contact_must_be_sips})]).
@@ -822,7 +823,8 @@ validation_test_() ->
                                 {from, sip_headers:address(<<>>, URI, [{tag, <<"fromtag">>}])},
                                 {cseq, sip_headers:cseq(1, 'OPTIONS')},
                                 {'call-id', <<"123">>},
-                                {'max-forwards', 70},
+                                % Consider request without Max-Forward as valid, see Issue #7
+                                %{'max-forwards', 70},
                                 {via, sip_headers:via(udp, "localhost", [])},
                                 {require, <<"foo">>}]},
     ValidResponse = create_response(ValidRequest, 200),
