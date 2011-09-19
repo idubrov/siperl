@@ -27,5 +27,6 @@ start_link() ->
 -spec init(list()) -> {ok, _}.
 init([]) ->
     Children = [?SUPERVISOR(sip_transport_sup, []),
-                ?SUPERVISOR(sip_transaction_sup, [])],
+                ?SUPERVISOR(sip_transaction_sup, []),
+                ?SERVER(sip_dialog, sip_dialog, [])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
