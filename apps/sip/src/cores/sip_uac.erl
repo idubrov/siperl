@@ -219,9 +219,11 @@ do_response(Response, TxKey, State) ->
 
     Result = do([error_m ||
                  S1 <- validate_vias(Response, State),
-                 S2 <- handle_response(ReqInfo, Response, S1),
-                 S3 <- handle_final_response(ReqInfo, Response, S2),
-                 invoke_callback(ReqInfo, Response, S3)]),
+                 S2 <- handle_provisional_response(ReqInfo, Response, S1),
+                 S3 <- handle_redirect_response(ReqInfo, Response, S2),
+                 S4 <- handle_failure_response(ReqInfo, Response, S3),
+                 S5 <- handle_final_response(ReqInfo, Response, S4),
+                 invoke_callback(ReqInfo, Response, S5)]),
     case Result of
         {ok, State2} -> {ok, State2};
         {error, {_Reason, State2}} ->
@@ -244,46 +246,46 @@ validate_vias(Msg, State) ->
     end.
 
 
--spec handle_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
-%% @doc Automatic handling of non-2xx responses
-%% 1xx      if request was cancelled and no `CANCEL' transaction was started, start it
-%% 3xx      follow redirect
-%% 4xx-6xx  try next URI, if was redirected previously
+-spec handle_provisional_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Automatic handling of provisional (1xx) responses
 %% @end
-
-%% 1xx
-handle_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 100, Status =< 199,
-  ReqInfo#request_info.cancel, ReqInfo#request_info.cancel_tx =:= undefined ->
+handle_provisional_response(ReqInfo, #sip_response{status = Status}, State)
+  when Status >= 100, Status =< 199,
+       ReqInfo#request_info.cancel,
+       ReqInfo#request_info.cancel_tx =:= undefined ->
 
     % Start `CANCEL' tx, we got provisional response and have not started `CANCEL' tx yet
     ReqInfo2 = ReqInfo#request_info{provisional = true},
     send_cancel(ReqInfo2, State);
-
-handle_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 100, Status =< 199,
-  not ReqInfo#request_info.provisional ->
-
+handle_provisional_response(ReqInfo, #sip_response{status = Status}, State)
+  when Status >= 100, Status =< 199,
+       not ReqInfo#request_info.provisional ->
     % We may receive cancellation request later, so update provisional flag
     State2 = store_info(ReqInfo#request_info{provisional = true}, State),
     error_m:return(State2);
+handle_provisional_response(_ReqInfo, _Response, State) ->
+    error_m:return(State).
 
-%% 3xx
-handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 300, Status =< 399 ->
+-spec handle_redirect_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Automatic handling of redirect (3xx) responses
+%% @end
+handle_redirect_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
-
     % try next URI, was redirected
     next_uri(ReqInfo2, Response, State);
+handle_redirect_response(_ReqInfo, _Response, State) ->
+    error_m:return(State).
 
-%% 4xx-6xx
-handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status =:= 503; Status =:= 408 ->
+-spec handle_failure_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Automatic handling of failure (4xx-6xx) responses
+%% @end
+handle_failure_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status =:= 503; Status =:= 408 ->
     % failed with 408 or 503, try next IP address
     next_destination(ReqInfo, Response, State);
-
-handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 400 ->
+handle_failure_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 400 ->
     % failed, try next URI
     next_uri(ReqInfo, Response, State);
-
-%% Otherwise, continue
-handle_response(_ReqInfo, _Response, State) ->
+handle_failure_response(_ReqInfo, _Response, State) ->
     error_m:return(State).
 
 -spec handle_final_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
