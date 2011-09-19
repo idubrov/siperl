@@ -88,9 +88,6 @@ handle_info({cancel, Id}, State) ->
     io:format("Hanging up~n"),
     ok = sip_uac:cancel(State#state.uac, Id),
     {noreply, State};
-handle_info({response, #sip_response{status = Status, reason = Reason}}, State) ->
-    io:format("Got response for CANCEL ~w ~s~n", [Status, binary_to_list(Reason)]),
-    {noreply, State};
 handle_info(Info, State) ->
     {stop, {unexpected, Info}, State}.
 
