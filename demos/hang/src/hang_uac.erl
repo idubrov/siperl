@@ -85,8 +85,8 @@ handle_info({response, Ref, #sip_response{status = Status, reason = Reason} = Re
     end;
 handle_info({cancel, Id}, State) ->
     % Cancel request
-    io:format("Hanging up~n"),
-    ok = sip_uac:cancel(State#state.uac, Id),
+    Result = sip_uac:cancel(State#state.uac, Id),
+    io:format("Hanging up: ~p~n", [Result]),
     {noreply, State};
 handle_info(Info, State) ->
     {stop, {unexpected, Info}, State}.
