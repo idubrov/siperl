@@ -75,8 +75,7 @@ send_response(Response, TxState) ->
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
 pass_to_tu(#sip_response{} = Msg, TxState) ->
-    UserData = proplists:get_value(user_data, TxState#tx_state.options),
-    notify_tu(TxState, {response, Msg, UserData}),
+    notify_tu(TxState, {response, Msg, TxState#tx_state.tx_key}),
     ok.
 
 %% @private

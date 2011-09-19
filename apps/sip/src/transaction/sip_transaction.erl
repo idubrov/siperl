@@ -38,7 +38,7 @@ start_client_tx(TU, To, Request) ->
 -spec start_client_tx(pid() | term(),
                       #sip_destination{},
                       #sip_request{},
-                      [{ttl, non_neg_integer()} | {user_data, any()}]) -> {ok, #sip_tx_client{}}.
+                      [{ttl, non_neg_integer()}]) -> {ok, #sip_tx_client{}}.
 start_client_tx(TU, Destination, Request, Options)
   when is_record(Destination, sip_destination),
        is_record(Request, sip_request),

@@ -31,13 +31,17 @@
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(req_info, {ref :: reference(),                        % Unique reference, identifying the request
-                   request :: #sip_request{},                 % SIP request message
-                   destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-                   target_set = sip_priority_set:new(),       % URI to visit next (redirects)
-                   user_data}).                               % Custom user data associated with request
+-type callback() :: fun((reference(), {ok, #sip_response{}}) -> ok).
 
--record(state, {requests = [] :: [{reference(), #sip_tx_client{}}]}).  % Mapping from unique request referenc to transaction
+-record(req_info, {ref               :: reference(),                               % Unique request id
+                   request           :: #sip_request{},                            % SIP request message
+                   destinations = [] :: [#sip_destination{}],                      % list of IP addresses to try next
+                   target_set        :: sip_priority_set:priority_set(#sip_uri{}), % URI to visit next (redirects)
+                   callback          :: callback()}).                              % Callback to invoke on responses
+
+-record(state, {requests = [] :: [{reference(), #req_info{}}],            % Mapping from unique request id to state
+                transactions = [] :: [{#sip_tx_client{}, reference()}]}). % Mapping transaction key to request id
+
 
 -type gen_from() :: {pid(), term()}.
 
@@ -116,8 +120,8 @@ handle_call({send_request, Request}, From, State) ->
     {noreply, State2};
 
 handle_call({cancel, Ref}, _From, State) ->
-    case lists:keyfind(Ref, 1, State#state.requests) of
-        {Ref, TxKey} ->
+    case lists:keyfind(Ref, 2, State#state.transactions) of
+        {TxKey, Ref} ->
             case sip_transaction:cancel(TxKey) of
                 {ok, TxKey} ->
                     {reply, ok, State};
@@ -143,17 +147,19 @@ handle_cast(Cast, State) ->
 
 %% @private
 -spec handle_info(_, #state{}) -> {noreply, #state{}}.
-handle_info({response, #sip_response{}, cancel}, State) ->
+handle_info({response, #sip_response{}, #sip_tx_client{method = 'CANCEL'}}, State) ->
     % FIXME: probably, CANCEL transaction should not report to this TU?
+    % or: TU should start CANCEL transaction?
     {noreply, State};
 
-handle_info({response, #sip_response{} = Response, #req_info{} = ReqInfo}, State) ->
-    {ok, State2} = do_response(Response, ReqInfo, State),
+handle_info({response, #sip_response{} = Response, #sip_tx_client{} = TxKey}, State) ->
+    {ok, State2} = do_response(Response, TxKey, State),
     {noreply, State2};
 
-handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
-    % FIXME: should we handle terminated transactions?
-    {noreply, State};
+handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
+    % Remove mapping from transaction key to request reference
+    Transactions = lists:keydelete(TxKey, 1, State#state.transactions),
+    {noreply, State#state{transactions = Transactions}};
 handle_info(Info, State) ->
     {stop, {unexpected, Info}, State}.
 
@@ -202,32 +208,35 @@ do_send_request(Ref, Request, Callback, State) ->
 
     ReqInfo = #req_info{ref = Ref,
                         request = Request,
-                        user_data = Callback,
-                        target_set = TargetSet},
+                        target_set = TargetSet,
+                        callback = Callback},
     % What if `ok' is returned (meaning request was not processed)?
     {error, {processed, State2}} = next_uri(ReqInfo, none, State),
     {ok, State2}.
 
-do_response(#sip_response{status = Status} = Response, ReqInfo, State) ->
+do_response(#sip_response{status = Status} = Response, TxKey, State) ->
+    {TxKey, Ref} = lists:keyfind(TxKey, 1, State#state.transactions),
+    {Ref, ReqInfo} = lists:keyfind(Ref, 1, State#state.requests),
+
     Result = do([error_m ||
                  S1 <- validate_vias(Response, State),
                  handle_response(ReqInfo, Response, S1)]),
     case Result of
         {ok, State2} when Status >= 100, Status =< 199 ->
             % Notify about provisional response
-            Callback = ReqInfo#req_info.user_data,
-            _Ignore = Callback(ReqInfo#req_info.ref, {ok, Response}),
+            Callback = ReqInfo#req_info.callback,
+            _Ignore = Callback(Ref, {ok, Response}),
             {ok, State2};
 
         {ok, State2} ->
             % Final response, notify, then delete request from the list of
             % pending requests
-            Callback = ReqInfo#req_info.user_data,
-            _Ignore = Callback(ReqInfo#req_info.ref, {ok, Response}),
+            Callback = ReqInfo#req_info.callback,
+            _Ignore = Callback(Ref, {ok, Response}),
 
             % Erase request from state if it was a final response
             % FIXME: What about forked responses?
-            Requests = lists:keydelete(ReqInfo#req_info.ref, 1, State2#state.requests),
+            Requests = lists:keydelete(Ref, 1, State2#state.requests),
             {ok, State2#state{requests = Requests}};
         {error, {_Reason, State2}} ->
             % Response was either discarded or is still being
@@ -254,6 +263,7 @@ validate_vias(Msg, State) ->
 -spec handle_response(#req_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
 handle_response(cancel, #sip_response{}, State) ->
     % ignore responses for CANCEL trasactions
+    % FIXME: should CANCEL transactions report to some other entity??
     error_m:fail({cancel, State});
 handle_response(ReqInfo, #sip_response{status = Status} = Response, State)
   when Status >= 300, Status =< 399 ->
@@ -300,11 +310,12 @@ next_destination(#req_info{ref = Ref, request = Request, destinations = [Top | F
 
     %% FIXME: Every new client transaction must have its own branch value!!!!!
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
-    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2, [{user_data, ReqInfo2}]),
+    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
 
-    % Record transaction
-    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey}),
-    State2 = State#state{requests = Requests},
+    % Update ref to request info & txkey to ref mappings
+    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, ReqInfo2}),
+    Transactions = lists:keystore(TxKey, 1, State#state.transactions, {TxKey, Ref}),
+    State2 = State#state{requests = Requests, transactions = Transactions},
 
     % stop processing
     error_m:fail({processed, State2}).
