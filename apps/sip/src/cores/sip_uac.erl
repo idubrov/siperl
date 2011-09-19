@@ -92,14 +92,22 @@ send_request(UAC, Request) when is_record(Request, sip_request) ->
     send_request(UAC, Request, fun(Ref, {ok, Response}) -> Pid ! {response, Ref, Response} end).
 
 %% @doc Send the request synchronously
-%% FIXME: Does not work with provisional responses!!!
+%% Returns the final response to the request. Should not be invoked for `INVITE',
+%% since all provisional responses will be ignored anyway. Also, `INVITE'
+%% processing is usually much longer, so `gen_server' timeout could occur.
 %% @end
 -spec send_request_sync(atom() | pid(), sip_message()) -> {ok, #sip_response{}} | {error, Reason :: term()}.
 send_request_sync(UAC, Request) when is_record(Request, sip_request) ->
     gen_server:call(UAC, {send_request, Request}).
 
 -spec cancel(pid(), reference()) -> ok | {error, no_request}.
-%% @doc Cancel the request identified by reference
+%% @doc Cancel the request identified by the reference
+%% <em>Note that it is still possible for the client to receive 2xx response
+%% on the request that was successfully cancelled. This is due to the inherent
+%% race condition present. For example, this could happen if cancel is invoked
+%% before UAC have received 2xx response, but after it was sent by the remote side.
+%% That means, client should be ready to issue `BYE' when 2xx is received on
+%% request it has cancelled.</em>.
 %% @end
 cancel(UAC, Ref) when is_pid(UAC), is_reference(Ref) ->
     gen_server:call(UAC, {cancel, Ref}).
@@ -125,7 +133,10 @@ handle_call({create_request, Method, To}, _From, State) ->
     {reply, Request, State};
 
 handle_call({send_request, Request}, From, State) ->
-    Callback = fun(_Ref, Result) -> gen_server:reply(From, Result) end,
+    % callback that will ignore all provisional responses
+    Callback = fun(_Ref, {ok, #sip_response{status = Status}}) when Status >= 100, Status =< 199 -> ok;
+                  (_Ref, Result) -> gen_server:reply(From, Result)
+               end,
     {ok, State2} = do_send_request(make_ref(), Request, Callback, State),
     {noreply, State2};
 
