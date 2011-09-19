@@ -31,11 +31,9 @@ end_per_suite(_Config) ->
 
 init_per_testcase(_TestCase, Config) ->
     {ok, UAC} = sip_uac:start_link(),
-    {ok, Dialog} = sip_dialog:start_link(),
-    [{uac, UAC}, {dialog, Dialog} | Config].
+    [{uac, UAC} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(dialog, Config)),
     ok = sip_test:shutdown(?config(uac, Config)),
     ok.
 
