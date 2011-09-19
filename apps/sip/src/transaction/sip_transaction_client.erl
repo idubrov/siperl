@@ -88,25 +88,13 @@
         false ->
             TxState4 = ?START(timerK, ?T4, TxState3),
             {reply, ok, 'COMPLETED', TxState4}
-    end;
-
-%% @doc Transaction cancellation, Section 9.1
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'TRYING'(cancel, _From, TxState) ->
-    {reply, ok, 'TRYING', TxState}.
+    end.
 
 %% @doc In 'PROCEEDING' state, act the same way as in 'TRYING' state.
 %% @end
 -spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
 'PROCEEDING'({response, Status, Msg}, From, TxState) ->
-    'TRYING'({response, Status, Msg}, From, TxState);
-
-%% @doc Transaction cancellation, Section 9.1
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'PROCEEDING'(cancel, _From, TxState) ->
-    {reply, ok, 'PROCEEDING', TxState}.
+    'TRYING'({response, Status, Msg}, From, TxState).
 
 -spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 'PROCEEDING'({timeout, _Ref, {timerE, _Interval}}, TxState) ->
@@ -123,14 +111,7 @@
 %% @end
 -spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
 'COMPLETED'({response, _Status, _Response}, _From, TxState) ->
-    {reply, ok, 'COMPLETED', TxState};
-
-%% @doc Transaction cancellation, Section 9.1
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'COMPLETED'(cancel, _From, TxState) ->
     {reply, ok, 'COMPLETED', TxState}.
-
 
 %% @doc
 %% When Timer K fires while in 'COMPLETED' state, transition to the 'TERMINATED'

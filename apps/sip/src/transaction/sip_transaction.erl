@@ -90,17 +90,9 @@ list_tx() ->
 
 -spec cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false;
             (#sip_tx_client{}) -> {ok, #sip_tx_client{}} | false.
-%% @doc Cancel client or server transaction based on the request or transaction
-%% key (see 9.1/9.2)
+%% @doc Cancel server transaction based on the `CANCEL' request
 %%
-%% If request is provided, cancel server transaction (request was received from
-%% outside). The request must have 'CANCEL' method.
-%%
-%% If client transaction key was provided, cancel client transaction matching the
-%% key. The client transaction will initiate `CANCEL' transactions on its own,
-%% based on the conditions described in 9.1.
-%%
-%% This functionality was moved from the UAC/UAS here, because transaction
+%% This functionality was moved from the UAS here, because transaction
 %% layer have the information if request was replied and can process
 %% cancellation atomically (in transaction FSM process).
 %% @end
@@ -119,14 +111,7 @@ cancel(#sip_request{method = 'CANCEL'} = Request) ->
             tx_send(TxKey, cancel),
             {ok, TxKey};
         [] -> false
-    end;
-
-cancel(TxKey) when is_record(TxKey, sip_tx_client) ->
-    case tx_send(TxKey, cancel) of
-        {ok, TxKey} -> {ok, TxKey};
-        not_handled -> false % FIXME: use false instead of not_handled?
     end.
-
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled

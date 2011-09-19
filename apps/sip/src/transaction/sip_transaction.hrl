@@ -28,9 +28,7 @@
          destination        :: #sip_destination{},  % Address to send request to
          reliable           :: boolean(),           % If request was made via reliable connection
          options = []       :: [{atom(), term()}],  % Options
-         props = []         :: [{term(), term()}],  % Any gproc properties to register
-         cancel = false     :: boolean(),           % If transaction should be cancelled (but probably was not cancelled yet)
-         cancelled = false  :: boolean()            % If transaction was cancelled
+         props = []         :: [{term(), term()}]   % Any gproc properties to register
         }).
 
 -define(CANCEL(Timer, TxState), sip_transaction_base:cancel_timer(#tx_state.Timer, TxState)).

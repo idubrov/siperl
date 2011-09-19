@@ -32,19 +32,25 @@
 -include("sip.hrl").
 
 -type callback() :: fun((reference(), {ok, #sip_response{}}) -> ok).
+-type target_set() :: sip_priority_set:priority_set(#sip_uri{}).
 
--record(req_info, {ref               :: reference(),                               % Unique request id
-                   request           :: #sip_request{},                            % SIP request message
-                   destinations = [] :: [#sip_destination{}],                      % list of IP addresses to try next
-                   target_set        :: sip_priority_set:priority_set(#sip_uri{}), % URI to visit next (redirects)
-                   cancelled = false :: boolean(),                                 % If request was cancelled. If 2xx will arrive, send BYE immediately.
-                   callback          :: callback()}).                              % Callback to invoke on responses
+-record(request_info,
+        {id                :: reference(),          % Unique request identifier
+         current_tx        :: #sip_tx_client{},     % Key of active transaction
+         cancel_tx         :: #sip_tx_client{},     % `CANCEL' transaction key
+         request           :: #sip_request{},       % Original request
+         destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
+         target_set        :: target_set(),         % URI to visit next (redirects)
+         provisional = false :: boolean(),          % If provisional response was received already
+         cancel = false    :: boolean(),            % Start `CANCEL' transaction on next provisional
+         last_destination  :: #sip_destination{},   % Destination last transaction was sent to
+         callback          :: callback()}).         % Callback to invoke on responses
 
 %% Pending requests (that have not received final responses yet)
 %% First element is unique request id (that does not change accross retries),
 %% second element is current transaction that makes the request and third
 %% element is information about the request
--record(state, {requests = [] :: [{reference(), #sip_tx_client{}, #req_info{}}]}).
+-record(state, {requests = [] :: [#request_info{}]}).
 
 
 -type gen_from() :: {pid(), term()}.
@@ -92,7 +98,7 @@ send_request(UAC, Request) when is_record(Request, sip_request) ->
 send_request_sync(UAC, Request) when is_record(Request, sip_request) ->
     gen_server:call(UAC, {send_request, Request}).
 
--spec cancel(pid(), reference()) -> ok.
+-spec cancel(pid(), reference()) -> ok | {error, no_request}.
 %% @doc Cancel the request identified by reference
 %% @end
 cancel(UAC, Ref) when is_pid(UAC), is_reference(Ref) ->
@@ -123,9 +129,9 @@ handle_call({send_request, Request}, From, State) ->
     {ok, State2} = do_send_request(make_ref(), Request, Callback, State),
     {noreply, State2};
 
-handle_call({cancel, Ref}, _From, State) ->
-    Entry = lists:keyfind(Ref, 1, State#state.requests),
-    {Reply, State2} = do_cancel(Entry, State),
+handle_call({cancel, Id}, _From, State) ->
+    ReqInfo = lookup_info(Id, State),
+    {Reply, State2} = do_cancel(ReqInfo, State),
     {reply, Reply, State2};
 
 handle_call(Request, _From, State) ->
@@ -193,47 +199,34 @@ do_create_request(Method, ToAddress) ->
                  headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
 
 % Put Request URI into the target set
-do_send_request(Ref, Request, Callback, State) ->
+do_send_request(Id, Request, Callback, State) ->
     ok = sip_message:validate_request(Request),
 
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
 
-    ReqInfo = #req_info{ref = Ref,
-                        request = Request,
-                        target_set = TargetSet,
-                        callback = Callback},
+    ReqInfo = #request_info{id = Id,
+                            request = Request,
+                            target_set = TargetSet,
+                            callback = Callback},
     % What if `ok' is returned (meaning request was not processed)?
     {error, {processed, State2}} = next_uri(ReqInfo, none, State),
     {ok, State2}.
 
-do_response(#sip_response{status = Status} = Response, TxKey, State) ->
+do_response(Response, TxKey, State) ->
     % search by value (transaction key), it is unique by design
-    {Ref, TxKey, ReqInfo} = lists:keyfind(TxKey, 2, State#state.requests),
+    ReqInfo = lists:keyfind(TxKey, #request_info.current_tx, State#state.requests),
+
     Result = do([error_m ||
                  S1 <- validate_vias(Response, State),
-                 handle_response(ReqInfo, Response, S1)]),
+                 S2 <- handle_response(ReqInfo, Response, S1),
+                 S3 <- handle_final_response(ReqInfo, Response, S2),
+                 invoke_callback(ReqInfo, Response, S3)]),
     case Result of
-        {ok, State2} when Status >= 100, Status =< 199 ->
-            % Notify about provisional response
-            Callback = ReqInfo#req_info.callback,
-            _Ignore = Callback(Ref, {ok, Response}),
-            {ok, State2};
-
-        {ok, State2} ->
-            % Final response, notify, then delete request from the list of
-            % pending requests
-            Callback = ReqInfo#req_info.callback,
-            _Ignore = Callback(Ref, {ok, Response}),
-
-            % Erase request from state if it was a final response
-            % FIXME: What about forked responses?
-            Requests = lists:keydelete(Ref, 1, State2#state.requests),
-            {ok, State2#state{requests = Requests}};
+        {ok, State2} -> {ok, State2};
         {error, {_Reason, State2}} ->
             % Response was either discarded or is still being
             % processed (following redirect, trying next IP, etc)
-            % So, nothing to report to the client callback
             {ok, State2}
     end.
 
@@ -250,41 +243,86 @@ validate_vias(Msg, State) ->
             error_m:fail({discarded, State})
     end.
 
-%% @doc Automatic handling of 3xx-6xx responses valve
+
+-spec handle_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Automatic handling of non-2xx responses
+%% 1xx      if request was cancelled and no `CANCEL' transaction was started, start it
+%% 3xx      follow redirect
+%% 4xx-6xx  try next URI, if was redirected previously
 %% @end
--spec handle_response(#req_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
-handle_response(cancel, #sip_response{}, State) ->
-    % ignore responses for CANCEL trasactions
-    % FIXME: should CANCEL transactions report to some other entity??
-    error_m:fail({cancel, State});
-handle_response(ReqInfo, #sip_response{status = Status} = Response, State)
-  when Status >= 300, Status =< 399 ->
+
+%% 1xx
+handle_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 100, Status =< 199,
+  ReqInfo#request_info.cancel, ReqInfo#request_info.cancel_tx =:= undefined ->
+
+    % Start `CANCEL' tx, we got provisional response and have not started `CANCEL' tx yet
+    ReqInfo2 = ReqInfo#request_info{provisional = true},
+    send_cancel(ReqInfo2, State);
+
+handle_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 100, Status =< 199,
+  not ReqInfo#request_info.provisional ->
+
+    % We may receive cancellation request later, so update provisional flag
+    State2 = store_info(ReqInfo#request_info{provisional = true}, State),
+    error_m:return(State2);
+
+%% 3xx
+handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
 
     % try next URI, was redirected
     next_uri(ReqInfo2, Response, State);
+
+%% 4xx-6xx
 handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status =:= 503; Status =:= 408 ->
     % failed with 408 or 503, try next IP address
     next_destination(ReqInfo, Response, State);
-handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status > 399 ->
+
+handle_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 400 ->
     % failed, try next URI
     next_uri(ReqInfo, Response, State);
-handle_response(_ReqInfo, _Msg, State) ->
+
+%% Otherwise, continue
+handle_response(_ReqInfo, _Response, State) ->
+    error_m:return(State).
+
+-spec handle_final_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Remove request information, if final response is received
+%% @end
+handle_final_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 200 ->
+    State2 = delete_info(ReqInfo, State),
+    error_m:return(State2);
+
+handle_final_response(_ReqInfo, _Response, State) ->
+    error_m:return(State).
+
+%% @doc Invoke callback
+%% @end
+invoke_callback(ReqInfo, Response, State) when ReqInfo#request_info.cancel, Response#sip_response.status =:= 408->
+    % We got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
+    % (RFC 2543 compliant UAS will not generate such a response)
+    Response2 = Response#sip_response{status = 487, reason = sip_message:default_reason(487)},
+    invoke_callback(ReqInfo, Response2, State);
+
+invoke_callback(ReqInfo, Response, State) ->
+    Id = ReqInfo#request_info.id,
+    Callback = ReqInfo#request_info.callback,
+    _Ignore = Callback(Id, {ok, Response}),
     error_m:return(State).
 
 next_uri(ReqInfo, Response, State) ->
-    case sip_priority_set:take(ReqInfo#req_info.target_set) of
+    case sip_priority_set:take(ReqInfo#request_info.target_set) of
         false ->
             % No more URIs to try, continue processing
             error_m:return(State);
         {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
-            Request = ReqInfo#req_info.request,
+            Request = ReqInfo#request_info.request,
             Request2 = Request#sip_request{uri = URI},
-            ReqInfo2 = ReqInfo#req_info{request = Request2,
-                                        destinations = lookup_destinations(Request2),
-                                        target_set = TargetSet2},
+            ReqInfo2 = ReqInfo#request_info{request = Request2,
+                                            destinations = lookup_destinations(Request2),
+                                            target_set = TargetSet2},
             next_destination(ReqInfo2, Response, State)
     end.
 
@@ -293,20 +331,19 @@ next_uri(ReqInfo, Response, State) ->
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(#req_info{destinations = []}, _Response, State) ->
+next_destination(#request_info{destinations = []}, _Response, State) ->
     % no destination IPs to try, continue processing
     error_m:return(State);
-next_destination(#req_info{ref = Ref, request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
-    % send request to the top destination, with new request info
-    ReqInfo2 = ReqInfo#req_info{destinations = Fallback},
-
-    %% FIXME: Every new client transaction must have its own branch value!!!!!
+next_destination(#request_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
+    % Every new client transaction must have its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
 
-    % Update ref to request info & txkey to ref mappings
-    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey, ReqInfo2}),
-    State2 = State#state{requests = Requests},
+    % Update request information
+    ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
+                                    last_destination = Top,
+                                    current_tx = TxKey},
+    State2 = store_info(ReqInfo2, State),
 
     % stop processing
     error_m:fail({processed, State2}).
@@ -347,25 +384,41 @@ collect_redirects(ReqInfo, Response) ->
                  sip_priority_set:put(Contact#sip_hdr_address.uri, QValue, TargetSet)
         end,
     % go through Contact: headers and add URIs to our current redirect set
-    NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Response),
-    ReqInfo#req_info{target_set = NewTargetSet, destinations = []}.
+    NewTargetSet = sip_message:foldl_headers(contact, CollectFun, ReqInfo#request_info.target_set, Response),
+    ReqInfo#request_info{target_set = NewTargetSet, destinations = []}.
 
 
-%% @doc Cancel transaction associated with given request
+%% @doc Send `CANCEL' transaction, update the state
+%% @end
+send_cancel(#request_info{} = ReqInfo, State) ->
+    % Create CANCEL request, set branch from current transaction
+    Branch = ReqInfo#request_info.current_tx#sip_tx_client.branch,
+    Cancel = sip_message:create_cancel(ReqInfo#request_info.request),
+    Cancel2 = sip_message:with_branch(Branch, Cancel),
+    {ok, CancelTxKey} = sip_transaction:start_client_tx(self(), ReqInfo#request_info.last_destination, Cancel2),
+
+    State2 = store_info(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxKey}, State),
+    error_m:return(State2).
+
+%% @doc Cancel the request
+%% end
 do_cancel(false, State) ->
-    % No information about the request. This could happen if request was already replied.
-    % If it have resulted in dialog, client of the sip_uac should send BYE request manually.
-    {{error, not_found}, State};
-do_cancel({Ref, TxKey, ReqInfo}, State) ->
-    % First, we mark request as cancelled. If 2xx response will be received,
-    % sip_uac will send BYE immediately, without reporting the dialog to the
-    % sip_uac client.
-    ReqInfo2 = ReqInfo#req_info{cancelled = true},
-    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey, ReqInfo2}),
-    State2 = State#state{requests = Requests},
-
-    % Note that transaction could be terminated already, just ignore that.
-    % Since we have marked request as cancelled, we will deal with it when
-    % final response will arrive.
-    _Ignore = sip_transaction:cancel(TxKey),
+    {{error, no_request}, State};
+do_cancel(#request_info{cancel_tx = undefined, provisional = true} = ReqInfo, State) ->
+    % start `CANCEL' transaction
+    send_cancel(ReqInfo, State);
+do_cancel(ReqInfo, State) ->
+    % mark as cancelled, wait until provisional is received
+    State2 = store_info(ReqInfo#request_info{cancel = true}, State),
     {ok, State2}.
+
+lookup_info(Id, State) ->
+    lists:keyfind(Id, #request_info.id, State#state.requests).
+
+store_info(ReqInfo, State) ->
+    Requests = lists:keystore(ReqInfo#request_info.id, #request_info.id, State#state.requests, ReqInfo),
+    State#state{requests = Requests}.
+
+delete_info(#request_info{id = Id}, State) ->
+    Requests = lists:keydelete(Id, #request_info.id, State#state.requests),
+    State#state{requests = Requests}.
