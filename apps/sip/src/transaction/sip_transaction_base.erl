@@ -7,8 +7,8 @@
 
 %% Include files
 -include("../sip_common.hrl").
--include("sip_transaction.hrl").
 -include("sip.hrl").
+-include("sip_transaction.hrl").
 
 %% Exports
 
@@ -26,8 +26,9 @@
 -spec init(sip_tx_key()) -> {ok, 'INIT', undefined}.
 init(TxKey) ->
     % Register transaction under its key
-    % FIXME: Race condition is possible. If two messages matching same
-    % transaction arrive, second one could go to the unitialized transaction
+    % FIXME: Race condition is possible. If two messages matching same transaction
+    % arrive, second one could go to the unitialized transaction.
+    % This is mostly a problem for server transactions.
     gproc:add_local_name({tx, TxKey}),
     {ok, 'INIT', undefined}.
 
@@ -58,7 +59,7 @@ send_request(Request, TxState) ->
     % Send request to the given destination address
     % Extract 'ttl' option from the options list
     Opts = lists:filter(fun(N) -> N =:= ttl end, TxState#tx_state.options),
-    case sip_transport:send_request(TxState#tx_state.to, Request, Opts) of
+    case sip_transport:send_request(TxState#tx_state.destination, Request, Opts) of
         ok -> ok;
         {error, Reason} -> erlang:error(Reason)
     end,
@@ -106,14 +107,14 @@ terminate(_Reason, _State, undefined) ->
 terminate(Reason, _State, TxState) ->
     TxKey = TxState#tx_state.tx_key,
     % For client transactions, handle failure as response message
-    % See 8.1.3.1
+    % See 8.1.3.1 (Transaction Layer Errors), 9.1 (Cancelling a Request)
     ok =
         case failed_status(TxState#tx_state.tx_key, Reason) of
             false -> ok;
             Status ->
                 % Send failure as response to the TU
                 Response = sip_message:create_response(TxState#tx_state.request, Status),
-                pass_to_tu(Response, TxState),
+                ok = pass_to_tu(Response, TxState),
                 ok
         end,
     notify_tu(TxState, {tx, TxKey, {terminated, Reason}}),

@@ -14,8 +14,8 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include("../sip_common.hrl").
--include("sip_transaction.hrl").
 -include("sip.hrl").
+-include("sip_transaction.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
 -export(['INIT'/3, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
@@ -71,7 +71,7 @@
     {ok, TxState2} = start_cancel_transaction(TxState),
 
     % continue as usual (now with cancelled set to true, so we will not start another CANCEL tx)
-    'CALLING'({response, Status, Response}, From, TxState2);
+    'CALLING'({response, Status, Response}, From, TxState2#tx_state{cancelled = true});
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'CALLING' and 'PROCEEDING'
@@ -141,8 +141,7 @@
 'PROCEEDING'(cancel, _From, #tx_state{cancelled = false} = TxState) ->
     % start CANCEL transaction
     {ok, TxState2} = start_cancel_transaction(TxState),
-    {reply, ok, 'PROCEEDING', TxState2}.
-
+    {reply, ok, 'PROCEEDING', TxState2#tx_state{cancelled = true}}.
 
 %% @doc Transaction timed out
 %% Same handling as in `CALLING' state.
@@ -180,5 +179,5 @@ start_cancel_transaction(TxState) ->
     Cancel = sip_message:create_cancel(TxState#tx_state.request),
     % FIXME: hack... UAC will ignore responses from such tx
     Options = lists:keystore(user_data, 1, TxState#tx_state.options, {user_data, cancel}),
-    {ok, _TxKey} = sip_transaction:start_client_tx(TxState#tx_state.tx_user, TxState#tx_state.to, Cancel, Options),
+    {ok, _TxKey} = sip_transaction:start_client_tx(TxState#tx_state.tx_user, TxState#tx_state.destination, Cancel, Options),
     {ok, TxState#tx_state{cancelled = true}}.

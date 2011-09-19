@@ -23,8 +23,8 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include("../sip_common.hrl").
--include("sip_transaction.hrl").
 -include("sip.hrl").
+-include("sip_transaction.hrl").
 
 %%-----------------------------------------------------------------
 %% Macros

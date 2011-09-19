@@ -39,17 +39,17 @@ start_client_tx(TU, To, Request) ->
                       #sip_destination{},
                       #sip_request{},
                       [{ttl, non_neg_integer()} | {user_data, any()}]) -> {ok, #sip_tx_client{}}.
-start_client_tx(TU, To, Request, Options)
-  when is_record(To, sip_destination),
+start_client_tx(TU, Destination, Request, Options)
+  when is_record(Destination, sip_destination),
        is_record(Request, sip_request),
        is_list(Options) ->
 
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
-    Reliable = sip_transport:is_reliable(To#sip_destination.transport),
+    Reliable = sip_transport:is_reliable(Destination#sip_destination.transport),
 
     TxKey = tx_key(client, Request),
     Module = tx_module(client, Request),
-    TxState = #tx_state{to = To,
+    TxState = #tx_state{destination = Destination,
                         tx_key = TxKey,
                         tx_user = TU,
                         request = Request,
