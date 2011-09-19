@@ -3,14 +3,28 @@
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
 -module(busy_uas).
--extends(sip_uas_callback).
+-extends(sip_ua_default).
 
+%% UA callbacks
+-export([start_link/0, init/1, allow/2, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
+
+%% Include files
 -include_lib("sip/include/sip.hrl").
 
-%% API
--export([init/1, allow/2, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
+-define(SERVER, ?MODULE).
 
 -record(context, {timers = dict:new()}).
+
+%%-----------------------------------------------------------------
+%% API
+%%-----------------------------------------------------------------
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    sip_ua:start_link({local, ?SERVER}, ?MODULE, {}).
+
+%%-----------------------------------------------------------------
+%% UA callbacks
+%%-----------------------------------------------------------------
 
 -spec init({}) -> {ok, #context{}}.
 init({}) ->
@@ -28,7 +42,7 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
     TxKey = sip_transaction:tx_key(server, Request),
 
     % Send 180 Ringing immediately
-    Ringing = sip_message:create_response(Request, 180),
+    Ringing = sip_ua:create_response(Request, 180),
 
     Timers = dict:store(TxKey, Timer, Context#context.timers),
     {reply, Ringing, Context#context{timers = Timers}}.
@@ -43,16 +57,19 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
     Timers = dict:erase(TxKey, Context#context.timers),
 
     % Delegate to standard UAS CANCEL handling
-    sip_uas_callback:'CANCEL'(Request, Context#context{timers = Timers}).
+    sip_ua_default:'CANCEL'(Request, Context#context{timers = Timers}).
 
 -spec handle_info({reply, #sip_request{}}, #context{}) -> {noreply, #context{}}.
 handle_info({reply, Request}, Context) ->
     io:format("Telling ~s we are busy~n", [from(Request)]),
 
     % Send 486 Busy Here response
-    Response = sip_uas:create_response(Request, 486),
-    sip_uas:send_response(self(), Request, Response),
-    {noreply, Context}.
+    Response = sip_ua:create_response(Request, 486),
+    sip_ua:send_response(Request, Response),
+
+    TxKey = sip_transaction:tx_key(server, Request),
+    Timers = dict:erase(TxKey, Context#context.timers),
+    {noreply, Context#context{timers = Timers}}.
 
 from(Request) ->
     #sip_hdr_address{uri = From} = sip_message:header_top_value(from, Request),

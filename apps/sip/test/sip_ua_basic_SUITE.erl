@@ -10,6 +10,9 @@
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
 -export([options_200/1, options_302/1, options_302_failed/1, options_501/1, options_503_next_200/1]).
 
+%% Handlers
+-export([options_200_handler/1, options_302_handler/1, options_302_failed_handler/1, options_501_handler/1, options_503_next_200_handler/1]).
+
 %% Include files
 -include_lib("common_test/include/ct.hrl").
 -include("sip.hrl").
@@ -31,28 +34,26 @@ end_per_suite(_Config) ->
     ok = application:stop(gproc),
     ok.
 
-init_per_testcase(_TestCase, Config) ->
-    {ok, UAC} = sip_uac:start_link(),
-    [{uac, UAC} | Config].
+init_per_testcase(TestCase, Config) ->
+    Fun = list_to_atom(atom_to_list(TestCase) ++ "_handler"),
+    {ok, UA} = sip_test_ua:start_link(fun(Request) -> ?MODULE:Fun(Request) end),
+    [{ua, UA} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(ua, Config)),
     ok.
 
+%% @doc
+%% Configure UAS to reply with "200 Ok".
+%% @end
+options_200_handler(Request) ->
+    sip_ua:create_response(Request, 200).
+
 options_200(Config) ->
-    UAC = ?config(uac, Config),
-
-    % Start UAS to reply with 200 Ok
-    Handler =
-        fun (Request) ->
-                 sip_message:create_response(Request, 200)
-        end,
-    sip_uas:start_link(sip_test_uas, Handler),
-
+    UA = ?config(ua, Config),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
+    {ok, Response} = sip_test_ua:send_options(UA, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -72,73 +73,82 @@ options_200(Config) ->
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
 
-options_302(Config) ->
-    UAC = ?config(uac, Config),
+%% @doc
+%% Configure UAS to reply with "301 Moved Temporarily" for username "first" and
+%% to reply "200 Ok" on username "second".
+%% @end
+options_302_handler(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
+    Response = sip_ua:create_response(Request, 302),
+    Contact = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, []),
+    sip_message:append_header(contact, Contact, Response);
+options_302_handler(#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
+    sip_ua:create_response(Request, 200).
 
-    % configure UAS to reply with "301 Moved Temporarily" for username "first" and
-    % to reply "200 Ok" on username "second".
-    Handler =
-        fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
-                Response = sip_message:create_response(Request, 302),
-                Contact = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, []),
-                sip_message:append_header(contact, Contact, Response);
-           (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
-                sip_message:create_response(Request, 200)
-        end,
-    sip_uas:start_link(sip_test_uas, Handler),
+options_302(Config) ->
+    UA = ?config(ua, Config),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
+    {ok, Response} = sip_test_ua:send_options(UA, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_302_failed(Config) ->
-    UAC = ?config(uac, Config),
+%% @doc
+%% Configure UAS to reply with "301 Moved Temporarily" for username "first" and
+%% to reply "200 Ok" on username "second".
+%% @end
+options_302_failed_handler(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
+    Response = sip_ua:create_response(Request, 302),
+    Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
+    Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
+    sip_message:append_header(contact, [Contact1, Contact2], Response);
+options_302_failed_handler(#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
+    sip_ua:create_response(Request, 404);
+options_302_failed_handler(#sip_request{uri = #sip_uri{user = <<"third">>}} = Request) ->
+    sip_ua:create_response(Request, 200).
 
-    % configure UAS to reply with "301 Moved Temporarily" for username "first" and
-    % to reply "200 Ok" on username "second".
-    Handler =
-        fun(#sip_request{uri = #sip_uri{user = <<"first">>}} = Request) ->
-                Response = sip_message:create_response(Request, 302),
-                Contact1 = sip_headers:address(<<>>, <<"sip:second@127.0.0.1">>, [{q, 0.5}]),
-                Contact2 = sip_headers:address(<<>>, <<"sip:third@127.0.0.1">>, [{q, 0.1}]),
-                sip_message:append_header(contact, [Contact1, Contact2], Response);
-           (#sip_request{uri = #sip_uri{user = <<"second">>}} = Request) ->
-                sip_message:create_response(Request, 404);
-           (#sip_request{uri = #sip_uri{user = <<"third">>}} = Request) ->
-                sip_message:create_response(Request, 200)
-        end,
-    sip_uas:start_link(sip_test_uas, Handler),
+options_302_failed(Config) ->
+    UA = ?config(ua, Config),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
+    {ok, Response} = sip_test_ua:send_options(UA, To),
 
     % validate status code
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.
 
-options_501(Config) ->
-    UAC = ?config(uac, Config),
+%% @doc
+%% Configure UAS to reply with 501 Not Implemented
+%% @end
+options_501_handler(Request) ->
+    sip_ua:create_response(Request, 501).
 
-    % configure UAS to reply with 501 Not Implemented
-    Handler = fun (Request) -> sip_message:create_response(Request, 501) end,
-    sip_uas:start_link(sip_test_uas, Handler),
+options_501(Config) ->
+    UA = ?config(ua, Config),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
+    {ok, Response} = sip_test_ua:send_options(UA, To),
 
     % validate status
     #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
     ok.
 
+%% @doc
+%% Configure UAS to reply with 503 Service Unavailable for UDP transport
+%% @end
+options_503_next_200_handler(Request) ->
+    Via = sip_message:header_top_value(via, Request),
+    case Via#sip_hdr_via.transport of
+        udp ->
+            sip_ua:create_response(Request, 408);
+        tcp ->
+            sip_ua:create_response(Request, 200)
+    end.
+
 %% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
 options_503_next_200(Config) ->
-    UAC = ?config(uac, Config),
+    UA = ?config(ua, Config),
 
     % Mock sip_resolve to return two destinations for fake URI
     % Both destinations point to 127.0.0.1, but have different transports
@@ -149,22 +159,8 @@ options_503_next_200(Config) ->
                               #sip_destination{address = {127, 0, 0, 1}, transport = tcp}]
                      end),
 
-    % configure UAS to reply with 503 Service Unavailable for UDP transport
-    Handler =
-        fun (Request) ->
-                 Via = sip_message:header_top_value(via, Request),
-                 case Via#sip_hdr_via.transport of
-                     udp ->
-                         sip_message:create_response(Request, 408);
-                     tcp ->
-                         sip_message:create_response(Request, 200)
-                 end
-        end,
-    sip_uas:start_link(sip_test_uas, Handler),
-
     To = sip_headers:address(<<>>, <<"sip:example.test">>, []),
-    Request = sip_uac:create_request(UAC, 'OPTIONS', To),
-    {ok, Response} = sip_uac:send_request_sync(UAC, Request),
+    {ok, Response} = sip_test_ua:send_options(UA, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,

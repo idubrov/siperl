@@ -5,5 +5,4 @@
               {mod,{hang_app,[]}},
               {start_phases,[]},
               {env,[]},
-              {modules,[busy_app,busy_sup,busy_uas,hang_app,hang_sup,
-                        hang_uac]}]}.
+              {modules,[hang_app,hang_sup,hang_uac]}]}.

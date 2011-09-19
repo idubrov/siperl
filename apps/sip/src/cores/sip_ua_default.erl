@@ -1,20 +1,22 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc UAS default callback
+%%% @doc UAC/UAS default callback
 %%%
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
--module(sip_uas_callback).
+-module(sip_ua_default).
 
 %% API
--export([allow/2, supported/2, server/2, detect_loops/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, handle_info/2]).
+-export([allow/2, supported/2, server/2, detect_loops/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2]).
+-export([handle_info/2, handle_call/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
 -type context() :: term().
+-type gen_from() :: {pid(), term()}.
 
--spec is_applicable(context()) -> boolean().
+-spec is_applicable(#sip_request{}) -> boolean().
 %% @doc Check if this callback is applicable for the request
 %% @end
 is_applicable(#sip_request{} = _Request) ->
@@ -46,7 +48,7 @@ server(_Request, _Context) ->
 %% @doc Default implementation of `OPTIONS' method.
 %% @end
 'OPTIONS'(Request, Context) ->
-    Response = sip_uas:create_response(Request, 501),
+    Response = sip_ua:create_response(Request, 501),
     {reply, Response, Context}.
 
 -spec 'CANCEL'(#sip_request{}, context()) -> {noreply, context()} | {reply, #sip_response{}, context()}.
@@ -58,14 +60,22 @@ server(_Request, _Context) ->
             false -> 481;       % Call/Transaction Does Not Exist
             {ok, _TxKey} -> 200 % Ok
         end,
-    Response = sip_uas:create_response(Request, Status),
+    Response = sip_ua:create_response(Request, Status),
     {reply, Response, Context}.
 
 -spec handle_info(term(), context()) ->
           {noreply, context()} |
-          {reply, Request :: #sip_request{}, Response :: #sip_response{}, context()} |
           {stop, Reason :: term(), context()}.
 %% @doc Handle arbitrary message
 %% @end
 handle_info(Info, Context) ->
     {stop, {unexpected, Info}, Context}.
+
+-spec handle_call(term(), gen_from(), context()) ->
+          {noreply, context()} |
+          {reply, Reply :: term(), context()} |
+          {stop, Reason :: term(), context()}.
+%% @doc Handle calls
+%% @end
+handle_call(Call, _From, Context) ->
+    {stop, {unexpected, Call}, Context}.

@@ -7,6 +7,7 @@
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
 -export([invite_200/1]).
+-export([invite_200_handler/1]).
 
 %% Include files
 -include_lib("common_test/include/ct.hrl").
@@ -29,36 +30,27 @@ end_per_suite(_Config) ->
     ok = application:stop(gproc),
     ok.
 
-init_per_testcase(_TestCase, Config) ->
-    {ok, UAC} = sip_uac:start_link(),
-    [{uac, UAC} | Config].
+init_per_testcase(TestCase, Config) ->
+    Fun = list_to_atom(atom_to_list(TestCase) ++ "_handler"),
+    {ok, UA} = sip_test_ua:start_link(fun(Request) -> ?MODULE:Fun(Request) end),
+    [{ua, UA} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(ua, Config)),
     ok.
 
+
+%% @doc Configure UAS to reply with 200 Ok
+%% @end
+invite_200_handler(Request) ->
+    sip_ua:create_response(Request, 200).
+
 invite_200(Config) ->
-    UACPid = ?config(uac, Config),
-    UAC = sip_headers:address(<<>>, <<"sip:uac@127.0.0.1">>, []),
-    UAS = sip_headers:address(<<>>, <<"sip:uas@127.0.0.1">>, []),
+    UA = ?config(ua, Config),
 
-    % Start UAS to reply with 200 Ok
-    Handler =
-        fun (Request) ->
-                 Response = sip_uas:create_response(Request, 200),
-                 sip_message:append_header(contact, UAS, Response)
-        end,
-    sip_uas:start_link(sip_test_uas, Handler),
+    To = sip_headers:address(<<>>, <<"sip:test_uas@127.0.0.1">>, []),
+    {ok, Response} = sip_test_ua:send_invite(UA, To),
 
-    To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    Request = sip_uac:create_request(UACPid, 'INVITE', To),
-    Request2 = sip_message:append_header(contact, UAC, Request),
-
-    % Responses will be delivered via messages
-    {ok, Ref} = sip_uac:send_request(UACPid, Request2),
-    ok = receive
-             {response, Ref, #sip_response{status = 200}} ->
-                 ok
-         after 5000 -> {error, response_expected}
-         end,
+    % validate status
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
     ok.

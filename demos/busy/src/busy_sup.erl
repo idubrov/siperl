@@ -25,6 +25,6 @@ start_link() ->
 %% @private
 -spec init(list()) -> {ok, _}.
 init([]) ->
-    Children = [{busy_uas, {sip_uas, start_link, [busy_uas, {}]},
+    Children = [{busy_uas, {busy_uas, start_link, []},
                  permanent, 2000, worker, [busy_uas]}],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
