@@ -21,7 +21,8 @@
 -include("sip.hrl").
 
 -record(state, {callback      :: module(),
-                context       :: term()}).      % Callback context
+                requests      :: [],        % List of pending requests
+                context       :: term()}).  % Callback context
 
 -type gen_from() :: {pid(), term()}.
 
@@ -209,14 +210,14 @@ create_dialog(#sip_request{} = Request, #sip_response{status = Status} = Respons
 
 %% @doc Copy Record-Route for dialog-establishing responses
 %% @end
-copy_record_route(Request, Response) ->
-    case sip_dialog:is_dialog_establishing(Request, Response) of
-        true ->
+copy_record_route(Request, #sip_response{status = Status} = Response) ->
+    case sip_message:is_dialog_establishing(Request) of
+        true when Status >= 200, Status =< 299 ->
             % Copy all Record-Route headers
             RecordRoutes = [{'record-route', Value} ||
                             {'record-route', Value} <- Request#sip_request.headers],
             Response#sip_response{headers = Response#sip_response.headers ++ RecordRoutes};
-        false ->
+        _Other ->
             Response
     end.
 

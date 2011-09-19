@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3, is_dialog_establishing/2]).
+-export([start_link/0, create_dialog/3]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -35,25 +35,12 @@ start_link() ->
 -spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> ok.
 %% @doc Create new dialog for given pair of request/response
 %% @end
-create_dialog(uas, Request, Response) ->
-    Dialog = uas_dialog_state(Request, Response),
+create_dialog(Kind, Request, Response) when
+  is_record(Request, sip_request),
+  is_record(Response, sip_response),
+  (Kind =:= uac orelse Kind =:= uas) ->
+    Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
-
--spec is_dialog_establishing(#sip_request{}, #sip_response{}) -> boolean().
-%% @doc Check if response to the request will establish a new dialog
-%%
-%% Response is considered as dialog establishing if it is response
-%% to the `INVITE' method, status code is 2xx and no tag is present
-%% in the request `To' header.
-%% @end
-is_dialog_establishing(#sip_request{method = 'INVITE'} = Request, #sip_response{status = Status})
-  when Status >= 200, Status =< 299 ->
-    To = sip_message:header_top_value(to, Request),
-    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
-        false -> true;
-        {tag, _ToTag} -> false
-    end;
-is_dialog_establishing(#sip_request{}, #sip_response{}) -> false.
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -99,42 +86,57 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%-----------------------------------------------------------------
 
--spec uas_dialog_state(#sip_request{}, #sip_response{}) -> #sip_dialog{}.
-%% @doc Construct dialog state for UAS
+-spec dialog_state(uac | uas, #sip_request{}, #sip_response{}) -> #sip_dialog{}.
+%% @doc Construct dialog state for UAC/UAS
 %% @end
-uas_dialog_state(Request, Response)
-  when is_record(Request, sip_request), is_record(Response, sip_response) ->
+dialog_state(Kind, Request, Response) ->
     Via = sip_message:header_top_value(via, Request),
-    Contact = sip_message:header_top_value(contact, Request),
     CSeq = sip_message:header_top_value(cseq, Request),
     From = sip_message:header_top_value(from, Request),
     CallId = sip_message:header_top_value('call-id', Request),
-    % To comes from the response (MUST have tag)
+    % MUST have tag for uas, MAY have no tag for uac (RFC 2543 does not enforce usage of tags)
     To = sip_message:header_top_value(to, Response),
 
     ToTag = tag(to, To),
     FromTag = tag(from, From),
 
-    IsViaTLS = Via#sip_hdr_via.transport =:= tls,
-    IsSecureURI = sip_uri:is_sips(Request#sip_request.uri),
+    IsSecure = (Via#sip_hdr_via.transport =:= tls) andalso sip_uri:is_sips(Request#sip_request.uri),
 
-    RouteSet = [Address#sip_hdr_address.uri || Address <- sip_message:header_values('record-route', Request)],
-    DialogId = #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag},
+    case Kind of
+        uas ->
+            RemoteContact = sip_message:header_top_value(contact, Request),
+            RouteSet = [Address#sip_hdr_address.uri || Address <- sip_message:header_values('record-route', Request)],
+            DialogId = #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag},
 
-    #sip_dialog{id = DialogId,
-                local_seq = undefined,
-                remote_seq = CSeq#sip_hdr_cseq.sequence,
-                local_uri = To#sip_hdr_address.uri,
-                remote_uri = From#sip_hdr_address.uri,
-                remote_target_uri = Contact#sip_hdr_address.uri,
-                secure = (IsViaTLS andalso IsSecureURI),
-                route_set = RouteSet}.
+            #sip_dialog{id = DialogId,
+                        local_seq = undefined,
+                        remote_seq = CSeq#sip_hdr_cseq.sequence,
+                        local_uri = To#sip_hdr_address.uri,
+                        remote_uri = From#sip_hdr_address.uri,
+                        remote_target_uri = RemoteContact#sip_hdr_address.uri,
+                        secure = IsSecure,
+                        route_set = RouteSet};
 
+        uac ->
+            RemoteContact = sip_message:header_top_value(contact, Response),
+            RouteSet = lists:reverse([Address#sip_hdr_address.uri || Address <- sip_message:header_values('record-route', Response)]),
+            DialogId = #sip_dialog_id{call_id = CallId, local_tag = FromTag, remote_tag = ToTag},
+            #sip_dialog{id = DialogId,
+                        local_seq = CSeq#sip_hdr_cseq.sequence,
+                        remote_seq = undefined,
+                        local_uri = From#sip_hdr_address.uri,
+                        remote_uri = To#sip_hdr_address.uri,
+                        remote_target_uri = RemoteContact#sip_hdr_address.uri,
+                        secure = IsSecure,
+                        route_set = RouteSet}
+    end.
 
 tag(HeaderName, Header) ->
     case lists:keyfind(tag, 1, Header#sip_hdr_address.params) of
         false when HeaderName =:= from ->
-            <<>>; % UAS must be prepared to receive no tag in From:
+            % UAC must be prepared to receive no tag in To:
+            % UAS must be prepared to receive no tag in From:
+            <<>>;
         {tag, Tag} ->
             Tag
     end.

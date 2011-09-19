@@ -233,8 +233,9 @@ do_response(Response, TxKey, State) ->
                  S2 <- handle_provisional_response(ReqInfo, Response, S1),
                  S3 <- handle_redirect_response(ReqInfo, Response, S2),
                  S4 <- handle_failure_response(ReqInfo, Response, S3),
-                 S5 <- handle_final_response(ReqInfo, Response, S4),
-                 invoke_callback(ReqInfo, Response, S5)]),
+                 S5 <- handle_success_response(ReqInfo, Response, S4),
+                 S6 <- handle_final_response(ReqInfo, Response, S5),
+                 invoke_callback(ReqInfo, Response, S6)]),
     case Result of
         {ok, State2} -> {ok, State2};
         {error, {_Reason, State2}} ->
@@ -286,6 +287,24 @@ handle_redirect_response(ReqInfo, #sip_response{status = Status} = Response, Sta
     next_uri(ReqInfo2, Response, State);
 handle_redirect_response(_ReqInfo, _Response, State) ->
     error_m:return(State).
+
+-spec handle_success_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
+%% @doc Create dialog state, if success (2xx) response is received and request is dialog establishing
+%% @end
+handle_success_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 200, Status =< 299 ->
+    Request = ReqInfo#request_info.request,
+
+    case sip_message:is_dialog_establishing(Request) of
+        true ->
+            ok = sip_dialog:create_dialog(uac, Request, Response),
+            error_m:return(State);
+        false ->
+            error_m:return(State)
+    end;
+
+handle_success_response(_ReqInfo, _Response, State) ->
+    error_m:return(State).
+
 
 -spec handle_failure_response(#request_info{}, #sip_response{}, #state{}) -> error_m:monad(#state{}).
 %% @doc Automatic handling of failure (4xx-6xx) responses

@@ -62,7 +62,7 @@ is_dialog_establishing(#sip_request{method = 'INVITE'} = Request) ->
     To = sip_message:header_top_value(to, Request),
     case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
         false -> true; % no tag in To: header, method is INVITE
-        _Other -> false
+        {tag, _ToTag} -> false
     end;
 is_dialog_establishing(#sip_request{}) ->
     false.
