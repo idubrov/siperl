@@ -37,10 +37,14 @@
                    request           :: #sip_request{},                            % SIP request message
                    destinations = [] :: [#sip_destination{}],                      % list of IP addresses to try next
                    target_set        :: sip_priority_set:priority_set(#sip_uri{}), % URI to visit next (redirects)
+                   cancelled = false :: boolean(),                                 % If request was cancelled. If 2xx will arrive, send BYE immediately.
                    callback          :: callback()}).                              % Callback to invoke on responses
 
--record(state, {requests = [] :: [{reference(), #req_info{}}],            % Mapping from unique request id to state
-                transactions = [] :: [{#sip_tx_client{}, reference()}]}). % Mapping transaction key to request id
+%% Pending requests (that have not received final responses yet)
+%% First element is unique request id (that does not change accross retries),
+%% second element is current transaction that makes the request and third
+%% element is information about the request
+-record(state, {requests = [] :: [{reference(), #sip_tx_client{}, #req_info{}}]}).
 
 
 -type gen_from() :: {pid(), term()}.
@@ -120,19 +124,9 @@ handle_call({send_request, Request}, From, State) ->
     {noreply, State2};
 
 handle_call({cancel, Ref}, _From, State) ->
-    case lists:keyfind(Ref, 2, State#state.transactions) of
-        {TxKey, Ref} ->
-            case sip_transaction:cancel(TxKey) of
-                {ok, TxKey} ->
-                    {reply, ok, State};
-                false ->
-                    % transaction have completed already
-                    % FIXME: We need to notify ourselves to terminate the session!
-                    {reply, {error, not_found}, State}
-            end;
-        false ->
-            {reply, {error, not_found}, State} % could be answered already
-    end;
+    Entry = lists:keyfind(Ref, 1, State#state.requests),
+    {Reply, State2} = do_cancel(Entry, State),
+    {reply, Reply, State2};
 
 handle_call(Request, _From, State) ->
     {stop, {unexpected, Request}, State}.
@@ -156,10 +150,9 @@ handle_info({response, #sip_response{} = Response, #sip_tx_client{} = TxKey}, St
     {ok, State2} = do_response(Response, TxKey, State),
     {noreply, State2};
 
-handle_info({tx, TxKey, {terminated, _Reason}}, State) ->
-    % Remove mapping from transaction key to request reference
-    Transactions = lists:keydelete(TxKey, 1, State#state.transactions),
-    {noreply, State#state{transactions = Transactions}};
+handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
+    % Just ignore
+    {noreply, State};
 handle_info(Info, State) ->
     {stop, {unexpected, Info}, State}.
 
@@ -215,9 +208,8 @@ do_send_request(Ref, Request, Callback, State) ->
     {ok, State2}.
 
 do_response(#sip_response{status = Status} = Response, TxKey, State) ->
-    {TxKey, Ref} = lists:keyfind(TxKey, 1, State#state.transactions),
-    {Ref, ReqInfo} = lists:keyfind(Ref, 1, State#state.requests),
-
+    % search by value (transaction key), it is unique by design
+    {Ref, TxKey, ReqInfo} = lists:keyfind(TxKey, 2, State#state.requests),
     Result = do([error_m ||
                  S1 <- validate_vias(Response, State),
                  handle_response(ReqInfo, Response, S1)]),
@@ -313,9 +305,8 @@ next_destination(#req_info{ref = Ref, request = Request, destinations = [Top | F
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
 
     % Update ref to request info & txkey to ref mappings
-    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, ReqInfo2}),
-    Transactions = lists:keystore(TxKey, 1, State#state.transactions, {TxKey, Ref}),
-    State2 = State#state{requests = Requests, transactions = Transactions},
+    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey, ReqInfo2}),
+    State2 = State#state{requests = Requests},
 
     % stop processing
     error_m:fail({processed, State2}).
@@ -358,3 +349,23 @@ collect_redirects(ReqInfo, Response) ->
     % go through Contact: headers and add URIs to our current redirect set
     NewTargetSet = sip_message:foldl_headers('contact', CollectFun, ReqInfo#req_info.target_set, Response),
     ReqInfo#req_info{target_set = NewTargetSet, destinations = []}.
+
+
+%% @doc Cancel transaction associated with given request
+do_cancel(false, State) ->
+    % No information about the request. This could happen if request was already replied.
+    % If it have resulted in dialog, client of the sip_uac should send BYE request manually.
+    {{error, not_found}, State};
+do_cancel({Ref, TxKey, ReqInfo}, State) ->
+    % First, we mark request as cancelled. If 2xx response will be received,
+    % sip_uac will send BYE immediately, without reporting the dialog to the
+    % sip_uac client.
+    ReqInfo2 = ReqInfo#req_info{cancelled = true},
+    Requests = lists:keystore(Ref, 1, State#state.requests, {Ref, TxKey, ReqInfo2}),
+    State2 = State#state{requests = Requests},
+
+    % Note that transaction could be terminated already, just ignore that.
+    % Since we have marked request as cancelled, we will deal with it when
+    % final response will arrive.
+    _Ignore = sip_transaction:cancel(TxKey),
+    {ok, State2}.
