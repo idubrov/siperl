@@ -178,7 +178,7 @@ handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, CallbackStat
 
 handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, CallbackState, State) ->
     % search by value (transaction key), it is unique by design
-    #request_info{} = ReqInfo = lists:keyfind(TxKey, #request_info.current_tx, State#uac_state.requests),
+    ReqInfo = lookup_by_tx(TxKey, State),
 
     % FIXME: Should we handle 2xx with offer here? Probably, sip_ua_client should invoke
     % Callback:answer(Offer) and send ACK automatically?
@@ -424,7 +424,10 @@ do_cancel(ReqInfo, State) ->
     {ok, State2}.
 
 lookup_info(Id, State) ->
-    lists:keyfind(Id, #request_info.id, State#uac_state.requests).
+    #request_info{} = lists:keyfind(Id, #request_info.id, State#uac_state.requests).
+
+lookup_by_tx(TxKey, State) ->
+    #request_info{} = lists:keyfind(TxKey, #request_info.current_tx, State#uac_state.requests).
 
 store_info(ReqInfo, State) ->
     Requests = lists:keystore(ReqInfo#request_info.id, #request_info.id, State#uac_state.requests, ReqInfo),
