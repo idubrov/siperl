@@ -10,13 +10,13 @@
 %% API
 -export([start_link/1, send_options/2, send_invite/2]).
 -export([detect_loops/2, allow/2, 'OPTIONS'/2, 'INVITE'/2]).
--export([init/1, handle_call/3]).
+-export([init/1, handle_call/3, handle_response/4]).
 
 %% Include files
 -include("sip.hrl").
 -include("sip_test.hrl").
 
--record(state, {handler}).
+-record(state, {handler, requests}).
 -type gen_from() :: {pid(), term()}.
 
 %%-----------------------------------------------------------------
@@ -42,7 +42,7 @@ send_invite(Server, To) ->
 %% UA callbacks
 %%-----------------------------------------------------------------
 init({Handler}) ->
-    {ok, #state{handler = Handler}}.
+    {ok, #state{handler = Handler, requests = []}}.
 
 detect_loops(_Request, _State) ->
     false.
@@ -63,14 +63,21 @@ allow(_Request, _Context) -> ['INVITE', 'OPTIONS'].
           {noreply, #state{}} |
           {stop, Reason :: term(), #state{}}.
 handle_call({send_request, Request}, From, State) ->
-    % Callback ignores provisional responses
-    Callback = fun(_Id, {ok, #sip_response{status = Status}}) when Status >= 100, Status =< 199 -> ok;
-                  (_Id, Reply) -> gen_server:reply(From, Reply)
-               end,
-    {ok, _Id} = sip_ua:send_request(Request, Callback),
-    {noreply, State};
+    {ok, Id} = sip_ua:send_request(Request),
+    Requests = [{Id, From} | State#state.requests],
+    {noreply, State#state{requests = Requests}};
 handle_call(Call, _From, State) ->
     {stop, {unexpected, Call}, State}.
+
+handle_response(_Method, #sip_response{status = Status}, _RequestId, State) when Status >= 100, Status =< 199 ->
+    % Ignore provisional responses
+    {noreply, State};
+handle_response(_Method, Response, RequestId, State) ->
+    {RequestId, From} = lists:keyfind(RequestId, 1, State#state.requests),
+    gen_server:reply(From, {ok, Response}),
+
+    Requests = lists:keydelete(RequestId, 1, State#state.requests),
+    {noreply, State#state{requests = Requests}}.
 
 response(Request, Handler) ->
     Response = Handler(Request),

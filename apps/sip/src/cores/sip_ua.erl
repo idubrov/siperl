@@ -20,7 +20,7 @@
 
 %% API
 -export([start_link/2, start_link/3]).
--export([create_request/2, send_request/1, send_request/2, cancel_request/1]). % UAC
+-export([create_request/2, send_request/1, cancel_request/1]). % UAC
 -export([create_response/2, create_response/3, send_response/2]). % UAS
 
 %% Server callbacks
@@ -82,25 +82,14 @@ create_response(Request, Status, Reason) ->
     sip_ua_server:create_response(Request, Status, Reason).
 
 %% @doc Send the request asynchronously. Responses will be provided via
-%% `Callback' function calls.
-%% <em>Note: callback function will be evaluated on a different process!</em>
+%% `Callback:handle_response(Method, Response, RequestId, State)' invocation.
 %% <em>Should be called from UAC/UAS process only</em>
 %% @end
--spec send_request(sip_message(), callback()) -> {ok, reference()} | {error, no_destinations}.
-send_request(Request, Callback) when is_record(Request, sip_request), is_function(Callback, 2) ->
-    UAC = erlang:get(?UAC),
-    {Reply, UAC2} = sip_ua_client:send_request(Request, Callback, UAC),
-    erlang:put(?UAC, UAC2),
-    Reply.
-
-%% @doc Send the request asynchronously. Responses will be provided via
-%% `{response, Response, Ref}' messages delivered to the caller
-%% <em>Should be called from UAC/UAS process only</em>
-%% @end
--spec send_request(sip_message()) -> {ok, reference()} | {error, no_destinations}.
+-spec send_request(sip_message()) -> {ok, reference()}.
 send_request(Request) when is_record(Request, sip_request) ->
-    Pid = self(),
-    send_request(Request, fun(Ref, {ok, Response}) -> Pid ! {response, Response, Ref} end).
+    RequestId = make_ref(),
+    gen_server:cast(self(), {send_request, RequestId, Request}),
+    {ok, RequestId}.
 
 -spec cancel_request(reference()) -> ok | {error, no_request}.
 %% @doc Cancel the request identified by the reference
@@ -150,6 +139,12 @@ handle_call(Req, From, State) ->
 
 %% @private
 -spec handle_cast(term(), state()) -> {stop, {unexpected, term()}, state()}.
+handle_cast({send_request, RequestId, Request}, State) ->
+    UAC = erlang:get(?UAC),
+    {ok, State2, UAC2} = sip_ua_client:send_request(RequestId, Request, State, UAC),
+    erlang:put(?UAC, UAC2),
+    {noreply, State2};
+
 handle_cast({send_response, Request, Response}, State) ->
     UAS = erlang:get(?UAS),
     {ok, State2, UAS2} = sip_ua_server:send_response(Request, Response, State, UAS),
@@ -168,8 +163,12 @@ handle_info({tx, _TxKey, {terminated, _Reason}}, State) ->
 handle_info({response, #sip_response{} = Response, #sip_tx_client{} = TxKey}, State) ->
     % pass responses to UAC
     UAC = erlang:get(?UAC),
-    {ok, UAC2} = sip_ua_client:handle_response(Response, TxKey, UAC),
+    {ok, State2, UAC2} = sip_ua_client:handle_response(Response, TxKey, State, UAC),
     erlang:put(?UAC, UAC2),
+    {noreply, State2};
+
+handle_info({response, #sip_response{} = _Response}, State) ->
+    % FIXME: Forked response, must be passed to sip_ua_client
     {noreply, State};
 
 handle_info({request, #sip_request{} = Request}, State) ->

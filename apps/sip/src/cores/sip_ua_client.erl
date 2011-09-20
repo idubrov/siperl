@@ -20,13 +20,12 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/1, create_request/2, send_request/3, cancel_request/2, handle_response/3]).
+-export([init/1, create_request/2, send_request/4, cancel_request/2, handle_response/4]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--type callback() :: fun((reference(), {ok, #sip_response{}}) -> ok).
 -type target_set() :: sip_priority_set:priority_set(#sip_uri{}).
 
 -record(request_info,
@@ -38,22 +37,23 @@
          target_set        :: target_set(),         % URI to visit next (redirects)
          provisional = false :: boolean(),          % If provisional response was received already
          cancel = false    :: boolean(),            % Start `CANCEL' transaction on next provisional
-         last_destination  :: #sip_destination{},   % Destination last transaction was sent to
-         callback          :: callback()}).         % Callback to invoke on responses
+         last_destination  :: #sip_destination{}}). % Destination last transaction was sent to
 
 %% Pending requests (that have not received final responses yet)
 %% First element is unique request id (that does not change accross retries),
 %% second element is current transaction that makes the request and third
 %% element is information about the request
--record(uac_state, {requests = [] :: [#request_info{}]}).
+-record(uac_state, {callback      :: module(),
+                    requests = [] :: [#request_info{}]}).
+-type callback_state() :: term().     % Callback module state
 
 %%-----------------------------------------------------------------
 %% Internal API
 %%-----------------------------------------------------------------
 
 -spec init(module()) -> {ok, #uac_state{}}.
-init(_Callback) ->
-    {ok, #uac_state{}}.
+init(Callback) ->
+    {ok, #uac_state{callback = Callback}}.
 
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
 %% @doc Create request outside of the dialog
@@ -146,21 +146,19 @@ tag_params(Tag) -> [{tag, Tag}].
 strip_parameters(URI) ->
     URI#sip_uri{params = []}.
 
--spec send_request(#sip_request{}, callback(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.
-send_request(Request, Callback, State) ->
-    Id = make_ref(),
+-spec send_request(reference(), #sip_request{}, callback_state(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.
+send_request(RequestId, Request, CallbackState, State) ->
     ok = sip_message:validate_request(Request),
 
     RequestURI = Request#sip_request.uri,
     TargetSet = sip_priority_set:put(RequestURI, 1.0, sip_priority_set:new()),
 
-    ReqInfo = #request_info{id = Id,
+    ReqInfo = #request_info{id = RequestId,
                             request = Request,
-                            target_set = TargetSet,
-                            callback = Callback},
+                            target_set = TargetSet},
     case next_uri(ReqInfo, none, State) of
-        {error, {processed, State2}} -> {{ok, Id}, State2};
-        {ok, State2} -> {{error, no_destinations}, State2}
+        {error, {processed, State2}} -> {ok, CallbackState, State2};
+        {ok, State2} -> {{error, no_destinations}, CallbackState, State2}   % FIXME: Report to callback!
     end.
 
 -spec cancel_request(reference(), #uac_state{}) -> {ok, #uac_state{}} | {{error, no_request}, #uac_state{}}.
@@ -173,15 +171,17 @@ cancel_request(Id, State) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec handle_response(#sip_response{}, #sip_tx_client{}, #uac_state{}) -> {noreply, #uac_state{}}.
-handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, State) ->
+-spec handle_response(#sip_response{}, #sip_tx_client{}, callback_state(), #uac_state{}) -> {ok, callback_state(), #uac_state{}}.
+handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, CallbackState, State) ->
     % ignore response for 'CANCEL' request
-    {ok, State};
+    {ok, CallbackState, State};
 
-handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, State) ->
+handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, CallbackState, State) ->
     % search by value (transaction key), it is unique by design
-    ReqInfo = lists:keyfind(TxKey, #request_info.current_tx, State#uac_state.requests),
+    #request_info{} = ReqInfo = lists:keyfind(TxKey, #request_info.current_tx, State#uac_state.requests),
 
+    % FIXME: Should we handle 2xx with offer here? Probably, sip_ua_client should invoke
+    % Callback:answer(Offer) and send ACK automatically?
     Result = do([error_m ||
                  S1 <- validate_vias(Response, State),
                  S2 <- handle_provisional_response(ReqInfo, Response, S1),
@@ -189,13 +189,15 @@ handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, State) ->
                  S4 <- handle_failure_response(ReqInfo, Response, S3),
                  S5 <- handle_success_response(ReqInfo, Response, S4),
                  S6 <- handle_final_response(ReqInfo, Response, S5),
-                 invoke_callback(ReqInfo, Response, S6)]),
+                 return(S6)]),
+
     case Result of
-        {ok, State2} -> {ok, State2};
+        {ok, State2} ->
+            invoke_callback(ReqInfo, Response, CallbackState, State2);
         {error, {_Reason, State2}} ->
             % Response was either discarded or is still being
             % processed (following redirect, trying next IP, etc)
-            {ok, State2}
+            {ok, CallbackState, State2}
     end.
 
 %%-----------------------------------------------------------------
@@ -287,17 +289,22 @@ handle_final_response(_ReqInfo, _Response, State) ->
 
 %% @doc Invoke callback
 %% @end
-invoke_callback(ReqInfo, Response, State) when ReqInfo#request_info.cancel, Response#sip_response.status =:= 408->
+invoke_callback(ReqInfo, Response, CallbackState, State)
+  when ReqInfo#request_info.cancel, Response#sip_response.status =:= 408->
     % We got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
     % (RFC 2543 compliant UAS will not generate such a response)
     Response2 = Response#sip_response{status = 487, reason = sip_message:default_reason(487)},
-    invoke_callback(ReqInfo, Response2, State);
+    invoke_callback(ReqInfo, Response2, CallbackState, State);
 
-invoke_callback(ReqInfo, Response, State) ->
-    Id = ReqInfo#request_info.id,
-    Callback = ReqInfo#request_info.callback,
-    _Ignore = Callback(Id, {ok, Response}),
-    error_m:return(State).
+invoke_callback(ReqInfo, Response, CallbackState, #uac_state{callback = Callback} = State) ->
+    CSeq = sip_message:header_top_value(cseq, Response),
+    Method = CSeq#sip_hdr_cseq.method,
+
+    erlang:put(?MODULE, State),
+    case Callback:handle_response(Method, Response, ReqInfo#request_info.id, CallbackState) of
+        {noreply, CallbackState2} ->
+            {ok, CallbackState2, erlang:get(?MODULE)}
+    end.
 
 next_uri(ReqInfo, Response, State) ->
     case sip_priority_set:take(ReqInfo#request_info.target_set) of

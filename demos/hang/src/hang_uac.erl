@@ -9,7 +9,7 @@
 -export([start_link/0, is_applicable/1, call/1, init/1, sdp/0]).
 
 %% UA callbacks
--export([handle_call/3, handle_info/2]).
+-export([handle_call/3, handle_info/2, handle_response/4]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
@@ -53,64 +53,59 @@ handle_call({call, To}, _From, #state{} = State) ->
     Contact = sip_headers:address(<<"Hang">>, <<"sip:127.0.0.1:5060">>, []),
     Request2 = sip_message:append_header(contact, Contact, Request),
 
+    % Request will be cancelled automatically after 5 seconds
+    Request3 = sip_message:append_header(expires, 5, Request2),
+
     % Call
-    io:format("HANG: Calling to ~s~n", [to(Request)]),
-    case sip_ua:send_request(Request2) of
-        {ok, Ref} ->
-            % Arm timer to cancel call after 2 seconds
-            {ok, Timer} = timer:send_after(20000, {cancel, Ref}),
+    io:format("HANG: Calling to ~s~n", [to(Request3)]),
+    {ok, RequestId} = sip_ua:send_request(Request3),
 
-            % Store timer
-            Timers = dict:store(Ref, Timer, State#state.timers),
-            {reply, ok, State#state{timers = Timers}};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end.
+    % Arm timer to cancel call after 2 seconds
+    {ok, Timer} = timer:send_after(2000, {cancel, RequestId}),
 
--spec handle_info(_, #state{}) -> {noreply, #state{}}.
-handle_info({response, #sip_response{status = Status, reason = Reason} = Response, Ref}, State) ->
-    case sip_message:header_top_value(cseq, Response) of
-        #sip_hdr_cseq{method = 'BYE'} ->
-            % Ignore BYE responses completely..
-            {noreply, State};
+    % Store timer
+    Timers = dict:store(RequestId, Timer, State#state.timers),
+    {reply, ok, State#state{timers = Timers}}.
 
-        #sip_hdr_cseq{method = 'INVITE'} when Status >= 100, Status =< 199 ->
-            io:format("HANG: Progress from ~s: ~w ~s~n", [to(Response), Status, binary_to_list(Reason)]),
-            {noreply, State};
+%-spec handle_response(ReqId, Response).
+handle_response('BYE', _Response, _RequestId, State) ->
+    {noreply, State};
 
-        #sip_hdr_cseq{method = 'INVITE'} when Status >= 200, Status =< 299 ->
-            io:format("HANG: Got success response ~s: ~w ~s~n", [to(Response), Status, binary_to_list(Reason)]),
+handle_response('INVITE', #sip_response{status = Status} = Response, _RequestId, State)
+  when Status >= 100, Status =< 199 ->
+    io:format("HANG: Progress from ~s: ~w ~s~n",
+              [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
+    {noreply, State};
 
-            % FIXME: Where do we get dialog id? Maybe, sip_ua_client should pass it?
-            DialogId = sip_dialog:dialog_id(uac, Response),
+handle_response('INVITE', #sip_response{status = Status} = Response, RequestId, State) when Status >= 200, Status =< 299 ->
+    io:format("HANG: Got success response ~s: ~w ~s~n",
+              [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
 
-            % FIXME: Should have create_ack in sip_ua, so we don't have to deal with CSeq constructions...
-            % Or: maybe sip_ua_client should generate ACK on its own (it is required anyway), by
-            % retrieving SDP from callback? Like: Callback:answer(Offer).
-            ACK = sip_ua:create_request('ACK', DialogId),
+    % FIXME: Where do we get dialog id? Maybe, sip_ua_client should pass it?
+    DialogId = sip_dialog:dialog_id(uac, Response),
 
-            CSeq = sip_message:header_top_value(cseq, Response),
-            ACK2 = sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK),
-            ACK3 = ACK2#sip_request{body = sdp()},
-            sip_ua:send_request(ACK3),
+    % FIXME: Should have create_ack in sip_ua, so we don't have to deal with CSeq constructions...
+    % Or: maybe sip_ua_client should generate ACK on its own (it is required anyway), by
+    % retrieving SDP from callback? Like: Callback:answer(Offer).
+    ACK = sip_ua:create_request('ACK', DialogId),
 
-            % Send BYE request immediately..
-            BYE = sip_ua:create_request('BYE', DialogId),
-            sip_ua:send_request(BYE),
+    CSeq = sip_message:header_top_value(cseq, Response),
+    ACK2 = sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK),
+    ACK3 = ACK2#sip_request{body = sdp()},
+    sip_ua:send_request(ACK3),
 
-            State2 = cancel_timer(Ref, State),
-            {noreply, State2};
+    % Send BYE request immediately..
+    BYE = sip_ua:create_request('BYE', DialogId),
+    sip_ua:send_request(BYE),
 
-        #sip_hdr_cseq{method = 'INVITE'} ->
-            io:format("HANG: Got failure response ~s: ~w ~s~n", [to(Response), Status, binary_to_list(Reason)]),
-            State2 = cancel_timer(Ref, State),
-            {noreply, State2}
-    end;
+    State2 = cancel_timer(RequestId, State),
+    {noreply, State2};
 
-handle_info({response, #sip_response{status = Status}}, State)
-  when Status >= 200; Status =< 299 ->
-    % XXX: How should we correlate it to the request id? Via the dialog?
-    {stop, {error, extra_response}, State};
+handle_response('INVITE', #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
+    io:format("HANG: Got failure response ~s: ~w ~s~n",
+              [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
+    State2 = cancel_timer(RequestId, State),
+    {noreply, State2}.
 
 handle_info({cancel, Id}, State) ->
     % FIXME: Use Expires header + implement its support in sip_ua_client
