@@ -81,8 +81,10 @@ create_response(Request, Status) ->
 create_response(Request, Status, Reason) ->
     sip_ua_server:create_response(Request, Status, Reason).
 
-%% @doc Send the request asynchronously. Responses will be provided via
-%% `Callback:handle_response(Method, Response, RequestId, State)' invocation.
+%% @doc Send the request
+%%
+%% The request is processed only when callback returns the control to the `sip_ua'
+%% generic server. Responses are provided via `Callback:handle_response/4' function.
 %% <em>Should be called from UAC/UAS process only</em>
 %% @end
 -spec send_request(sip_message()) -> {ok, reference()}.
