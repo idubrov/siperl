@@ -80,7 +80,7 @@ create_request(Method, ToAddress) ->
                  headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
 
 % Put Request URI into the target set
--spec send_request(#sip_request{}, callback(), #uac_state{}) -> {{ok, reference()}, #uac_state{}}.
+-spec send_request(#sip_request{}, callback(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.
 send_request(Request, Callback, State) ->
     Id = make_ref(),
     ok = sip_message:validate_request(Request),
@@ -92,9 +92,10 @@ send_request(Request, Callback, State) ->
                             request = Request,
                             target_set = TargetSet,
                             callback = Callback},
-    % What if `ok' is returned (meaning request was not processed)?
-    {error, {processed, State2}} = next_uri(ReqInfo, none, State),
-    {{ok, Id}, State2}.
+    case next_uri(ReqInfo, none, State) of
+        {error, {processed, State2}} -> {{ok, Id}, State2};
+        {ok, State2} -> {{error, no_destinations}, State2}
+    end.
 
 -spec cancel_request(reference(), #uac_state{}) -> {ok, #uac_state{}} | {{error, no_request}, #uac_state{}}.
 cancel_request(Id, State) ->

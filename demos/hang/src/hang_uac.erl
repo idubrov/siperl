@@ -38,7 +38,6 @@ call(To) ->
 %% @end
 is_applicable(#sip_request{}) -> false.
 
-
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
     io:format("HANG: Call someone by running hang_uac:call(\"SIP URI\") in console ~n"),
@@ -53,14 +52,17 @@ handle_call({call, To}, _From, #state{} = State) ->
 
     % Call
     io:format("HANG: Calling to ~s~n", [to(Request)]),
-    {ok, Ref} = sip_ua:send_request(Request2),
+    case sip_ua:send_request(Request2) of
+        {ok, Ref} ->
+            % Arm timer to cancel call after 2 seconds
+            {ok, Timer} = timer:send_after(2000, {cancel, Ref}),
 
-    % Arm timer to cancel call after 2 seconds
-    {ok, Timer} = timer:send_after(2000, {cancel, Ref}),
-
-    % Store timer
-    Timers = dict:store(Ref, Timer, State#state.timers),
-    {reply, ok, State#state{timers = Timers}}.
+            % Store timer
+            Timers = dict:store(Ref, Timer, State#state.timers),
+            {reply, ok, State#state{timers = Timers}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end.
 
 -spec handle_info(_, #state{}) -> {noreply, #state{}}.
 handle_info({response, #sip_response{status = Status, reason = Reason} = Response, Ref}, State) ->

@@ -80,7 +80,7 @@ create_response(Request, Status, Reason) ->
 %% <em>Note: callback function will be evaluated on a different process!</em>
 %% <em>Should be called from UAC/UAS process only</em>
 %% @end
--spec send_request(sip_message(), callback()) -> {ok, reference()}.
+-spec send_request(sip_message(), callback()) -> {ok, reference()} | {error, no_destinations}.
 send_request(Request, Callback) when is_record(Request, sip_request), is_function(Callback, 2) ->
     UAC = erlang:get(?UAC),
     {Reply, UAC2} = sip_ua_client:send_request(Request, Callback, UAC),
@@ -91,7 +91,7 @@ send_request(Request, Callback) when is_record(Request, sip_request), is_functio
 %% `{response, Response, Ref}' messages delivered to the caller
 %% <em>Should be called from UAC/UAS process only</em>
 %% @end
--spec send_request(sip_message()) -> ok.
+-spec send_request(sip_message()) -> {ok, reference()} | {error, no_destinations}.
 send_request(Request) when is_record(Request, sip_request) ->
     Pid = self(),
     send_request(Request, fun(Ref, {ok, Response}) -> Pid ! {response, Response, Ref} end).
