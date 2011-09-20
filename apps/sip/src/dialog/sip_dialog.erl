@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3, next_sequence/1, list_dialogs/0]).
+-export([start_link/0, create_dialog/3, lookup_dialog/1, next_sequence/1, list_dialogs/0, dialog_id/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -42,6 +42,25 @@ create_dialog(Kind, Request, Response) when
     Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
 
+lookup_dialog(DialogId) ->
+    gen_server:call(?SERVER, {lookup_dialog, DialogId}).
+
+%% @doc Determine dialog id base on the message within dialog
+%% @end
+dialog_id(Kind, Msg) ->
+    From = sip_message:header_top_value(from, Msg),
+    CallId = sip_message:header_top_value('call-id', Msg),
+    To = sip_message:header_top_value(to, Msg),
+
+    ToTag = tag(to, To),
+    FromTag = tag(from, From),
+    case Kind of
+        uac ->
+            #sip_dialog_id{call_id = CallId, local_tag = FromTag, remote_tag = ToTag};
+        uas ->
+            #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag}
+    end.
+
 -spec next_sequence(#sip_dialog_id{}) -> {ok, integer()} | {error, no_dialog}.
 %% @doc Increase local sequence number by one and return new value
 %% @end
@@ -71,6 +90,12 @@ handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
         true -> {reply, ok, State};
         false -> {reply, {error, dialog_exists}, State}
+    end;
+
+handle_call({lookup_dialog, DialogId}, _Client, State) ->
+    case ets:lookup(State#state.table, DialogId) of
+        [] -> {reply, {error, no_dialog}, State};
+        [Dialog] -> {reply, {ok, Dialog}, State}
     end;
 
 handle_call({next_sequence, DialogId}, _Client, State) ->

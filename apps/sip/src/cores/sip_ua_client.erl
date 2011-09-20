@@ -96,7 +96,13 @@ create_request(Method, #sip_dialog_id{} = DialogId) ->
     From = {from, sip_headers:address(<<>>, LocalURI, tag_params(LocalTag))},
     CallId = {'call-id', CallIdValue},
 
-    {ok, LocalSequence} = sip_dialog:next_sequence(DialogId),
+    LocalSequence =
+        case Method of
+            'ACK' -> 0; % FIXME!!!
+            _Other ->
+                {ok, S} = sip_dialog:next_sequence(DialogId),
+                S
+        end,
     CSeq = {cseq, sip_headers:cseq(LocalSequence, Method)},
 
     RouteSet = Dialog#sip_dialog.route_set,
@@ -140,7 +146,6 @@ tag_params(Tag) -> [{tag, Tag}].
 strip_parameters(URI) ->
     URI#sip_uri{params = []}.
 
-% Put Request URI into the target set
 -spec send_request(#sip_request{}, callback(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.
 send_request(Request, Callback, State) ->
     Id = make_ref(),
@@ -317,6 +322,22 @@ next_uri(ReqInfo, Response, State) ->
 next_destination(#request_info{destinations = []}, _Response, State) ->
     % no destination IPs to try, continue processing
     error_m:return(State);
+
+%% @doc Send 'ACK' to the transport layer directly
+%% @end
+next_destination(#request_info{request = Request, destinations = [Top | _Fallback]}, _Response, State)
+  when Request#sip_request.method =:= 'ACK' ->
+
+    % FIXME: Since transport layer returns errors immediately, send to fallback destinations
+    % if error is returned...
+    % FIXME: How UDP errors are to be handled? Maybe, ICMP support on transport layer, track unreachable ports?
+    sip_transport:send_request(Top, Request, []), % FIXME: options..
+
+    % stop processing
+    error_m:fail({processed, State});
+
+%% @doc Send requests other than 'ACK'
+%% @end
 next_destination(#request_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
     % Every new client transaction must have its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),

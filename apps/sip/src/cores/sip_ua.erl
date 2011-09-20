@@ -60,7 +60,7 @@ start_link(Callback, Args) ->
 %% Clients are free to modify any part of the request according to their needs.
 %% @end
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
-create_request(Method, To) when is_record(To, sip_hdr_address) ->
+create_request(Method, To) when is_record(To, sip_hdr_address); is_record(To, sip_dialog_id) ->
     sip_ua_client:create_request(Method, To);
 
 %% @doc Create request within the  dialog according to the 12.2.1.1 Generating the Request
