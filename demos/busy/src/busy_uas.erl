@@ -6,7 +6,7 @@
 -extends(sip_ua_default).
 
 %% UA callbacks
--export([start_link/0, init/1, allow/2, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
+-export([start_link/0, init/1, is_applicable/1, allow/2, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
@@ -28,14 +28,25 @@ start_link() ->
 
 -spec init({}) -> {ok, #context{}}.
 init({}) ->
+    [Port | _] = sip_config:ports(udp),
+    URI = #sip_uri{scheme = sip, host = binary_to_list(sip_config:self()), port = Port, user = <<"busy">>},
+    Contact = sip_headers:address(<<"Busy UAS">>, URI, []),
+    ContactStr = binary_to_list(sip_headers:format(contact, Contact)),
+    io:format("BUSY: Call me at ~s~n", [ContactStr]),
     {ok, #context{}}.
+
+-spec is_applicable(#sip_request{}) -> boolean().
+%% @doc We serve only user `busy'
+%% @end
+is_applicable(#sip_request{uri = #sip_uri{user = <<"busy">>}}) -> true;
+is_applicable(#sip_request{}) -> false.
 
 -spec allow(#sip_request{}, #context{}) -> [atom()].
 allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
 
 -spec 'INVITE'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
 'INVITE'(Request, Context) ->
-    io:format("~s is calling~n", [from(Request)]),
+    io:format("BUSY: ~s is calling~n", [from(Request)]),
 
     % Will send busy after 10 seconds
     {ok, Timer} = timer:send_after(10000, {reply, Request}),
@@ -49,7 +60,7 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
 
 -spec 'CANCEL'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
 'CANCEL'(Request, Context) ->
-    io:format("~s has cancelled the call~n", [from(Request)]),
+    io:format("BUSY: ~s has cancelled the call~n", [from(Request)]),
 
     % Lookup original transaction and cancel its timer
     TxKey = (sip_transaction:tx_key(server, Request))#sip_tx_server{method = 'INVITE'},
@@ -61,7 +72,7 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
 
 -spec handle_info({reply, #sip_request{}}, #context{}) -> {noreply, #context{}}.
 handle_info({reply, Request}, Context) ->
-    io:format("Telling ~s we are busy~n", [from(Request)]),
+    io:format("BUSY: Telling ~s we are busy~n", [from(Request)]),
 
     % Send 486 Busy Here response
     Response = sip_ua:create_response(Request, 486),

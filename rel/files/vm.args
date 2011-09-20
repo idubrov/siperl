@@ -1,9 +1,8 @@
-
 ## Name of the node
--name sipnode@127.0.0.1
+-name demos@127.0.0.1
 
 ## Cookie for distributed erlang
--setcookie sipnode
+-setcookie demos
 
 ## Heartbeat management; auto-restarts VM if it dies or becomes unresponsive
 ## (Disabled by default..use with caution!)
@@ -18,4 +17,3 @@
 
 ## Tweak GC to run more often
 -env ERL_FULLSWEEP_AFTER 10
-
