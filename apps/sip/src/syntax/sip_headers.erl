@@ -10,7 +10,7 @@
 %% Exports
 -export([parse_headers/1, format_headers/1]).
 -export([parse/2, format/2]).
--export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/3, retry/3]).
+-export([media/3, language/2, encoding/2, auth/2, info/2, via/3, cseq/2, address/1, address/3, retry/3]).
 -export([add_tag/3]).
 
 %% Includes
@@ -933,6 +933,9 @@ address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), 
     #sip_hdr_address{display_name = DisplayName, uri = sip_uri:parse(URI), params = Params};
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
+
+address(URI) ->
+    address(<<>>, URI, []).
 
 %% @doc Construct `Timestamp:' header value.
 %% @end

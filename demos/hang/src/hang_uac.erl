@@ -34,9 +34,12 @@ call(To) ->
 %% UA callbacks
 %%-----------------------------------------------------------------
 -spec is_applicable(#sip_request{}) -> boolean().
-%% @doc We do not serve any requests
+%% @doc We do not serve any requests. We server 2xx responses (which could
+%% be additional 2xx responses to our requests).
 %% @end
-is_applicable(#sip_request{}) -> false.
+is_applicable(#sip_request{}) -> false;
+is_applicable(#sip_response{status = Status}) when Status >= 200; Status =< 299 -> true;
+is_applicable(#sip_response{}) -> false.
 
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
@@ -78,6 +81,12 @@ handle_info({response, #sip_response{status = Status, reason = Reason} = Respons
             Timers = dict:erase(Ref, State#state.timers),
             {noreply, State#state{timers = Timers}}
     end;
+
+handle_info({response, #sip_response{status = Status}}, State)
+  when Status >= 200; Status =< 299 ->
+    % XXX: How should we correlate it to the request id?
+    {stop, {error, extra_response}, State};
+
 handle_info({cancel, Id}, State) ->
     % Cancel request
     Result = sip_ua:cancel_request(Id),

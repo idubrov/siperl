@@ -36,10 +36,12 @@ init({}) ->
     {ok, #context{}}.
 
 -spec is_applicable(#sip_request{}) -> boolean().
-%% @doc We serve only user `busy'
+%% @doc We serve only user `busy', and only requests.
+%% Responses will be delivered directly via transaction layer.
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"busy">>}}) -> true;
-is_applicable(#sip_request{}) -> false.
+is_applicable(#sip_request{}) -> false;
+is_applicable(#sip_response{}) -> false.
 
 -spec allow(#sip_request{}, #context{}) -> [atom()].
 allow(_Request, _Context) -> ['INVITE', 'CANCEL'].

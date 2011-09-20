@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3, list_dialogs/0]).
+-export([start_link/0, create_dialog/3, next_sequence/1, list_dialogs/0]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -42,6 +42,12 @@ create_dialog(Kind, Request, Response) when
     Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
 
+-spec next_sequence(#sip_dialog_id{}) -> {ok, integer()} | {error, no_dialog}.
+%% @doc Increase local sequence number by one and return new value
+%% @end
+next_sequence(#sip_dialog_id{} = DialogId) ->
+    gen_server:call(?SERVER, {next_sequence, DialogId}).
+
 -spec list_dialogs() -> [#sip_dialog{}].
 %% @doc List all active dialogs
 %% @end
@@ -65,6 +71,14 @@ handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
         true -> {reply, ok, State};
         false -> {reply, {error, dialog_exists}, State}
+    end;
+
+handle_call({next_sequence, DialogId}, _Client, State) ->
+    case catch ets:update_counter(State#state.table, DialogId, {#sip_dialog.local_seq, 1}) of
+        {'EXIT', {badarg, _Pos}} ->
+            {reply, {error, no_dialog}, State};
+        Sequence ->
+            {reply, {ok, Sequence}, State}
     end;
 
 handle_call(list_dialogs, _Client, State) ->
@@ -121,7 +135,8 @@ dialog_state(Kind, Request, Response) ->
             DialogId = #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag},
 
             #sip_dialog{id = DialogId,
-                        local_seq = undefined,
+                        % XXX: we generate new sequence eagerly, so we can use ets:update_counter to update it
+                        local_seq = sip_idgen:generate_cseq(),
                         remote_seq = CSeq#sip_hdr_cseq.sequence,
                         local_uri = To#sip_hdr_address.uri,
                         remote_uri = From#sip_hdr_address.uri,

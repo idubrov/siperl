@@ -55,8 +55,10 @@
 init(_Callback) ->
     {ok, #uac_state{}}.
 
--spec create_request(sip_name(), #sip_hdr_address{}) -> #sip_request{}.
-create_request(Method, ToAddress) ->
+-spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
+%% @doc Create request outside of the dialog
+%% @end
+create_request(Method, #sip_hdr_address{} = ToAddress) ->
     % The initial Request-URI of the message SHOULD be set to the value of
     % the URI in the To field.
     RequestURI = ToAddress#sip_hdr_address.uri,
@@ -77,7 +79,66 @@ create_request(Method, ToAddress) ->
 
     #sip_request{method = Method,
                  uri = RequestURI,
-                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]};
+
+%% @doc Create request as part of the dialog
+%% @end
+create_request(Method, #sip_dialog_id{} = DialogId) ->
+    {ok, Dialog} = sip_dialog:lookup_dialog(DialogId),
+    #sip_dialog{remote_uri = RemoteURI,
+                local_uri = LocalURI} = Dialog,
+
+    #sip_dialog_id{local_tag = LocalTag,
+                   call_id = CallIdValue,
+                   remote_tag = RemoteTag} = DialogId,
+
+    To = {to, sip_headers:address(<<>>, RemoteURI, tag_params(RemoteTag))},
+    From = {from, sip_headers:address(<<>>, LocalURI, tag_params(LocalTag))},
+    CallId = {'call-id', CallIdValue},
+
+    {ok, LocalSequence} = sip_dialog:next_sequence(DialogId),
+    CSeq = {cseq, sip_headers:cseq(LocalSequence, Method)},
+
+    RouteSet = Dialog#sip_dialog.route_set,
+    RemoteTargetURI = Dialog#sip_dialog.remote_target_uri,
+    {RequestURI2, Routes2} =
+        case RouteSet of
+            % 1. empty route set
+            [] ->
+                {RemoteTargetURI, []};
+            [TopRoute | RestRouteSet] ->
+                case sip_uri:is_loose_router(TopRoute) of
+                    % 2. top route is loose router
+                    true ->
+                        Routes = [{route, sip_headers:address(Route)} || Route <- RouteSet],
+                        {RemoteTargetURI, Routes};
+                    % 3. top route is strict router
+                    false ->
+                        RequestURI = strip_parameters(TopRoute),
+                        Routes = [{route, sip_headers:address(Route)} || Route <- RestRouteSet] ++
+                                     [Dialog#sip_dialog.remote_target_uri],
+                        {RequestURI, Routes}
+                end
+        end,
+
+    Via = {via, #sip_hdr_via{}},
+    MaxForwards = {'max-forwards', 70},
+
+    % Build the route set
+    #sip_request{method = Method,
+                 uri = RequestURI2,
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes2]}.
+
+%% @doc Convert null tag into empty list of parameters
+%% @end
+tag_params(<<>>) -> [];
+tag_params(Tag) -> [{tag, Tag}].
+
+%% @doc Strip any parameters that are not allowed in a Request-URI.
+%% XXX: For now, all parameters are stripped.
+%% @end
+strip_parameters(URI) ->
+    URI#sip_uri{params = []}.
 
 % Put Request URI into the target set
 -spec send_request(#sip_request{}, callback(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.

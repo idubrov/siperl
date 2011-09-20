@@ -59,9 +59,15 @@ start_link(Callback, Args) ->
 %%
 %% Clients are free to modify any part of the request according to their needs.
 %% @end
--spec create_request(sip_name(), #sip_hdr_address{}) -> #sip_request{}.
+-spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
 create_request(Method, To) when is_record(To, sip_hdr_address) ->
-    sip_ua_client:create_request(Method, To).
+    sip_ua_client:create_request(Method, To);
+
+%% @doc Create request within the  dialog according to the 12.2.1.1 Generating the Request
+%% Clients are free to modify any part of the request according to their needs.
+%% @end
+create_request(Method, Dialog) when is_record(Dialog, sip_dialog) ->
+    sip_ua_client:create_request(Method, Dialog).
 
 %% @doc Create request outside of the dialog according to the 8.2.6 Generating the Response
 %% @end
@@ -132,10 +138,7 @@ init({Callback, Args}) ->
     erlang:put(?UAS, UAS),
     erlang:put(?CALLBACK, Callback),
 
-    IsApplicable =
-        fun(#sip_response{}) -> false; % UAS never handles responses
-           (#sip_request{} = Msg) -> Callback:is_applicable(Msg)
-        end,
+    IsApplicable = fun(Msg) -> Callback:is_applicable(Msg) end,
     sip_cores:register_core(#sip_core_info{is_applicable = IsApplicable}),
     {ok, State}.
 

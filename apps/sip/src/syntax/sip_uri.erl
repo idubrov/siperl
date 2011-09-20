@@ -13,7 +13,7 @@
 
 %% API
 -export([parse/1, format/1]).
--export([is_strict_router/1, is_sips/1]).
+-export([is_loose_router/1, is_strict_router/1, is_sips/1]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -35,11 +35,17 @@ parse(<<"sips:", Rest/binary>>) -> parse_sip(sips, Rest);
 parse(Bin) when is_binary(Bin) ->
     Bin.
 
+%% @doc Check if SIP URI is loose router URI
+%% @end
+-spec is_loose_router(#sip_uri{}) -> boolean().
+is_loose_router(#sip_uri{params = Params}) ->
+    proplists:get_bool(lr, Params).
+
 %% @doc Check if SIP URI is strict router URI
 %% @end
 -spec is_strict_router(#sip_uri{}) -> boolean().
-is_strict_router(#sip_uri{params = Params}) ->
-    not proplists:get_bool(lr, Params).
+is_strict_router(URI) ->
+    not is_loose_router(URI).
 
 -spec is_sips(sip_uri()) -> boolean.
 %% @doc Check if URI is SIPS URI.
