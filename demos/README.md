@@ -1,8 +1,8 @@
 Demonstrational projects
 =======================
 
-busy    replies with busy after 10 seconds of ringing
-hang    calls, then hangs after 2 seconds
+* busy: replies with busy after 10 seconds of ringing
+* hang: calls, then hangs after 2 seconds
 
 To run the demos, compile the code and generate the release.
 Assuming the current directory is the project root directory
