@@ -1,9 +1,10 @@
 _build
 *.beam
 .eunit
-rel/sipnode
+apps/*/ebin
+demos/*/ebin
+demos/rel/demos
 deps
-apps/sip/ebin/sip.app
 apps/sip/doc
 apps/sip/logs
 apps/sip/*.coverdata
