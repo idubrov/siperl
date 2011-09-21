@@ -185,22 +185,9 @@ cancel_request(Id) ->
 
 %% @private
 -spec handle_response(#sip_response{}, #sip_tx_client{}, module(), state()) -> {ok, state()}.
-handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, _Callback, State) ->
-    % ignore response for 'CANCEL' request
-    {ok, State};
-
 handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
-    case lookup_by_tx(TxPid) of
-        false ->
-            % we are not interested in this transaction (could be response for 'CANCEL' request)
-            % FIXME: put cancel requests in the list?
-            {noreply, State};
+    #request_info{} = ReqInfo = lookup_by_tx(TxPid),
 
-        ReqInfo when is_record(ReqInfo, request_info) ->
-            do_handle_response(ReqInfo, Response, Callback, State)
-    end.
-
-do_handle_response(ReqInfo, Response, Callback, State) ->
     % If we got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
     % (RFC 2543 compliant UAS will not generate such a response)
     Response2 =
@@ -421,7 +408,7 @@ send_cancel(#request_info{} = ReqInfo) ->
     Branch = ReqInfo#request_info.current_branch,
     Cancel = sip_message:create_cancel(ReqInfo#request_info.request),
     Cancel2 = sip_message:with_branch(Branch, Cancel),
-    {ok, CancelTxPid} = sip_transaction:start_client_tx(ReqInfo#request_info.last_destination, Cancel2),
+    {ok, CancelTxPid} = sip_transaction:start_client_tx(ReqInfo#request_info.last_destination, Cancel2, [no_tu, no_monitor]),
 
     ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxPid}).
 

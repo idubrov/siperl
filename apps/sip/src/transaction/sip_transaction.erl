@@ -43,10 +43,14 @@ start_client_tx(To, Request) ->
 %% Start new client transaction that will send messages to the current process.
 %% Monitor is automatically created for the transaction process, so calling
 %% process will receive message in case of transaction termination.
+%%
+%% `no_tu' transaction will not report its progress to TU (useful for fire-and-forget
+%% requests, like `CANCEL' transactions).
+%% `no_monitor' do not monitor transaction, transaction termination will not be detected.
 %% @end
 -spec start_client_tx(#sip_destination{},
                       #sip_request{},
-                      [{ttl, non_neg_integer()}]) -> {ok, pid()}.
+                      [{ttl, non_neg_integer()} | no_tu | no_monitor]) -> {ok, pid()}.
 start_client_tx(Destination, Request, Options)
   when is_record(Destination, sip_destination),
        is_record(Request, sip_request),
@@ -55,16 +59,21 @@ start_client_tx(Destination, Request, Options)
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(Destination#sip_destination.transport),
 
+    TU = case proplists:get_bool(no_tu, Options) of
+             true -> none;
+             false -> self()
+         end,
+
     TxKey = tx_key(client, Request),
     Module = tx_module(client, Request),
     TxState = #tx_state{destination = Destination,
                         tx_key = TxKey,
-                        tx_user = self(),
+                        tx_user = TU,
                         request = Request,
                         reliable = Reliable,
                         options = Options,
                         props = tx_props(client, TxKey, Request)},
-    do_start_tx(Module, TxState).
+    do_start_tx(Module, TxState, proplists:get_bool(no_monitor, Options)).
 
 %% @doc Start new server transaction that will report to the current process.
 %%
@@ -87,14 +96,16 @@ start_server_tx(Request)
                         tx_user = self(),
                         reliable = Reliable,
                         props = tx_props(server, TxKey, Request)},
-    do_start_tx(Module, TxState).
+    do_start_tx(Module, TxState, true).
 
 %% Start transaction process, send state to it, start monitoring it and return
 %% transaction pid.
-do_start_tx(Module, #tx_state{tx_key = TxKey} = TxState) ->
+do_start_tx(Module, #tx_state{tx_key = TxKey} = TxState, Monitor) ->
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
     ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
-    _Ref = erlang:monitor(process, Pid),
+    if Monitor -> _Ref = erlang:monitor(process, Pid);
+       true -> ok
+    end,
     {ok, Pid}.
 
 -spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].

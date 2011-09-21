@@ -74,8 +74,9 @@ send_response(Response, TxState) ->
     TxState.
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
-pass_to_tu(#sip_response{} = Msg, TxState) ->
-    TxState#tx_state.tx_user ! {response, Msg, self()},
+pass_to_tu(#sip_response{}, #tx_state{tx_user = none}) -> ok; % No TU to report to
+pass_to_tu(#sip_response{} = Msg, #tx_state{tx_user = TU}) ->
+    TU ! {response, Msg, self()},
     ok.
 
 %% @private
