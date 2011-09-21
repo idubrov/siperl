@@ -321,9 +321,7 @@ invoke_callback(ReqInfo, Response, Callback, State)
     invoke_callback(ReqInfo, Response2, Callback, State);
 
 invoke_callback(ReqInfo, Response, Callback, State) ->
-    CSeq = sip_message:header_top_value(cseq, Response),
-    Method = CSeq#sip_hdr_cseq.method,
-    Callback:handle_response(Method, Response, ReqInfo#request_info.id, State).
+    Callback:handle_response(ReqInfo#request_info.request, Response, ReqInfo#request_info.id, State).
 
 next_uri(ReqInfo) ->
     case sip_priority_set:take(ReqInfo#request_info.target_set) of
