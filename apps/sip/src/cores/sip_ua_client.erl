@@ -45,8 +45,9 @@
 %% element is information about the request
 -record(request_info,
         {id                :: reference(),          % Unique request identifier
-         current_tx        :: #sip_tx_client{},     % Key of active transaction
-         cancel_tx         :: #sip_tx_client{},     % `CANCEL' transaction key
+         current_branch    :: binary(),             % Branch for the current transaction
+         current_tx        :: pid(),                % Key of active transaction
+         cancel_tx         :: pid(),                % `CANCEL' transaction reference
          request           :: #sip_request{},       % Original request
          destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
          target_set        :: target_set(),         % URI to visit next (redirects)
@@ -188,10 +189,18 @@ handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, _Callback, S
     % ignore response for 'CANCEL' request
     {ok, State};
 
-handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, Callback, State) ->
-    % search by value (transaction key), it is unique by design
-    #request_info{} = ReqInfo = lookup_by_tx(TxKey),
+handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
+    case lookup_by_tx(TxPid) of
+        false ->
+            % we are not interested in this transaction (could be response for 'CANCEL' request)
+            % FIXME: put cancel requests in the list?
+            {noreply, State};
 
+        ReqInfo when is_record(ReqInfo, request_info) ->
+            do_handle_response(ReqInfo, Response, Callback, State)
+    end.
+
+do_handle_response(ReqInfo, Response, Callback, State) ->
     % If we got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
     % (RFC 2543 compliant UAS will not generate such a response)
     Response2 =
@@ -364,13 +373,15 @@ next_destination(#request_info{request = Request, destinations = [Top | _Fallbac
 %% @end
 next_destination(#request_info{request = Request, destinations = [Top | Fallback]} = ReqInfo) ->
     % Every new client transaction must have its own branch value
-    Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
-    {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
+    Branch = sip_idgen:generate_branch(),
+    Request2 = sip_message:with_branch(Branch, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2),
 
     % Update request information
     ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
                                     last_destination = Top,
-                                    current_tx = TxKey},
+                                    current_branch = Branch,
+                                    current_tx = TxPid},
     ok = store(ReqInfo2),
 
     % stop processing
@@ -407,12 +418,12 @@ do_cancel(ReqInfo) ->
 %% @end
 send_cancel(#request_info{} = ReqInfo) ->
     % Create CANCEL request, set branch from current transaction
-    Branch = ReqInfo#request_info.current_tx#sip_tx_client.branch,
+    Branch = ReqInfo#request_info.current_branch,
     Cancel = sip_message:create_cancel(ReqInfo#request_info.request),
     Cancel2 = sip_message:with_branch(Branch, Cancel),
-    {ok, CancelTxKey} = sip_transaction:start_client_tx(self(), ReqInfo#request_info.last_destination, Cancel2),
+    {ok, CancelTxPid} = sip_transaction:start_client_tx(ReqInfo#request_info.last_destination, Cancel2),
 
-    ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxKey}).
+    ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxPid}).
 
 
 %%-----------------------------------------------------------------
@@ -423,9 +434,9 @@ lookup_by_id(Id) ->
     Requests = erlang:get(?REQUESTS),
     lists:keyfind(Id, #request_info.id, Requests).
 
-lookup_by_tx(TxKey) ->
+lookup_by_tx(TxPid) ->
     Requests = erlang:get(?REQUESTS),
-    lists:keyfind(TxKey, #request_info.current_tx, Requests).
+    lists:keyfind(TxPid, #request_info.current_tx, Requests).
 
 
 store(ReqInfo) ->

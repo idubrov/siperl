@@ -75,7 +75,7 @@ send_response(Response, TxState) ->
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
 pass_to_tu(#sip_response{} = Msg, TxState) ->
-    notify_tu(TxState, {response, Msg, TxState#tx_state.tx_key}),
+    TxState#tx_state.tx_user ! {response, Msg, self()},
     ok.
 
 %% @private
@@ -116,7 +116,6 @@ terminate(Reason, _State, TxState) ->
                 ok = pass_to_tu(Response, TxState),
                 ok
         end,
-    notify_tu(TxState, {tx, TxKey, {terminated, Reason}}),
     ok.
 
 %% @doc Determine if response should be sent to TU
@@ -134,8 +133,3 @@ failed_status(#sip_tx_client{}, _Reason) -> 503.
 -spec code_change(term(), atom(), #tx_state{}, term()) -> {ok, atom(), #tx_state{}}.
 code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
-
-notify_tu(TxState, Msg) ->
-    TxState#tx_state.tx_user ! Msg,
-    ok.
-

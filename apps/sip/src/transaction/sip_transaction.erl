@@ -15,7 +15,7 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 % Client API
--export([start_client_tx/3, start_client_tx/4, start_server_tx/2, send_response/1, tx_key/2, cancel/1]).
+-export([start_client_tx/2, start_client_tx/3, start_server_tx/1, send_response/1, tx_key/2, cancel/1]).
 -export([list_tx/0, is_loop_detected/1]).
 
 % Internal API for transport layer
@@ -27,19 +27,27 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
-%% @doc Start new client transaction.
-%% @end
--spec start_client_tx(pid() | term(), #sip_destination{}, #sip_request{}) -> {ok, #sip_tx_client{}}.
-start_client_tx(TU, To, Request) ->
-  start_client_tx(TU, To, Request, []).
 
-%% @doc Start new client transaction with user data associated with it.
+%% @doc Start new client transaction that will report to the current process.
+%%
+%% Start new client transaction that will send messages to the current process.
+%% Monitor is automatically created for the transaction process, so calling
+%% process will receive message in case of transaction termination.
 %% @end
--spec start_client_tx(pid() | term(),
-                      #sip_destination{},
+-spec start_client_tx(#sip_destination{}, #sip_request{}) -> {ok, pid()}.
+start_client_tx(To, Request) ->
+  start_client_tx(To, Request, []).
+
+%% @doc Start new client transaction that will report to the current process.
+%%
+%% Start new client transaction that will send messages to the current process.
+%% Monitor is automatically created for the transaction process, so calling
+%% process will receive message in case of transaction termination.
+%% @end
+-spec start_client_tx(#sip_destination{},
                       #sip_request{},
-                      [{ttl, non_neg_integer()}]) -> {ok, #sip_tx_client{}}.
-start_client_tx(TU, Destination, Request, Options)
+                      [{ttl, non_neg_integer()}]) -> {ok, pid()}.
+start_client_tx(Destination, Request, Options)
   when is_record(Destination, sip_destination),
        is_record(Request, sip_request),
        is_list(Options) ->
@@ -51,20 +59,21 @@ start_client_tx(TU, Destination, Request, Options)
     Module = tx_module(client, Request),
     TxState = #tx_state{destination = Destination,
                         tx_key = TxKey,
-                        tx_user = TU,
+                        tx_user = self(),
                         request = Request,
                         reliable = Reliable,
                         options = Options,
                         props = tx_props(client, TxKey, Request)},
-    {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
-    ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
-    {ok, TxKey}.
+    do_start_tx(Module, TxState).
 
-%% @doc
-%% Start new server transaction.
+%% @doc Start new server transaction that will report to the current process.
+%%
+%% Start new server transaction that will send messages to the current process.
+%% Monitor is automatically created for the transaction process, so calling
+%% process will receive message in case of transaction termination.
 %% @end
--spec start_server_tx(term(), #sip_request{}) -> {ok, #sip_tx_server{}}.
-start_server_tx(TU, Request)
+-spec start_server_tx(#sip_request{}) -> {ok, pid()}.
+start_server_tx(Request)
   when is_record(Request, sip_request) ->
 
     % Check top via in received request to check transport reliability
@@ -75,20 +84,25 @@ start_server_tx(TU, Request)
     Module = tx_module(server, Request),
     TxState = #tx_state{tx_key = TxKey,
                         request = Request,
-                        tx_user = TU,
+                        tx_user = self(),
                         reliable = Reliable,
                         props = tx_props(server, TxKey, Request)},
+    do_start_tx(Module, TxState).
+
+%% Start transaction process, send state to it, start monitoring it and return
+%% transaction pid.
+do_start_tx(Module, #tx_state{tx_key = TxKey} = TxState) ->
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
     ok = gen_fsm:sync_send_event(Pid, {init, TxState}),
-    {ok, TxKey}.
-
+    _Ref = erlang:monitor(process, Pid),
+    {ok, Pid}.
 
 -spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].
 list_tx() ->
     MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
     gproc:select(names, MS).
 
--spec cancel(#sip_request{}) -> {ok, #sip_tx_server{}} | false;
+-spec cancel(#sip_request{}) -> {ok, pid()} | false;
             (#sip_tx_client{}) -> {ok, #sip_tx_client{}} | false.
 %% @doc Cancel server transaction based on the `CANCEL' request
 %%
@@ -99,17 +113,19 @@ list_tx() ->
 cancel(#sip_request{method = 'CANCEL'} = Request) ->
     Key = tx_key(server, Request),
     % lookup by the key, but with method not CANCEL/ACK
-    MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value})
+    MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, Pid, _Value})
                           when is_record(TxKey, sip_tx_server),
                                TxKey#sip_tx_server.branch =:= Key#sip_tx_server.branch,
                                TxKey#sip_tx_server.host =:= Key#sip_tx_server.host,
                                TxKey#sip_tx_server.port =:= Key#sip_tx_server.port,
                                TxKey#sip_tx_server.method =/= 'CANCEL', TxKey#sip_tx_server.method =/= 'ACK'
-                          -> TxKey end),
+                          -> Pid end),
     case gproc:select(names, MS) of
-        [TxKey] ->
-            tx_send(TxKey, cancel),
-            {ok, TxKey};
+        [Pid] ->
+            ok = try gen_fsm:sync_send_event(Pid, cancel)
+                 catch error:noproc -> false % no transaction to handle
+                 end,
+            {ok, Pid};
         [] -> false
     end.
 
@@ -118,7 +134,7 @@ cancel(#sip_request{method = 'CANCEL'} = Request) ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_request(#sip_request{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
+-spec handle_request(#sip_request{}) -> not_handled | {ok, pid()}.
 handle_request(Msg) when is_record(Msg, sip_request) ->
     handle_internal(server, Msg).
 
@@ -127,13 +143,13 @@ handle_request(Msg) when is_record(Msg, sip_request) ->
 %% if no transaction to handle the message is found.
 %% @end
 %% @private
--spec handle_response(#sip_response{}) -> not_handled | {ok, #sip_tx_client{} | #sip_tx_server{}}.
+-spec handle_response(#sip_response{}) -> not_handled | {ok, pid()}.
 handle_response(Msg) ->
     handle_internal(client, Msg).
 
 %% @doc Pass given response from the TU to the server transaction.
 %% @end
--spec send_response(#sip_response{}) -> {ok, #sip_tx_server{}}.
+-spec send_response(#sip_response{}) -> {ok, pid()}.
 send_response(Msg) ->
     handle_internal(server, Msg).
 
@@ -236,7 +252,7 @@ tx_send(Key, Info) ->
             ok = try gen_fsm:sync_send_event(Pid, Info)
                  catch error:noproc -> not_handled % no transaction to handle
                  end,
-            {ok, Key}
+            {ok, Pid}
     end.
 
 tx_props(client, _TxKey, #sip_request{}) -> [];

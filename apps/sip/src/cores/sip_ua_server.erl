@@ -56,7 +56,7 @@ send_response(Request, Response, Callback, State) when is_record(Request, sip_re
 -spec handle_request(#sip_request{}, module(), state()) -> {ok, state()}.
 handle_request(Request, Callback, State) ->
     % start server transaction
-    {ok, _TxKey} = sip_transaction:start_server_tx(self(), Request),
+    {ok, _TxPid} = sip_transaction:start_server_tx(Request),
 
     % validate request
     Result =
@@ -189,5 +189,5 @@ internal_send(Request, Response, Callback, State) ->
         end,
     Response2 = lists:foldl(Fun, Response, [allow, supported, server]),
 
-    {ok, _TxKey} = sip_transaction:send_response(Response2),
+    {ok, _TxPid} = sip_transaction:send_response(Response2),
     ok.
