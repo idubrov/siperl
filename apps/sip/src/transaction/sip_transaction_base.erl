@@ -106,7 +106,9 @@ terminate(_Reason, _State, undefined) ->
     ok;
 terminate(Reason, _State, TxState) ->
     % For client transactions, handle failure as response message
-    % See 8.1.3.1 (Transaction Layer Errors), 9.1 (Cancelling a Request)
+    % See 8.1.3.1 (Transaction Layer Errors)
+    % FIXME: What if this message will be processed by UA after 'DOWN' event?
+    % Probably, UA should handle 'DOWN' events itself?
     ok =
         case failed_status(TxState#tx_state.tx_key, Reason) of
             false -> ok;

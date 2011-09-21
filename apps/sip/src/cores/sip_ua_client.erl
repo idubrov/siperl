@@ -364,8 +364,11 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     Branch = sip_idgen:generate_branch(),
     Request2 = sip_message:with_branch(Branch, Request),
 
-    tx_demonitor(ReqInfo),
+    ok = tx_demonitor(ReqInfo),
     {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2, []),
+
+    % Actually, we should never receive 'DOWN' message since transaction should
+    % send us final response in any case
     MonitorRef = erlang:monitor(process, TxPid),
 
     % Update request information
