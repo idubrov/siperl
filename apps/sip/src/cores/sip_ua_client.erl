@@ -44,16 +44,17 @@
 %% second element is current transaction that makes the request and third
 %% element is information about the request
 -record(request_info,
-        {id                :: reference(),          % Unique request identifier
-         current_branch    :: binary(),             % Branch for the current transaction
-         current_tx        :: pid(),                % Key of active transaction
-         cancel_tx         :: pid(),                % `CANCEL' transaction reference
-         request           :: #sip_request{},       % Original request
-         destinations = [] :: [#sip_destination{}], % list of IP addresses to try next
-         target_set        :: target_set(),         % URI to visit next (redirects)
+        {id                  :: reference(),          % Unique request identifier
+         current_branch      :: binary(),             % Branch for the current transaction
+         tx_pid              :: pid(),                % Key of currenty transaction, serving the request
+         tx_monitor          :: reference(),          % Transaction monitor reference
+         request             :: #sip_request{},       % Original request
+         destinations = []   :: [#sip_destination{}], % list of IP addresses to try next
+         target_set          :: target_set(),         % URI to visit next (redirects)
          provisional = false :: boolean(),          % If provisional response was received already
-         cancel = false    :: boolean(),            % Start `CANCEL' transaction on next provisional
-         last_destination  :: #sip_destination{}}). % Destination last transaction was sent to
+         cancel = false      :: boolean(),            % Start `CANCEL' transaction on next provisional
+         cancelled = false   :: boolean(),            % If `CANCEL' transaction is already sent
+         last_destination    :: #sip_destination{}}). % Destination last transaction was sent to
 
 -type state() :: term().     % Callback module state
 
@@ -239,8 +240,7 @@ validate_vias(Msg) ->
 %% @end
 handle_provisional_response(ReqInfo, #sip_response{status = Status})
   when Status >= 100, Status =< 199,
-       ReqInfo#request_info.cancel,
-       ReqInfo#request_info.cancel_tx =:= undefined ->
+       ReqInfo#request_info.cancel, not ReqInfo#request_info.cancelled ->
 
     % Start `CANCEL' tx, we got provisional response and have not started `CANCEL' tx yet
     ReqInfo2 = ReqInfo#request_info{provisional = true},
@@ -298,6 +298,7 @@ handle_failure_response(_ReqInfo, _Response) ->
 %% @doc Remove request information, if final response is received
 %% @end
 handle_final_response(ReqInfo, #sip_response{status = Status}) when Status >= 200 ->
+    ok = tx_demonitor(ReqInfo),
     ok = delete(ReqInfo#request_info.id),
     error_m:return(ok);
 
@@ -363,20 +364,21 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     Branch = sip_idgen:generate_branch(),
     Request2 = sip_message:with_branch(Branch, Request),
 
-    % FIXME: We should start monitoring transaction in case of its failure...
+    tx_demonitor(ReqInfo),
     {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2, []),
+    MonitorRef = erlang:monitor(process, TxPid),
 
     % Update request information
     ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
                                     last_destination = Top,
                                     current_branch = Branch,
-                                    current_tx = TxPid},
+                                    tx_pid = TxPid,
+                                    tx_monitor = MonitorRef},
     ok = store(ReqInfo2),
 
     % stop processing
     error_m:fail(processed).
 
-%% FIXME: Rewrite...
 collect_redirects(ReqInfo, Response) ->
     % FIXME: handle expires
     CollectFun =
@@ -396,7 +398,7 @@ collect_redirects(ReqInfo, Response) ->
 %% end
 do_cancel(false) ->
     {error, no_request};
-do_cancel(#request_info{cancel_tx = undefined, provisional = true} = ReqInfo) ->
+do_cancel(#request_info{cancelled = false, provisional = true} = ReqInfo) ->
     % start `CANCEL' transaction
     send_cancel(ReqInfo);
 do_cancel(ReqInfo) ->
@@ -413,10 +415,15 @@ send_cancel(#request_info{} = ReqInfo) ->
     Cancel2 = sip_message:with_branch(Branch, Cancel),
 
     Destination = ReqInfo#request_info.last_destination,
-    {ok, CancelTxPid} = sip_transaction:start_client_tx(Destination, Cancel2, [{tu, none}]),
+    {ok, _CancelTxPid} = sip_transaction:start_client_tx(Destination, Cancel2, [{tu, none}]),
 
-    ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxPid}).
+    ok = store(ReqInfo#request_info{cancel = true, cancelled = true}).
 
+
+tx_demonitor(#request_info{tx_monitor = undefined}) -> ok;
+tx_demonitor(#request_info{tx_monitor = MonitorRef}) ->
+    true = erlang:demonitor(MonitorRef, [flush]),
+    ok.
 
 %%-----------------------------------------------------------------
 %% State management (functions that use process dictionary)
@@ -428,7 +435,7 @@ lookup_by_id(Id) ->
 
 lookup_by_tx(TxPid) ->
     Requests = erlang:get(?REQUESTS),
-    lists:keyfind(TxPid, #request_info.current_tx, Requests).
+    lists:keyfind(TxPid, #request_info.tx_pid, Requests).
 
 
 store(ReqInfo) ->
