@@ -105,7 +105,6 @@ terminate(_Reason, _State, undefined) ->
     % Not yet initialized
     ok;
 terminate(Reason, _State, TxState) ->
-    TxKey = TxState#tx_state.tx_key,
     % For client transactions, handle failure as response message
     % See 8.1.3.1 (Transaction Layer Errors), 9.1 (Cancelling a Request)
     ok =
