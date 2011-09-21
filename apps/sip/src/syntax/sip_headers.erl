@@ -923,17 +923,21 @@ cseq(Sequence, Method) when
 retry(Delay, Comment, Params) ->
     #sip_hdr_retry{delay = Delay, comment = Comment, params = Params}.
 
-
+-spec address(binary(), sip_uri(), list()) -> #sip_hdr_address{}.
 %% @doc Construct address (value of From/To headers).
 %%
 %% <em>Note: parses URI if it is given in binary form</em>
 %% @end
--spec address(binary(), #sip_uri{} | #tel_uri{} | binary(), list()) -> #sip_hdr_address{}.
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params), is_binary(URI) ->
     #sip_hdr_address{display_name = DisplayName, uri = sip_uri:parse(URI), params = Params};
 address(DisplayName, URI, Params) when is_binary(DisplayName), is_list(Params) ->
     #sip_hdr_address{display_name = DisplayName, uri = URI, params = Params}.
 
+-spec address(sip_uri()) -> #sip_hdr_address{}.
+%% @doc Construct address (value of From/To headers).
+%%
+%% <em>Note: parses URI if it is given in binary form</em>
+%% @end
 address(URI) ->
     address(<<>>, URI, []).
 

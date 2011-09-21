@@ -110,7 +110,7 @@ create_request(Method, #sip_dialog_id{} = DialogId) ->
 
     LocalSequence =
         case Method of
-            'ACK' -> 0; % FIXME!!!
+            'ACK' -> 0; % FIXME!!! What should we have here?
             _Other ->
                 {ok, S} = sip_dialog:next_sequence(DialogId),
                 S
@@ -119,33 +119,31 @@ create_request(Method, #sip_dialog_id{} = DialogId) ->
 
     RouteSet = Dialog#sip_dialog.route_set,
     RemoteTargetURI = Dialog#sip_dialog.remote_target_uri,
-    {RequestURI2, Routes2} =
-        case RouteSet of
-            % 1. empty route set
-            [] ->
-                {RemoteTargetURI, []};
-            [TopRoute | RestRouteSet] ->
-                case sip_uri:is_loose_router(TopRoute) of
-                    % 2. top route is loose router
-                    true ->
-                        Routes = [{route, sip_headers:address(Route)} || Route <- RouteSet],
-                        {RemoteTargetURI, Routes};
-                    % 3. top route is strict router
-                    false ->
-                        RequestURI = strip_parameters(TopRoute),
-                        Routes = [{route, sip_headers:address(Route)} || Route <- RestRouteSet] ++
-                                     [Dialog#sip_dialog.remote_target_uri],
-                        {RequestURI, Routes}
-                end
-        end,
+    {RequestURI, Routes} = determine_routing(RemoteTargetURI, RouteSet),
 
     Via = {via, #sip_hdr_via{}},
     MaxForwards = {'max-forwards', 70},
 
     % Build the route set
     #sip_request{method = Method,
-                 uri = RequestURI2,
-                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes2]}.
+                 uri = RequestURI,
+                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
+
+determine_routing(RemoteTargetURI, []) ->
+    % 1. empty target route
+    {RemoteTargetURI, []};
+determine_routing(RemoteTargetURI, [TopRoute | RestRouteSet] = RouteSet) ->
+    case sip_uri:is_loose_router(TopRoute) of
+        true ->
+            % 2. top route is loose router
+            Routes = [{route, sip_headers:address(Route)} || Route <- RouteSet],
+            {RemoteTargetURI, Routes};
+        false ->
+            % 3. top route is strict router
+            RequestURI = strip_parameters(TopRoute),
+            Routes = [{route, sip_headers:address(Route)} || Route <- RestRouteSet] ++ [RemoteTargetURI],
+            {RequestURI, Routes}
+    end.
 
 %% @doc Convert null tag into empty list of parameters
 %% @end

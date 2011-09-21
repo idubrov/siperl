@@ -48,9 +48,13 @@ create_dialog(Kind, Request, Response) when
 terminate_dialog(DialogId) when is_record(DialogId, sip_dialog_id) ->
     gen_server:call(?SERVER, {terminate_dialog, DialogId}).
 
+-spec lookup_dialog(#sip_dialog_id{}) -> {ok, #sip_dialog{}} | {error, no_dialog}.
+%% @doc Lookup dialog state based on the dialog id
+%% @end
 lookup_dialog(DialogId) ->
     gen_server:call(?SERVER, {lookup_dialog, DialogId}).
 
+-spec dialog_id(uac | uas, sip_message()) -> #sip_dialog_id{}.
 %% @doc Determine dialog id base on the message within dialog
 %% @end
 dialog_id(Kind, Msg) ->

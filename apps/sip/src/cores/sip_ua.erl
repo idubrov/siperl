@@ -130,6 +130,8 @@ handle_call(Req, From, State) ->
     Callback = erlang:get(?CALLBACK),
     Callback:handle_call(Req, From, State).
 
+-spec handle_cast({send_response, #sip_request{}, #sip_response{}}, state()) -> {noreply, state()};
+                 (term(), state()) -> {noreply, state()} | {stop, term(), state()}.
 handle_cast({send_response, Request, Response}, State) ->
     Callback = erlang:get(?CALLBACK),
     {ok, State2} = sip_ua_server:send_response(Request, Response, Callback, State),
