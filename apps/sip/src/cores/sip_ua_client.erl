@@ -10,24 +10,39 @@
 %%% <li>If response is 503 (Service Unavailable) or 408 (Request Timeout), try
 %%% next IP address (RFC 3263). If no such destinations, try next URI from the
 %%% target set. If no URIs in target set, let callback handle the response.</li>
-%%% <li>If another failed response is detected, try next URI from target set.
-%%% If target set is empty, let callback handle the response.</li>
+%%% <li>If another failed response is detected and target set is not empty,
+%%% try next URI from target set</li>
 %%% <li>Otherwise, let UAC callback handle the response.</li>
 %%% </ul>
+%%%
+%%% <em>This module makes use of process dictionary to preserve information about
+%%% pending requests.</em>
+%%%
+%%% FIXME: Link somehow to transactions. If pending transaction will die, the request
+%%% will stay forever in the list! #14
+%%%
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_client).
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/1, create_request/2, send_request/4, cancel_request/2, handle_response/4]).
+-export([init/0, create_request/2, send_request/1, cancel_request/1, handle_response/4]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
+%% Process dictionary key for requests
+-define(REQUESTS, sip_ua_client_requests).
+
+%% Set of URIs to try for given request
 -type target_set() :: sip_priority_set:priority_set(#sip_uri{}).
 
+%% Pending requests (that have not received final responses yet)
+%% First element is unique request id (that does not change accross retries),
+%% second element is current transaction that makes the request and third
+%% element is information about the request
 -record(request_info,
         {id                :: reference(),          % Unique request identifier
          current_tx        :: #sip_tx_client{},     % Key of active transaction
@@ -39,21 +54,16 @@
          cancel = false    :: boolean(),            % Start `CANCEL' transaction on next provisional
          last_destination  :: #sip_destination{}}). % Destination last transaction was sent to
 
-%% Pending requests (that have not received final responses yet)
-%% First element is unique request id (that does not change accross retries),
-%% second element is current transaction that makes the request and third
-%% element is information about the request
--record(uac_state, {callback      :: module(),
-                    requests = [] :: [#request_info{}]}).
--type callback_state() :: term().     % Callback module state
+-type state() :: term().     % Callback module state
 
 %%-----------------------------------------------------------------
 %% Internal API
 %%-----------------------------------------------------------------
 
--spec init(module()) -> {ok, #uac_state{}}.
-init(Callback) ->
-    {ok, #uac_state{callback = Callback}}.
+-spec init() -> ok.
+init() ->
+    erlang:put(?REQUESTS, []),
+    ok.
 
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
 %% @doc Create request outside of the dialog
@@ -146,8 +156,9 @@ tag_params(Tag) -> [{tag, Tag}].
 strip_parameters(URI) ->
     URI#sip_uri{params = []}.
 
--spec send_request(reference(), #sip_request{}, callback_state(), #uac_state{}) -> {{ok, reference()}, #uac_state{}} | {{error, no_destinations}, #uac_state{}}.
-send_request(RequestId, Request, CallbackState, State) ->
+-spec send_request(#sip_request{}) -> {ok, reference()} | {error, no_destinations}.
+send_request(Request) ->
+    RequestId = make_ref(),
     ok = sip_message:validate_request(Request),
 
     RequestURI = Request#sip_request.uri,
@@ -156,48 +167,58 @@ send_request(RequestId, Request, CallbackState, State) ->
     ReqInfo = #request_info{id = RequestId,
                             request = Request,
                             target_set = TargetSet},
-    case next_uri(ReqInfo, none, State) of
-        {error, {processed, State2}} -> {ok, CallbackState, State2};
-        {ok, State2} -> {{error, no_destinations}, CallbackState, State2}   % FIXME: Report to callback!
+    case next_uri(ReqInfo) of
+        {error, processed} -> {ok, RequestId};
+        {error, Reason} -> {error, Reason};
+        ok -> {error, no_destinations}   % FIXME: Report to callback!
     end.
 
--spec cancel_request(reference(), #uac_state{}) -> {ok, #uac_state{}} | {{error, no_request}, #uac_state{}}.
-cancel_request(Id, State) ->
-    ReqInfo = lookup_info(Id, State),
-    do_cancel(ReqInfo, State).
+-spec cancel_request(reference()) -> ok | {error, no_request}.
+cancel_request(Id) ->
+    ReqInfo = lookup_by_id(Id),
+    do_cancel(ReqInfo).
 
 %%-----------------------------------------------------------------
 %% Internal API
 %%-----------------------------------------------------------------
 
 %% @private
--spec handle_response(#sip_response{}, #sip_tx_client{}, callback_state(), #uac_state{}) -> {ok, callback_state(), #uac_state{}}.
-handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, CallbackState, State) ->
+-spec handle_response(#sip_response{}, #sip_tx_client{}, module(), state()) -> {ok, state()}.
+handle_response(#sip_response{}, #sip_tx_client{method = 'CANCEL'}, _Callback, State) ->
     % ignore response for 'CANCEL' request
-    {ok, CallbackState, State};
+    {ok, State};
 
-handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, CallbackState, State) ->
+handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, Callback, State) ->
     % search by value (transaction key), it is unique by design
-    ReqInfo = lookup_by_tx(TxKey, State),
+    #request_info{} = ReqInfo = lookup_by_tx(TxKey),
+
+    % If we got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
+    % (RFC 2543 compliant UAS will not generate such a response)
+    Response2 =
+        case (ReqInfo#request_info.cancel andalso Response#sip_response.status =:= 408) of
+            true ->
+                Response#sip_response{status = 487, reason = sip_message:default_reason(487)};
+            false ->
+                Response
+        end,
 
     % FIXME: Should we handle 2xx with offer here? Probably, sip_ua_client should invoke
     % Callback:answer(Offer) and send ACK automatically?
     Result = do([error_m ||
-                 S1 <- validate_vias(Response, State),
-                 S2 <- handle_provisional_response(ReqInfo, Response, S1),
-                 S3 <- handle_redirect_response(ReqInfo, Response, S2),
-                 S4 <- handle_failure_response(ReqInfo, Response, S3),
-                 S5 <- handle_success_response(ReqInfo, Response, S4),
-                 S6 <- handle_final_response(ReqInfo, Response, S5),
-                 return(S6)]),
+                 validate_vias(Response2),
+                 handle_provisional_response(ReqInfo, Response2),
+                 handle_redirect_response(ReqInfo, Response2),
+                 handle_failure_response(ReqInfo, Response2),
+                 handle_success_response(ReqInfo, Response2),
+                 handle_final_response(ReqInfo, Response2)]),
 
     case Result of
-        {ok, State2} ->
-            invoke_callback(ReqInfo, Response, CallbackState, State2);
-        {error, {_Reason, State2}} ->
+        ok ->
+            invoke_callback(ReqInfo, Response2, Callback, State);
+        {error, _Reason} ->
             % Response was either discarded or is still being
             % processed (following redirect, trying next IP, etc)
-            {ok, CallbackState, State2}
+            {noreply, State}
     end.
 
 %%-----------------------------------------------------------------
@@ -205,112 +226,107 @@ handle_response(#sip_response{} = Response, #sip_tx_client{} = TxKey, CallbackSt
 %%-----------------------------------------------------------------
 
 %% Validate message according to the 8.1.3.3
--spec validate_vias(#sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
-validate_vias(Msg, State) ->
+-spec validate_vias(#sip_response{}) -> error_m:monad(ok).
+validate_vias(Msg) ->
     Count = length(sip_message:header_values('via', Msg)),
     case Count of
         1 ->
-            error_m:return(State);
+            error_m:return(ok);
         _Other ->
             % discard response, too much/few Via's
             sip_log:wrong_vias(Msg),
-            error_m:fail({discarded, State})
+            error_m:fail(discarded)
     end.
 
--spec handle_provisional_response(#request_info{}, #sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
+-spec handle_provisional_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Automatic handling of provisional (1xx) responses
 %% @end
-handle_provisional_response(ReqInfo, #sip_response{status = Status}, State)
+handle_provisional_response(ReqInfo, #sip_response{status = Status})
   when Status >= 100, Status =< 199,
        ReqInfo#request_info.cancel,
        ReqInfo#request_info.cancel_tx =:= undefined ->
 
     % Start `CANCEL' tx, we got provisional response and have not started `CANCEL' tx yet
     ReqInfo2 = ReqInfo#request_info{provisional = true},
-    send_cancel(ReqInfo2, State);
-handle_provisional_response(ReqInfo, #sip_response{status = Status}, State)
+    send_cancel(ReqInfo2);
+handle_provisional_response(ReqInfo, #sip_response{status = Status})
   when Status >= 100, Status =< 199,
        not ReqInfo#request_info.provisional ->
     % We may receive cancellation request later, so update provisional flag
-    State2 = store_info(ReqInfo#request_info{provisional = true}, State),
-    error_m:return(State2);
-handle_provisional_response(_ReqInfo, _Response, State) ->
-    error_m:return(State).
+    ok = store(ReqInfo#request_info{provisional = true}),
+    error_m:return(ok);
+handle_provisional_response(_ReqInfo, _Response) ->
+    error_m:return(ok).
 
--spec handle_redirect_response(#request_info{}, #sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
+-spec handle_redirect_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Automatic handling of redirect (3xx) responses
 %% @end
-handle_redirect_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 300, Status =< 399 ->
+handle_redirect_response(ReqInfo, #sip_response{status = Status} = Response) when Status >= 300, Status =< 399 ->
     ReqInfo2 = collect_redirects(ReqInfo, Response),
     % try next URI, was redirected
-    next_uri(ReqInfo2, Response, State);
-handle_redirect_response(_ReqInfo, _Response, State) ->
-    error_m:return(State).
+    next_uri(ReqInfo2);
+handle_redirect_response(_ReqInfo, _Response) ->
+    error_m:return(ok).
 
--spec handle_success_response(#request_info{}, #sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
+-spec handle_success_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Create dialog state, if success (2xx) response is received and request is dialog establishing
 %% @end
-handle_success_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 200, Status =< 299 ->
+handle_success_response(ReqInfo, #sip_response{status = Status} = Response) when Status >= 200, Status =< 299 ->
     Request = ReqInfo#request_info.request,
 
     case sip_message:is_dialog_establishing(Request) of
         true ->
             ok = sip_dialog:create_dialog(uac, Request, Response),
-            error_m:return(State);
+            error_m:return(ok);
         false ->
-            error_m:return(State)
+            error_m:return(ok)
     end;
 
-handle_success_response(_ReqInfo, _Response, State) ->
-    error_m:return(State).
+handle_success_response(_ReqInfo, _Response) ->
+    error_m:return(ok).
 
 
--spec handle_failure_response(#request_info{}, #sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
+-spec handle_failure_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Automatic handling of failure (4xx-6xx) responses
 %% @end
-handle_failure_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status =:= 503; Status =:= 408 ->
+handle_failure_response(ReqInfo, #sip_response{status = Status}) when Status =:= 503; Status =:= 408 ->
     % failed with 408 or 503, try next IP address
-    next_destination(ReqInfo, Response, State);
-handle_failure_response(ReqInfo, #sip_response{status = Status} = Response, State) when Status >= 400 ->
+    next_destination(ReqInfo);
+handle_failure_response(ReqInfo, #sip_response{status = Status}) when Status >= 400 ->
     % failed, try next URI
-    next_uri(ReqInfo, Response, State);
-handle_failure_response(_ReqInfo, _Response, State) ->
-    error_m:return(State).
+    next_uri(ReqInfo);
+handle_failure_response(_ReqInfo, _Response) ->
+    error_m:return(ok).
 
--spec handle_final_response(#request_info{}, #sip_response{}, #uac_state{}) -> error_m:monad(#uac_state{}).
+-spec handle_final_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Remove request information, if final response is received
 %% @end
-handle_final_response(ReqInfo, #sip_response{status = Status}, State) when Status >= 200 ->
-    State2 = delete_info(ReqInfo, State),
-    error_m:return(State2);
+handle_final_response(ReqInfo, #sip_response{status = Status}) when Status >= 200 ->
+    ok = delete(ReqInfo#request_info.id),
+    error_m:return(ok);
 
-handle_final_response(_ReqInfo, _Response, State) ->
-    error_m:return(State).
+handle_final_response(_ReqInfo, _Response) ->
+    error_m:return(ok).
 
 %% @doc Invoke callback
 %% @end
-invoke_callback(ReqInfo, Response, CallbackState, State)
-  when ReqInfo#request_info.cancel, Response#sip_response.status =:= 408->
+invoke_callback(ReqInfo, Response, Callback, State)
+  when ReqInfo#request_info.cancel, Response#sip_response.status =:= 408 ->
     % We got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
     % (RFC 2543 compliant UAS will not generate such a response)
     Response2 = Response#sip_response{status = 487, reason = sip_message:default_reason(487)},
-    invoke_callback(ReqInfo, Response2, CallbackState, State);
+    invoke_callback(ReqInfo, Response2, Callback, State);
 
-invoke_callback(ReqInfo, Response, CallbackState, #uac_state{callback = Callback} = State) ->
+invoke_callback(ReqInfo, Response, Callback, State) ->
     CSeq = sip_message:header_top_value(cseq, Response),
     Method = CSeq#sip_hdr_cseq.method,
+    Callback:handle_response(Method, Response, ReqInfo#request_info.id, State).
 
-    erlang:put(?MODULE, State),
-    case Callback:handle_response(Method, Response, ReqInfo#request_info.id, CallbackState) of
-        {noreply, CallbackState2} ->
-            {ok, CallbackState2, erlang:get(?MODULE)}
-    end.
-
-next_uri(ReqInfo, Response, State) ->
+next_uri(ReqInfo) ->
     case sip_priority_set:take(ReqInfo#request_info.target_set) of
         false ->
             % No more URIs to try, continue processing
-            error_m:return(State);
+            error_m:return(ok);
         {value, URI, TargetSet2} ->
             % Update Request-URI
             % FIXME: Update headers as well!
@@ -320,33 +336,33 @@ next_uri(ReqInfo, Response, State) ->
             ReqInfo2 = ReqInfo#request_info{request = Request2,
                                             destinations = Destinations,
                                             target_set = TargetSet2},
-            next_destination(ReqInfo2, Response, State)
+            next_destination(ReqInfo2)
     end.
 
 %% @doc Send request to destination on the top
 %%
 %% If no destinations are provided, report error to the callback module.
 %% @end
-next_destination(#request_info{destinations = []}, _Response, State) ->
+next_destination(#request_info{destinations = []}) ->
     % no destination IPs to try, continue processing
-    error_m:return(State);
+    error_m:return(ok);
 
 %% @doc Send 'ACK' to the transport layer directly
 %% @end
-next_destination(#request_info{request = Request, destinations = [Top | _Fallback]}, _Response, State)
+next_destination(#request_info{request = Request, destinations = [Top | _Fallback]})
   when Request#sip_request.method =:= 'ACK' ->
 
     % FIXME: Since transport layer returns errors immediately, send to fallback destinations
     % if error is returned...
     % FIXME: How UDP errors are to be handled? Maybe, ICMP support on transport layer, track unreachable ports?
-    sip_transport:send_request(Top, Request, []), % FIXME: options..
+    ok = sip_transport:send_request(Top, Request, []), % FIXME: options..
 
     % stop processing
-    error_m:fail({processed, State});
+    error_m:fail(processed);
 
 %% @doc Send requests other than 'ACK'
 %% @end
-next_destination(#request_info{request = Request, destinations = [Top | Fallback]} = ReqInfo, _Response, State) ->
+next_destination(#request_info{request = Request, destinations = [Top | Fallback]} = ReqInfo) ->
     % Every new client transaction must have its own branch value
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
     {ok, TxKey} = sip_transaction:start_client_tx(self(), Top, Request2),
@@ -355,11 +371,12 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
                                     last_destination = Top,
                                     current_tx = TxKey},
-    State2 = store_info(ReqInfo2, State),
+    ok = store(ReqInfo2),
 
     % stop processing
-    error_m:fail({processed, State2}).
+    error_m:fail(processed).
 
+%% FIXME: Rewrite...
 collect_redirects(ReqInfo, Response) ->
     % FIXME: handle expires
     CollectFun =
@@ -375,41 +392,50 @@ collect_redirects(ReqInfo, Response) ->
     NewTargetSet = sip_message:foldl_headers(contact, CollectFun, ReqInfo#request_info.target_set, Response),
     ReqInfo#request_info{target_set = NewTargetSet, destinations = []}.
 
+%% @doc Cancel the request
+%% end
+do_cancel(false) ->
+    {error, no_request};
+do_cancel(#request_info{cancel_tx = undefined, provisional = true} = ReqInfo) ->
+    % start `CANCEL' transaction
+    send_cancel(ReqInfo);
+do_cancel(ReqInfo) ->
+    % mark as cancelled, wait until provisional is received
+    ok = store(ReqInfo#request_info{cancel = true}).
 
 %% @doc Send `CANCEL' transaction, update the state
 %% @end
-send_cancel(#request_info{} = ReqInfo, State) ->
+send_cancel(#request_info{} = ReqInfo) ->
     % Create CANCEL request, set branch from current transaction
     Branch = ReqInfo#request_info.current_tx#sip_tx_client.branch,
     Cancel = sip_message:create_cancel(ReqInfo#request_info.request),
     Cancel2 = sip_message:with_branch(Branch, Cancel),
     {ok, CancelTxKey} = sip_transaction:start_client_tx(self(), ReqInfo#request_info.last_destination, Cancel2),
 
-    State2 = store_info(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxKey}, State),
-    error_m:return(State2).
+    ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxKey}).
 
-%% @doc Cancel the request
-%% end
-do_cancel(false, State) ->
-    {{error, no_request}, State};
-do_cancel(#request_info{cancel_tx = undefined, provisional = true} = ReqInfo, State) ->
-    % start `CANCEL' transaction
-    send_cancel(ReqInfo, State);
-do_cancel(ReqInfo, State) ->
-    % mark as cancelled, wait until provisional is received
-    State2 = store_info(ReqInfo#request_info{cancel = true}, State),
-    {ok, State2}.
 
-lookup_info(Id, State) ->
-    #request_info{} = lists:keyfind(Id, #request_info.id, State#uac_state.requests).
+%%-----------------------------------------------------------------
+%% State management (functions that use process dictionary)
+%%-----------------------------------------------------------------
 
-lookup_by_tx(TxKey, State) ->
-    #request_info{} = lists:keyfind(TxKey, #request_info.current_tx, State#uac_state.requests).
+lookup_by_id(Id) ->
+    Requests = erlang:get(?REQUESTS),
+    lists:keyfind(Id, #request_info.id, Requests).
 
-store_info(ReqInfo, State) ->
-    Requests = lists:keystore(ReqInfo#request_info.id, #request_info.id, State#uac_state.requests, ReqInfo),
-    State#uac_state{requests = Requests}.
+lookup_by_tx(TxKey) ->
+    Requests = erlang:get(?REQUESTS),
+    lists:keyfind(TxKey, #request_info.current_tx, Requests).
 
-delete_info(#request_info{id = Id}, State) ->
-    Requests = lists:keydelete(Id, #request_info.id, State#uac_state.requests),
-    State#uac_state{requests = Requests}.
+
+store(ReqInfo) ->
+    Requests = erlang:get(?REQUESTS),
+    Requests2 = lists:keystore(ReqInfo#request_info.id, #request_info.id, Requests, ReqInfo),
+    erlang:put(?REQUESTS, Requests2),
+    ok.
+
+delete(Id) ->
+    Requests = erlang:get(?REQUESTS),
+    Requests2 = lists:keydelete(Id, #request_info.id, Requests),
+    erlang:put(?REQUESTS, Requests2),
+    ok.

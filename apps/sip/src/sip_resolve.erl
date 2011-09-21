@@ -48,7 +48,7 @@ request_destinations(Request) ->
             true -> URI#sip_uri{scheme = sips};
             false -> URI
         end,
-    client_resolve(URI2).
+    sip_resolve:client_resolve(URI2).
 
 %% @doc Generate list of destination for given URI.
 %%

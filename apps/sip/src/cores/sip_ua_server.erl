@@ -9,22 +9,21 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/1, create_response/2, create_response/3, send_response/4, handle_request/3]).
+-export([init/0, create_response/2, create_response/3, send_response/4, handle_request/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
 
--record(uas_state, {callback      :: module()}).
--type callback_state() :: term().     % Callback module state
+-type state() :: term().     % Callback module state
 
 %%-----------------------------------------------------------------
 %% Internal API
 %%-----------------------------------------------------------------
 
--spec init(module()) -> {ok, #uas_state{}}.
-init(Callback) ->
-    {ok, #uas_state{callback = Callback}}.
+-spec init() -> ok.
+init() ->
+    ok.
 
 -spec create_response(#sip_request{}, integer()) -> #sip_response{}.
 create_response(Request, Status) ->
@@ -38,8 +37,8 @@ create_response(Request, Status, Reason) ->
 
 %% @doc Initiate a response from the UAS
 %% @end
--spec send_response(#sip_request{}, #sip_response{}, callback_state(), #uas_state{}) -> {ok, callback_state(), #uas_state{}}.
-send_response(Request, Response, CallbackState, State) when is_record(Request, sip_request), is_record(Response, sip_response) ->
+-spec send_response(#sip_request{}, #sip_response{}, module(), state()) -> {ok, state()}.
+send_response(Request, Response, Callback, State) when is_record(Request, sip_request), is_record(Response, sip_response) ->
     % Add `To:' header tag automatically (only for non-provisional responses!)
     % FIXME: Do we need different handling of `To:' tag? For example, for 100rel tag should be
     % generated for provisional responses. However, we, probably, do not want to delegate that
@@ -49,48 +48,48 @@ send_response(Request, Response, CallbackState, State) when is_record(Request, s
     ok = do([error_m ||
              sip_message:validate_response(Response2),
              create_dialog(Request, Response2),
-             internal_send(Request, Response2, CallbackState, State)]),
-    {ok, CallbackState, State}.
+             internal_send(Request, Response2, Callback, State)]),
+    {ok, State}.
 
 
 %% @private
--spec handle_request(#sip_request{}, callback_state(), #uas_state{}) -> {ok, callback_state(), #uas_state{}}.
-handle_request(Request, CallbackState, State) ->
+-spec handle_request(#sip_request{}, module(), state()) -> {ok, state()}.
+handle_request(Request, Callback, State) ->
     % start server transaction
     {ok, _TxKey} = sip_transaction:start_server_tx(self(), Request),
 
     % validate request
     Result =
         do([error_m ||
-            validate_method(Request, CallbackState, State),
-            validate_loop(Request, CallbackState, State),
-            validate_required(Request, CallbackState, State)]),
+            validate_method(Request, Callback, State),
+            validate_loop(Request, Callback, State),
+            validate_required(Request, Callback, State)]),
     case Result of
         ok ->
             % pass to the callback
-            invoke_callback(Request, CallbackState, State);
+            invoke_callback(Request, Callback, State);
         {error, _Reason} ->
-            {ok, CallbackState, State}
+            {noreply, State}
     end.
 
 %% Validate message according to the 8.2.1
--spec validate_method(#sip_request{}, callback_state(), #uas_state{}) -> error_m:monad(ok).
-validate_method(Request, CallbackState, #uas_state{callback = Callback} = State) ->
-    Allow = Callback:allow(Request, CallbackState),
+-spec validate_method(#sip_request{}, module(), state()) -> error_m:monad(ok).
+validate_method(Request, Callback, State) ->
+    Allow = Callback:allow(Request, State),
     case lists:member(Request#sip_request.method, Allow) of
         true ->
             error_m:return(ok);
         false ->
             % Send "405 Method Not Allowed"
             % FIXME: log request?
-            ok = internal_send(Request, 405, CallbackState, State),
+            ok = internal_send(Request, 405, Callback, State),
             error_m:fail(not_allowed)
     end.
 
 %% Validate message according to the 8.2.2.2
--spec validate_loop(#sip_request{}, callback_state(), #uas_state{}) -> error_m:monad(ok).
-validate_loop(Request, CallbackState, #uas_state{callback = Callback} = State) ->
-    DetectLoops = Callback:detect_loops(Request, CallbackState),
+-spec validate_loop(#sip_request{}, module(), state()) -> error_m:monad(ok).
+validate_loop(Request, Callback, State) ->
+    DetectLoops = Callback:detect_loops(Request, State),
     IsLoop = DetectLoops andalso sip_transaction:is_loop_detected(Request),
     case IsLoop of
         false ->
@@ -98,17 +97,17 @@ validate_loop(Request, CallbackState, #uas_state{callback = Callback} = State) -
         true ->
             % Send "482 Loop Detected"
             % FIXME: log request?
-            ok = internal_send(Request, 482, CallbackState, State),
+            ok = internal_send(Request, 482, Callback, State),
             error_m:fail(loop_detected)
     end.
 
 %% Validate message according to the 8.2.2.3
--spec validate_required(#sip_request{}, callback_state(), #uas_state{}) -> error_m:monad(ok).
-validate_required(#sip_request{method = 'CANCEL'}, _Context, _State) ->
+-spec validate_required(#sip_request{}, module(), state()) -> error_m:monad(ok).
+validate_required(#sip_request{method = 'CANCEL'}, _Callback, _State) ->
     % ignore Require: for CANCEL requests
     error_m:return(ok);
-validate_required(Request, CallbackState, #uas_state{callback = Callback} = State) ->
-    Supported = Callback:supported(Request, CallbackState),
+validate_required(Request, Callback, State) ->
+    Supported = Callback:supported(Request, State),
     IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
 
     %% FIXME: Ignore for ACKs for non-2xx
@@ -121,18 +120,20 @@ validate_required(Request, CallbackState, #uas_state{callback = Callback} = Stat
             % FIXME: log request?
             Response = create_response(Request, 420),
             Response2 = sip_message:append_header(unsupported, Unsupported, Response),
-            ok = internal_send(Request, Response2, CallbackState, State),
+            ok = internal_send(Request, Response2, Callback, State),
             error_m:fail(bad_extension)
     end.
 
 
-invoke_callback(Request, CallbackState, #uas_state{callback = Callback} = State) ->
+invoke_callback(Request, Callback, State) ->
     Method = Request#sip_request.method,
-    case Callback:Method(Request, CallbackState) of
-        {noreply, CallbackState2} ->
-            {ok, CallbackState2, State};
-        {reply, Response, CallbackState2} ->
-            send_response(Request, Response, CallbackState2, State)
+    case Callback:Method(Request, State) of
+        {noreply, State2} ->
+            {noreply, State2};
+        {reply, Response, State2} ->
+            {ok, State2} =
+                send_response(Request, Response, Callback, State2),
+            {noreply, State2}
     end.
 
 
@@ -176,14 +177,14 @@ add_to_tag(Response) ->
 
 %% @doc Send with `Server:', `Allow:' and `Supported:' headers added to the response
 %% @end
-internal_send(Request, Status, CallbackState, State) when is_integer(Status) ->
-    internal_send(Request, create_response(Request, Status), CallbackState, State);
-internal_send(Request, Response, CallbackState, #uas_state{callback = Callback}) ->
+internal_send(Request, Status, Callback, State) when is_integer(Status) ->
+    internal_send(Request, create_response(Request, Status), Callback, State);
+internal_send(Request, Response, Callback, State) ->
     % Append Supported, Allow and Server headers, but only if they were not
     % added explicitly
     Fun =
         fun(Header, Acc) ->
-                HeaderValue = Callback:Header(Request, CallbackState),
+                HeaderValue = Callback:Header(Request, State),
                 sip_message:append_header(Header, HeaderValue, Acc)
         end,
     Response2 = lists:foldl(Fun, Response, [allow, supported, server]),
