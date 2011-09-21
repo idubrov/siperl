@@ -90,8 +90,9 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
 
     CSeq = sip_message:header_top_value(cseq, Response),
     ACK2 = sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK),
-    ACK3 = ACK2#sip_request{body = sdp()},
-    sip_ua:send_request(ACK3),
+    ACK3 = sip_message:append_header('content-type', <<"application/sdp">>, ACK2),
+    ACK4 = ACK3#sip_request{body = sdp()},
+    sip_ua:send_request(ACK4),
 
     % Hang up after 5 seconds
     erlang:send_after(5000, self(), {bye, to(Response), DialogId}),
