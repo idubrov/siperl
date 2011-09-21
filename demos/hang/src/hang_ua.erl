@@ -2,11 +2,11 @@
 %%% @doc UAS implementation that always responds with 486 Busy Here
 %%% @end
 %%% @copyright 2011 Ivan Dubrov
--module(hang_uac).
+-module(hang_ua).
 -extends(sip_ua_default).
 
 %% API
--export([start_link/0, is_applicable/1, call/1, init/1, sdp/0]).
+-export([start_link/0, is_applicable/1, call/1, init/1]).
 
 %% UA callbacks
 -export([handle_call/3, handle_info/2, handle_response/4]).
@@ -43,7 +43,7 @@ is_applicable(#sip_response{}) -> false.
 
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
-    io:format("HANG: Call someone by running hang_uac:call(\"SIP URI\") in console ~n"),
+    io:format("HANG: Call someone by running hang_ua:call(\"SIP URI\") in console ~n"),
     {ok, #state{}}.
 
 %% @private
@@ -61,23 +61,23 @@ handle_call({call, To}, _From, #state{} = State) ->
     {ok, RequestId} = sip_ua:send_request(Request3),
 
     % Arm timer to cancel call after 2 seconds
-    {ok, Timer} = timer:send_after(20000, {cancel, RequestId}),
+    {ok, Timer} = timer:send_after(5000, {cancel, RequestId}),
 
     % Store timer
     Timers = dict:store(RequestId, Timer, State#state.timers),
     {reply, ok, State#state{timers = Timers}}.
 
 %-spec handle_response(ReqId, Response).
-handle_response('BYE', _Response, _RequestId, State) ->
+handle_response(#sip_request{method = 'BYE'}, _Response, _RequestId, State) ->
     {noreply, State};
 
-handle_response('INVITE', #sip_response{status = Status} = Response, _RequestId, State)
+handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, _RequestId, State)
   when Status >= 100, Status =< 199 ->
     io:format("HANG: Progress from ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
     {noreply, State};
 
-handle_response('INVITE', #sip_response{status = Status} = Response, RequestId, State) when Status >= 200, Status =< 299 ->
+handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 200, Status =< 299 ->
     io:format("HANG: Got success response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
 
@@ -101,7 +101,7 @@ handle_response('INVITE', #sip_response{status = Status} = Response, RequestId, 
     State2 = cancel_timer(RequestId, State),
     {noreply, State2};
 
-handle_response('INVITE', #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
+handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
     io:format("HANG: Got failure response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
     State2 = cancel_timer(RequestId, State),
@@ -138,8 +138,8 @@ sdp() ->
     Self = sip_config:self(),
     Port = sip_binary:integer_to_binary(49000), % XXX: arbitrary port...
     <<"v=0\r\n",
-      "o=hang_uac ", Timestamp/binary, " ", Timestamp/binary, " IN IP4 ", Self/binary, "\r\n",
-      "s=hang_uac\r\n",
+      "o=hang ", Timestamp/binary, " ", Timestamp/binary, " IN IP4 ", Self/binary, "\r\n",
+      "s=hang\r\n",
       "c=IN IP4 0.0.0.0\r\n",
       "t=0 0\r\n",
       "m=audio ", Port/binary, " RTP/AVP 112 113\r\n",

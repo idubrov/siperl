@@ -25,6 +25,6 @@ start_link() ->
 %% @private
 -spec init(list()) -> {ok, _}.
 init([]) ->
-    Children = [{hang_uac, {hang_uac, start_link, []},
-                 permanent, 2000, worker, [hang_uac]}],
+    Children = [{hang_ua, {hang_ua, start_link, []},
+                 permanent, 2000, worker, [hang_ua]}],
     {ok, {{one_for_one, 1000, 3600}, Children}}.

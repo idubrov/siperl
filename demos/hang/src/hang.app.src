@@ -1,5 +1,5 @@
 {application, hang,
-  [{description, "SIP UAC that calls other party, then hangs after 10 seconds of ringing"},
+  [{description, "SIP UA that hangs after few seconds of established session"},
    {vsn, "0.1.0"},
    {applications, [kernel, stdlib, gproc, sip]},
    {mod, {hang_app,[]}},
