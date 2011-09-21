@@ -103,7 +103,9 @@ client_invite_ok(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect request to be sent by tx layer", {tp, request, Request}),
 
     % Should retransmit if unreliable, should not otherwise
@@ -160,7 +162,8 @@ client_invite_err(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     ?assertReceive("Expect first request to be sent by tx layer", {tp, request, Request}),
 
@@ -220,7 +223,9 @@ client_invite_timeout_calling(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, Request}),
 
@@ -255,7 +260,9 @@ client_invite_timeout_proceeding(Config) ->
 
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:invite(Transport),
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, Request}),
 
@@ -294,7 +301,8 @@ client_ok(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     ?assertReceive("Expect request to be sent by tx layer",
                    {tp, request, Request}),
@@ -377,7 +385,8 @@ client_timeout_trying(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, Request}),
@@ -415,7 +424,8 @@ client_timeout_proceeding(Config) ->
     To = #sip_destination{address = {127, 0, 0, 1}, port = 5060, transport = Transport},
     Request = sip_test:request('OPTIONS', Transport),
 
-    {ok, TxPid} = sip_transaction:start_client_tx(To, Request),
+    {ok, TxPid} = sip_transaction:start_client_tx(To, Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     ?assertReceive("Expect first request to be sent by tx layer",
                    {tp, request, Request}),
@@ -468,7 +478,9 @@ server_invite_ok(Config) ->
     Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Provisional response is sent by TU
@@ -519,7 +531,9 @@ server_invite_err(Config) ->
     ACK = sip_message:create_ack(Request, Response),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
@@ -579,7 +593,9 @@ server_invite_timeout(Config) ->
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
@@ -621,7 +637,8 @@ server_ok(Config) ->
     Response2 = sip_message:create_response(Request, 200, <<"Another Ok">>),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     % Further request retransmissions are ignored
     {ok, TxPid} = sip_transaction:handle_request(Request),
@@ -687,7 +704,8 @@ server_err(Config) ->
     Response = sip_message:create_response(Request, 500, <<"Internal Server Error">>),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     % 500 response is sent by TU
     sip_transaction:send_response(Response),
@@ -722,7 +740,8 @@ server_loop(Config) ->
     Response = sip_message:create_response(Request, 200, <<"Ok">>),
 
     % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
 
     % Request2 does not match the transaction, but matches criteria in 8.2.2.2
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),

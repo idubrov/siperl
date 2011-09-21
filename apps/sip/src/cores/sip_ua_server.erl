@@ -56,7 +56,7 @@ send_response(Request, Response, Callback, State) when is_record(Request, sip_re
 -spec handle_request(#sip_request{}, module(), state()) -> {ok, state()}.
 handle_request(Request, Callback, State) ->
     % start server transaction
-    {ok, _TxPid} = sip_transaction:start_server_tx(Request),
+    {ok, _TxPid} = sip_transaction:start_server_tx(Request, []),
 
     % validate request
     Result =

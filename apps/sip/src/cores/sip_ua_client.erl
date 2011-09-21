@@ -362,7 +362,9 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     % Every new client transaction must have its own branch value
     Branch = sip_idgen:generate_branch(),
     Request2 = sip_message:with_branch(Branch, Request),
-    {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2),
+
+    % FIXME: We should start monitoring transaction in case of its failure...
+    {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2, []),
 
     % Update request information
     ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
@@ -404,11 +406,14 @@ do_cancel(ReqInfo) ->
 %% @doc Send `CANCEL' transaction, update the state
 %% @end
 send_cancel(#request_info{} = ReqInfo) ->
-    % Create CANCEL request, set branch from current transaction
+    % Create CANCEL request, set branch from current transaction,
+    % start transaction without TU (fire-and-forget)
     Branch = ReqInfo#request_info.current_branch,
     Cancel = sip_message:create_cancel(ReqInfo#request_info.request),
     Cancel2 = sip_message:with_branch(Branch, Cancel),
-    {ok, CancelTxPid} = sip_transaction:start_client_tx(ReqInfo#request_info.last_destination, Cancel2, [no_tu, no_monitor]),
+
+    Destination = ReqInfo#request_info.last_destination,
+    {ok, CancelTxPid} = sip_transaction:start_client_tx(Destination, Cancel2, [{tu, none}]),
 
     ok = store(ReqInfo#request_info{cancel = true, cancel_tx = CancelTxPid}).
 

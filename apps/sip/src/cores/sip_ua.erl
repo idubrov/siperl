@@ -140,12 +140,6 @@ handle_cast(Cast, State) ->
 
 %% @private
 -spec handle_info(_, state()) -> {noreply, state()}.
-handle_info({'DOWN', _Ref, process, _TxPid, _Reason}, State) ->
-    % Ignore transaction terminations
-    % FIXME: This will ignore all other monitors!
-    % Should we unmonitor transaction when we are not interested in it?
-    {noreply, State};
-
 handle_info({response, #sip_response{} = Response, TxPid}, State) when is_pid(TxPid) ->
     % pass responses to UAC
     Callback = erlang:get(?CALLBACK),
