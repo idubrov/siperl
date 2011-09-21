@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3, lookup_dialog/1, next_sequence/1, list_dialogs/0, dialog_id/2]).
+-export([start_link/0, create_dialog/3, terminate_dialog/1, lookup_dialog/1, next_sequence/1, list_dialogs/0, dialog_id/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -41,6 +41,12 @@ create_dialog(Kind, Request, Response) when
   (Kind =:= uac orelse Kind =:= uas) ->
     Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
+
+-spec terminate_dialog(#sip_dialog_id{}) -> ok.
+%% @doc Terminate dialog based on dialog id
+%% @end
+terminate_dialog(DialogId) when is_record(DialogId, sip_dialog_id) ->
+    gen_server:call(?SERVER, {terminate_dialog, DialogId}).
 
 lookup_dialog(DialogId) ->
     gen_server:call(?SERVER, {lookup_dialog, DialogId}).
@@ -91,6 +97,10 @@ handle_call({create_dialog, Dialog}, _Client, State) ->
         true -> {reply, ok, State};
         false -> {reply, {error, dialog_exists}, State}
     end;
+
+handle_call({terminate_dialog, DialogId}, _Client, State) ->
+    true = ets:delete(State#state.table, DialogId),
+    {reply, ok, State};
 
 handle_call({lookup_dialog, DialogId}, _Client, State) ->
     case ets:lookup(State#state.table, DialogId) of

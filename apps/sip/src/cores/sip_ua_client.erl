@@ -206,7 +206,7 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
                  handle_provisional_response(ReqInfo, Response2),
                  handle_redirect_response(ReqInfo, Response2),
                  handle_failure_response(ReqInfo, Response2),
-                 handle_success_response(ReqInfo, Response2),
+                 handle_dialog_response(ReqInfo, Response2),
                  handle_final_response(ReqInfo, Response2)]),
 
     case Result of
@@ -264,10 +264,18 @@ handle_redirect_response(ReqInfo, #sip_response{status = Status} = Response) whe
 handle_redirect_response(_ReqInfo, _Response) ->
     error_m:return(ok).
 
--spec handle_success_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
-%% @doc Create dialog state, if success (2xx) response is received and request is dialog establishing
+-spec handle_dialog_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
+%% @doc Handle dialog creation/termination
+%% Create dialog, if success (2xx) response is received and request is dialog establishing.
+%% Terminate dialog, if 2xx, 481 or 408 response is received and request was `BYE'
 %% @end
-handle_success_response(ReqInfo, #sip_response{status = Status} = Response) when Status >= 200, Status =< 299 ->
+handle_dialog_response(#request_info{request = #sip_request{method = 'BYE'}}, #sip_response{status = Status} = Response)
+  when (Status >= 200 andalso Status =< 299); Status =:= 481; Status =:= 408 ->
+
+    DialogId = sip_dialog:dialog_id(uac, Response),
+    ok = sip_dialog:terminate_dialog(DialogId),
+    error_m:return(ok);
+handle_dialog_response(ReqInfo, #sip_response{status = Status} = Response) when Status >= 200, Status =< 299 ->
     Request = ReqInfo#request_info.request,
 
     case sip_message:is_dialog_establishing(Request) of
@@ -278,7 +286,7 @@ handle_success_response(ReqInfo, #sip_response{status = Status} = Response) when
             error_m:return(ok)
     end;
 
-handle_success_response(_ReqInfo, _Response) ->
+handle_dialog_response(_ReqInfo, _Response) ->
     error_m:return(ok).
 
 

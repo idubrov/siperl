@@ -61,7 +61,7 @@ handle_call({call, To}, _From, #state{} = State) ->
     {ok, RequestId} = sip_ua:send_request(Request3),
 
     % Arm timer to cancel call after 2 seconds
-    {ok, Timer} = timer:send_after(2000, {cancel, RequestId}),
+    {ok, Timer} = timer:send_after(20000, {cancel, RequestId}),
 
     % Store timer
     Timers = dict:store(RequestId, Timer, State#state.timers),
