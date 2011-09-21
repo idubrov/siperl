@@ -156,6 +156,12 @@ handle_info({request, #sip_request{} = Request}, State) ->
     Callback = erlang:get(?CALLBACK),
     sip_ua_server:handle_request(Request, Callback, State);
 
+handle_info({cancel_request, Id}, State) when is_reference(Id) ->
+    % this message is triggered by the timer from sip_ua_client which is set
+    % when Expires: header present in the initial INVITE
+    _Ignore = sip_ua_client:cancel_request(Id),
+    {noreply, State};
+
 handle_info(Info, State) ->
     Callback = erlang:get(?CALLBACK),
     Callback:handle_info(Info, State).

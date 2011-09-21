@@ -375,6 +375,9 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     % send us final response in any case
     MonitorRef = erlang:monitor(process, TxPid),
 
+    % Start expiration timer if Expires: is present
+    ok = start_expiration_timer(ReqInfo),
+
     % Update request information
     ReqInfo2 = ReqInfo#request_info{destinations = Fallback,
                                     last_destination = Top,
@@ -385,6 +388,18 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
 
     % stop processing
     error_m:fail(processed).
+
+start_expiration_timer(#request_info{request = Request} = ReqInfo) ->
+    case sip_message:has_header(expires, Request) andalso sip_message:is_dialog_establishing(Request) of
+        true ->
+            Expires = sip_message:header_top_value(expires, Request),
+            % ignore the timer reference, we do not cancel it. cancel_request will return {error, no_request}
+            % if it is too late to cancel the request (final response was received)
+            _Timer = erlang:send_after(Expires * 1000, self(), {cancel_request, ReqInfo#request_info.id}),
+            ok;
+        false ->
+            ok
+    end.
 
 collect_redirects(ReqInfo, Response) ->
     % FIXME: handle expires

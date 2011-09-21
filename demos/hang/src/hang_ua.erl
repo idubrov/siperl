@@ -9,14 +9,14 @@
 -export([start_link/0, is_applicable/1, call/1, init/1]).
 
 %% UA callbacks
--export([handle_call/3, handle_info/2, handle_response/4]).
+-export([handle_call/3, handle_response/4]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
 
 -define(SERVER, ?MODULE).
 
--record(state, {timers = dict:new()}).
+-record(state, {}).
 
 %%-----------------------------------------------------------------
 %% API
@@ -58,14 +58,9 @@ handle_call({call, To}, _From, #state{} = State) ->
 
     % Call
     io:format("HANG: Calling to ~s~n", [to(Request3)]),
-    {ok, RequestId} = sip_ua:send_request(Request3),
+    {ok, _RequestId} = sip_ua:send_request(Request3),
 
-    % Arm timer to cancel call after 2 seconds
-    {ok, Timer} = timer:send_after(5000, {cancel, RequestId}),
-
-    % Store timer
-    Timers = dict:store(RequestId, Timer, State#state.timers),
-    {reply, ok, State#state{timers = Timers}}.
+    {reply, ok, State}.
 
 %-spec handle_response(ReqId, Response).
 handle_response(#sip_request{method = 'BYE'}, _Response, _RequestId, State) ->
@@ -98,31 +93,12 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     BYE = sip_ua:create_request('BYE', DialogId),
     sip_ua:send_request(BYE),
 
-    State2 = cancel_timer(RequestId, State),
-    {noreply, State2};
+    {noreply, State};
 
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
     io:format("HANG: Got failure response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
-    State2 = cancel_timer(RequestId, State),
-    {noreply, State2}.
-
-handle_info({cancel, Id}, State) ->
-    % FIXME: Use Expires header + implement its support in sip_ua_client
-    % Cancel request
-    Result = sip_ua:cancel_request(Id),
-    io:format("HANG: Hanging up: ~p~n", [Result]),
-    {noreply, State};
-handle_info(Info, State) ->
-    {stop, {unexpected, Info}, State}.
-
-%% @doc Cancel timer associated with request
-%% @end
-cancel_timer(Ref, State) ->
-    Timer = dict:fetch(Ref, State#state.timers),
-    timer:cancel(Timer),
-    Timers = dict:erase(Ref, State#state.timers),
-    State#state{timers = Timers}.
+    {noreply, State}.
 
 to(Msg) ->
     #sip_hdr_address{uri = To} = sip_message:header_top_value(to, Msg),
