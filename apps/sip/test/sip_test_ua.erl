@@ -69,10 +69,10 @@ handle_call({send_request, Request}, From, State) ->
 handle_call(Call, _From, State) ->
     {stop, {unexpected, Call}, State}.
 
-handle_response(_Method, #sip_response{status = Status}, _RequestId, State) when Status >= 100, Status =< 199 ->
+handle_response(_Request, #sip_response{status = Status}, _RequestId, State) when Status >= 100, Status =< 199 ->
     % Ignore provisional responses
     {noreply, State};
-handle_response(_Method, Response, RequestId, State) ->
+handle_response(_Request, Response, RequestId, State) ->
     {RequestId, From} = lists:keyfind(RequestId, 1, State#state.requests),
     gen_server:reply(From, {ok, Response}),
 
