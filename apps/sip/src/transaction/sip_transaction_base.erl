@@ -128,7 +128,6 @@ terminate(Reason, _State, TxState) ->
 failed_status(#sip_tx_server{}, _Reason) -> false;
 failed_status(#sip_tx_client{}, normal) -> false;
 failed_status(#sip_tx_client{}, {timeout, _Timer}) -> 408;
-failed_status(#sip_tx_client{}, cancelled) -> 487;
 failed_status(#sip_tx_client{}, _Reason) -> 503.
 
 %% @private
