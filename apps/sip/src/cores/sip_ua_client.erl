@@ -316,8 +316,9 @@ next_uri(ReqInfo, Response, State) ->
             % FIXME: Update headers as well!
             Request = ReqInfo#request_info.request,
             Request2 = Request#sip_request{uri = URI},
+            Destinations = sip_resolve:request_destinations(Request2),
             ReqInfo2 = ReqInfo#request_info{request = Request2,
-                                            destinations = lookup_destinations(Request2),
+                                            destinations = Destinations,
                                             target_set = TargetSet2},
             next_destination(ReqInfo2, Response, State)
     end.
@@ -358,30 +359,6 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
 
     % stop processing
     error_m:fail({processed, State2}).
-
-lookup_destinations(Request) ->
-    RequestURI = Request#sip_request.uri,
-    URI =
-        case sip_message:has_header(route, Request) of
-            false -> RequestURI;
-            true ->
-                Route = sip_message:header_top_value(route, Request),
-                % See RFC3261, 8.1.2
-                % If first element in the route set is strict router,
-                % use Request-URI
-                case sip_uri:is_strict_router(Route#sip_hdr_address.uri) of
-                    true -> RequestURI;
-                    false -> Route
-                end
-        end,
-
-    % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
-    URI2 =
-        case RequestURI of
-            #sip_uri{scheme = sips} -> URI#sip_uri{scheme = sips};
-            _ -> URI
-        end,
-    sip_resolve:client_resolve(URI2).
 
 collect_redirects(ReqInfo, Response) ->
     % FIXME: handle expires

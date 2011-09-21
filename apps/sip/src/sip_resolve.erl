@@ -13,7 +13,7 @@
 %% Exports
 
 %% API
--export([server_resolve/1, client_resolve/1, resolve/1]).
+-export([server_resolve/1, client_resolve/1, resolve/1, request_destinations/1]).
 
 %% Include files
 -include("sip_common.hrl").
@@ -22,6 +22,33 @@
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
+
+-spec request_destinations(#sip_request{}) -> [#sip_destination{}].
+%% @doc Resolve destinations to send for the given SIP request according to the 8.1.2
+%% @end
+request_destinations(Request) ->
+    RequestURI = Request#sip_request.uri,
+    URI =
+        case sip_message:has_header(route, Request) of
+            false -> RequestURI;
+            true ->
+                Route = sip_message:header_top_value(route, Request),
+                % See RFC3261, 8.1.2
+                % If first element in the route set is strict router,
+                % use Request-URI
+                case sip_uri:is_strict_router(Route#sip_hdr_address.uri) of
+                    true -> RequestURI;
+                    false -> Route
+                end
+        end,
+
+    % if the Request-URI specifies a SIPS resource, consider URI to be SIPS as well
+    URI2 =
+        case sip_uri:is_sips(RequestURI) of
+            true -> URI#sip_uri{scheme = sips};
+            false -> URI
+        end,
+    client_resolve(URI2).
 
 %% @doc Generate list of destination for given URI.
 %%
