@@ -9,7 +9,7 @@
 -export([start_link/0, is_applicable/1, call/1, init/1]).
 
 %% UA callbacks
--export([handle_call/3, handle_response/4]).
+-export([handle_call/3, handle_response/4, handle_info/2]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
@@ -66,7 +66,8 @@ handle_call({call, To}, _From, #state{} = State) ->
     {reply, ok, State}.
 
 %-spec handle_response(ReqId, Response).
-handle_response(#sip_request{method = 'BYE'}, _Response, _RequestId, State) ->
+handle_response(#sip_request{method = 'BYE'}, Response, _RequestId, State) ->
+    io:format("HANG: Got ~w response on BYE from ~s~n", [Response#sip_response.status, to(Response)]),
     {noreply, State};
 
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, _RequestId, State)
@@ -92,15 +93,20 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     ACK3 = ACK2#sip_request{body = sdp()},
     sip_ua:send_request(ACK3),
 
-    % Send BYE request immediately..
-%%     BYE = sip_ua:create_request('BYE', DialogId),
-%%     sip_ua:send_request(BYE),
+    % Hang up after 5 seconds
+    erlang:send_after(5000, self(), {bye, to(Response), DialogId}),
 
     {noreply, State};
-
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
     io:format("HANG: Got failure response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
+    {noreply, State}.
+
+handle_info({bye, To, DialogId}, State) ->
+    % Send BYE request
+    io:format("HANG: Sending BYE ~s~n", [To]),
+    BYE = sip_ua:create_request('BYE', DialogId),
+    {ok, _Id} = sip_ua:send_request(BYE),
     {noreply, State}.
 
 to(Msg) ->
