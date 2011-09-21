@@ -34,11 +34,11 @@ call(To) ->
 %% UA callbacks
 %%-----------------------------------------------------------------
 -spec is_applicable(#sip_request{}) -> boolean().
-%% @doc We do not serve any requests. We server 2xx responses (which could
-%% be additional 2xx responses to our requests).
+%% @doc Serve requests to user `hang' and also extra 2xx responses.
 %% @end
-is_applicable(#sip_request{}) -> false;
+is_applicable(#sip_request{uri = #sip_uri{user = <<"hang">>}}) -> true;
 is_applicable(#sip_response{status = Status}) when Status >= 200; Status =< 299 -> true;
+is_applicable(#sip_request{}) -> false;
 is_applicable(#sip_response{}) -> false.
 
 -spec init({}) -> {ok, #state{}}.
@@ -50,15 +50,18 @@ init({}) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, ok, #state{}}.
 handle_call({call, To}, _From, #state{} = State) ->
     Request = sip_ua:create_request('INVITE', sip_headers:address(<<>>, To, [])),
-    Contact = sip_headers:address(<<"Hang">>, <<"sip:127.0.0.1:5060">>, []),
+    Contact = sip_headers:address(<<"Hang">>, <<"sip:hang@127.0.0.1:5060">>, []),
     Request2 = sip_message:append_header(contact, Contact, Request),
 
+    From = Contact#sip_hdr_address{params = [{tag, sip_idgen:generate_tag()}]},
+    Request3 = sip_message:replace_top_header(from, From, Request2),
+
     % Request will be cancelled automatically after 5 seconds
-    Request3 = sip_message:append_header(expires, 5, Request2),
+    Request4 = sip_message:append_header(expires, 5, Request3),
 
     % Call
-    io:format("HANG: Calling to ~s~n", [to(Request3)]),
-    {ok, _RequestId} = sip_ua:send_request(Request3),
+    io:format("HANG: Calling to ~s~n", [to(Request4)]),
+    {ok, _RequestId} = sip_ua:send_request(Request4),
 
     {reply, ok, State}.
 
@@ -90,8 +93,8 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     sip_ua:send_request(ACK3),
 
     % Send BYE request immediately..
-    BYE = sip_ua:create_request('BYE', DialogId),
-    sip_ua:send_request(BYE),
+%%     BYE = sip_ua:create_request('BYE', DialogId),
+%%     sip_ua:send_request(BYE),
 
     {noreply, State};
 

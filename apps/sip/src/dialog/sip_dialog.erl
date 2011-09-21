@@ -62,8 +62,8 @@ dialog_id(Kind, Msg) ->
     CallId = sip_message:header_top_value('call-id', Msg),
     To = sip_message:header_top_value(to, Msg),
 
-    ToTag = tag(to, To),
-    FromTag = tag(from, From),
+    ToTag = tag(To),
+    FromTag = tag(From),
     case Kind of
         uac ->
             #sip_dialog_id{call_id = CallId, local_tag = FromTag, remote_tag = ToTag};
@@ -103,8 +103,13 @@ handle_call({create_dialog, Dialog}, _Client, State) ->
     end;
 
 handle_call({terminate_dialog, DialogId}, _Client, State) ->
-    true = ets:delete(State#state.table, DialogId),
-    {reply, ok, State};
+    case ets:member(State#state.table, DialogId) of
+        true ->
+            true = ets:delete(State#state.table, DialogId),
+            {reply, ok, State};
+        false ->
+            {reply, {error, no_dialog}, State}
+    end;
 
 handle_call({lookup_dialog, DialogId}, _Client, State) ->
     case ets:lookup(State#state.table, DialogId) of
@@ -162,8 +167,8 @@ dialog_state(Kind, Request, Response) ->
     % MUST have tag for uas, MAY have no tag for uac (RFC 2543 does not enforce usage of tags)
     To = sip_message:header_top_value(to, Response),
 
-    ToTag = tag(to, To),
-    FromTag = tag(from, From),
+    ToTag = tag(To),
+    FromTag = tag(From),
 
     IsSecure = (Via#sip_hdr_via.transport =:= tls) andalso sip_uri:is_sips(Request#sip_request.uri),
 
@@ -197,9 +202,9 @@ dialog_state(Kind, Request, Response) ->
                         route_set = RouteSet}
     end.
 
-tag(HeaderName, Header) ->
+tag(Header) ->
     case lists:keyfind(tag, 1, Header#sip_hdr_address.params) of
-        false when HeaderName =:= from ->
+        false ->
             % UAC must be prepared to receive no tag in To:
             % UAS must be prepared to receive no tag in From:
             <<>>;
