@@ -38,7 +38,7 @@ create_session(DialogId) ->
 terminate_session(DialogId) ->
     ok.
 
--spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> ok.
+-spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> {ok, #sip_dialog_id{}}.
 %% @doc Create new dialog for given pair of request/response
 %% @end
 create_dialog(Kind, Request, Response) when
@@ -110,8 +110,9 @@ handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
         true ->
             % notify
-            gen_event:notify(sip_dialog_man, {dialog_created, Dialog#sip_dialog.id, Dialog#sip_dialog.owner}),
-            {reply, ok, State};
+            DialogId = Dialog#sip_dialog.id,
+            gen_event:notify(sip_dialog_man, {dialog_created, DialogId, Dialog#sip_dialog.owner}),
+            {reply, {ok, DialogId}, State};
         false -> {reply, {error, dialog_exists}, State}
     end;
 

@@ -206,6 +206,7 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
                  handle_failure_response(ReqInfo, Response2),
                  handle_dialog_response(ReqInfo, Response2),
                  handle_final_response(ReqInfo, Response2)]),
+    % FIXME: 12.2.1.2
 
     case Result of
         ok ->
@@ -264,7 +265,7 @@ handle_redirect_response(_ReqInfo, _Response) ->
 
 -spec handle_dialog_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
 %% @doc Handle dialog creation/termination
-%% Create dialog, if success (2xx) response is received and request is dialog establishing.
+%% Create dialog, if success (2xx) response is received and request is not within a dialog.
 %% Terminate dialog, if 2xx, 481 or 408 response is received and request was `BYE'
 %% @end
 handle_dialog_response(#request_info{request = #sip_request{method = 'BYE'}}, #sip_response{status = Status} = Response)
@@ -273,14 +274,16 @@ handle_dialog_response(#request_info{request = #sip_request{method = 'BYE'}}, #s
     DialogId = sip_dialog:dialog_id(uac, Response),
     ok = sip_dialog:terminate_dialog(DialogId),
     error_m:return(ok);
-handle_dialog_response(ReqInfo, #sip_response{status = Status} = Response) when Status >= 200, Status =< 299 ->
-    Request = ReqInfo#request_info.request,
 
-    case sip_message:is_dialog_establishing(Request) of
-        true ->
-            ok = sip_dialog:create_dialog(uac, Request, Response),
-            error_m:return(ok);
+handle_dialog_response(#request_info{request = Request}, #sip_response{status = Status} = Response)
+  when Status >= 200, Status =< 299, Request#sip_request.method =:= 'INVITE' ->
+    case sip_message:is_within_dialog(Request) of
         false ->
+            {ok, DialogId} = sip_dialog:create_dialog(uac, Request, Response),
+            ok = sip_dialog:create_session(DialogId), % session is created upon 2xx response receival
+            error_m:return(ok);
+        true ->
+            % Response to re-INVITE
             error_m:return(ok)
     end;
 

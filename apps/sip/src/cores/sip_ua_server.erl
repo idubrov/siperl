@@ -51,7 +51,7 @@ send_response(Request, Response, Callback) when is_record(Request, sip_request),
 
     do([error_m ||
         sip_message:validate_response(Response2),
-        create_dialog(Request, Response2),
+        create_dialog_session(Request, Response2),
         internal_send(Request, Response2, Callback)]).
 
 %% @private
@@ -189,15 +189,22 @@ invoke_callback(Request, Callback, State) ->
     end.
 
 
-%% @doc Create dialog if response is dialog creating response
+%% @doc Create dialog and session if response 2xx and request is 'INVITE' not within a dialog
 %% @end
-create_dialog(#sip_request{} = Request, #sip_response{status = Status} = Response) ->
-    case sip_message:is_dialog_establishing(Request) of
-        true when Status >= 200, Status =< 299 ->
-            sip_dialog:create_dialog(uas, Request, Response);
-        _Other ->
+create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} = Response) 
+  when Status >= 200, Status =< 299, Request#sip_request.method =:= 'INVITE' ->
+    case sip_message:is_within_dialog(Request) of
+        false ->
+            {ok, DialogId} = sip_dialog:create_dialog(uas, Request, Response),
+            ok = sip_dialog:create_session(DialogId), % session is created upon 2xx response sending
+            error_m:return(ok);
+        true ->
+            % Response to re-INVITE
             error_m:return(ok)
-    end.
+    end;
+
+create_dialog_session(_Request, _Response) ->
+    error_m:return(ok).
 
 %% @doc Copy Record-Route for dialog-establishing responses
 %% @end
