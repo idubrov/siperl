@@ -148,7 +148,7 @@ update_remote_seq(Request, Callback) ->
                 {error, out_of_order} ->
                     % Send "500 Server Internal Error"
                     ok = internal_send(Request, 500, Callback),
-                    error_m:fail(no_dialog)
+                    error_m:fail(out_of_order)
             end
     end.
 
