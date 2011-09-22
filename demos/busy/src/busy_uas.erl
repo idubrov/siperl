@@ -60,7 +60,7 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
     Timers = dict:store(TxKey, Timer, Context#context.timers),
     {reply, Ringing, Context#context{timers = Timers}}.
 
--spec 'CANCEL'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
+-spec 'CANCEL'(#sip_request{}, #context{}) -> {default, #context{}}.
 'CANCEL'(Request, Context) ->
     io:format("BUSY: ~s has cancelled the call~n", [from(Request)]),
 
@@ -70,7 +70,7 @@ allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
     Timers = dict:erase(TxKey, Context#context.timers),
 
     % Delegate to standard UAS CANCEL handling
-    sip_ua_default:'CANCEL'(Request, Context#context{timers = Timers}).
+    {default, Context#context{timers = Timers}}.
 
 -spec handle_info({reply, #sip_request{}}, #context{}) -> {noreply, #context{}}.
 handle_info({reply, Request}, Context) ->

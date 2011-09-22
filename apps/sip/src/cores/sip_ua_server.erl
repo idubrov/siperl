@@ -65,7 +65,7 @@ handle_request(Request, Callback, State) ->
             %validate_uris(Request, Callback, State),
             validate_loop(Request, Callback, State),
             validate_required(Request, Callback, State),
-            update_dialog(Request, Callback, State)]),
+            update_remote_seq(Request, Callback, State)]),
 
     case Result of
         ok ->
@@ -124,10 +124,10 @@ validate_required(Request, Callback, State) ->
             error_m:fail(bad_extension)
     end.
 
--spec update_dialog(#sip_request{}, module(), state()) -> error_m:monad(ok).
-%% @doc Validate and update dialog according to the 12.2.2
+-spec update_remote_seq(#sip_request{}, module(), state()) -> error_m:monad(ok).
+%% @doc Validate and update remote sequence according to the 12.2.2
 %% @end
-update_dialog(Request, Callback, State) ->
+update_remote_seq(Request, Callback, State) ->
     case sip_message:is_within_dialog(Request) of
         false ->
             error_m:return(ok); % not within dialog
@@ -153,6 +153,10 @@ update_dialog(Request, Callback, State) ->
 invoke_callback(Request, Callback, State) ->
     Method = Request#sip_request.method,
     case Callback:Method(Request, State) of
+        {default, State2} ->
+            % delegate to default handler
+            % note: sip_ua_default should never return {default, State}
+            invoke_callback(Request, sip_ua_default, State2);
         {noreply, State2} ->
             {noreply, State2};
         {reply, Response, State2} ->
