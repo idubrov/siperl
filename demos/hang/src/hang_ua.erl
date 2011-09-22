@@ -9,14 +9,14 @@
 -export([start_link/0, is_applicable/1, call/1, init/1]).
 
 %% UA callbacks
--export([handle_call/3, handle_response/4, handle_info/2]).
+-export([handle_call/3, handle_response/4, handle_info/2, 'BYE'/2]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {timers = []}).
 
 %%-----------------------------------------------------------------
 %% API
@@ -95,9 +95,10 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     sip_ua:send_request(ACK4),
 
     % Hang up after 5 seconds
-    erlang:send_after(5000, self(), {bye, to(Response), DialogId}),
+    TimerRef = erlang:send_after(5000, self(), {bye, to(Response), DialogId}),
+    Timers = [{DialogId, TimerRef} | State#state.timers],
 
-    {noreply, State};
+    {noreply, State#state{timers = Timers}};
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
     io:format("HANG: Got failure response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
@@ -113,6 +114,26 @@ handle_info({bye, To, DialogId}, State) ->
 to(Msg) ->
     #sip_hdr_address{uri = To} = sip_message:header_top_value(to, Msg),
     binary_to_list(sip_uri:format(To)).
+
+-spec 'BYE'(#sip_request{}, #state{}) -> {noreply, #state{}} | {reply, #sip_response{}, #state{}}.
+%% @doc Got `BYE', cancel our own `BYE' timer
+%% @end
+'BYE'(Request, State) ->
+    DialogId = sip_dialog:dialog_id(uas, Request),
+    State2 = cancel_bye_timer(DialogId, State),
+    {default, State2}.
+
+cancel_bye_timer(DialogId, State) ->
+    case lists:keyfind(DialogId, 1, State#state.timers) of
+        false -> State;
+        {DialogId, TimerRef} ->
+            _Ignore = erlang:cancel_timer(TimerRef),
+            receive {bye, _To, DialogId} -> ok % flush timer message
+            after 0 -> ok
+            end,
+            Timers = lists:keydelete(DialogId, 1, State#state.timers),
+            State#state{timers = Timers}
+    end.
 
 %% @doc Generate fake SDP
 %% Our UAC immediately sends BYE after 2xx response is received. Since UAC MUST
