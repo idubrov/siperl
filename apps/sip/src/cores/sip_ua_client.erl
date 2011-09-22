@@ -370,10 +370,13 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
 
     ok = tx_demonitor(ReqInfo),
     {ok, TxPid} = sip_transaction:start_client_tx(Top, Request2, []),
-
     % Actually, we should never receive 'DOWN' message since transaction should
     % send us final response in any case
     MonitorRef = erlang:monitor(process, TxPid),
+
+    % Once BYE is passed to client transaction, consider session terminated
+    DialogId = sip_dialog:dialog_id(uac, Request),
+    ok = sip_dialog:terminate_session(DialogId),
 
     % Start expiration timer if Expires: is present
     ok = start_expiration_timer(ReqInfo),
