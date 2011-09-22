@@ -7,7 +7,7 @@
 -module(sip_dialog).
 
 %% API
--export([start_link/0, create_dialog/3, terminate_dialog/1, lookup_dialog/1, next_sequence/1, update_sequence/2, list_dialogs/0, dialog_id/2]).
+-export([start_link/0, create_dialog/3, terminate_dialog/1, lookup_dialog/1, next_local_seq/1, update_remote_seq/2, list_dialogs/0, dialog_id/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -71,15 +71,15 @@ dialog_id(Kind, Msg) ->
             #sip_dialog_id{call_id = CallId, local_tag = ToTag, remote_tag = FromTag}
     end.
 
--spec next_sequence(#sip_dialog_id{}) -> {ok, sip_sequence()} | {error, no_dialog}.
+-spec next_local_seq(#sip_dialog_id{}) -> {ok, sip_sequence()} | {error, no_dialog}.
 %% @doc Increase local sequence number by one and return new value
 %% @end
-next_sequence(#sip_dialog_id{} = DialogId) ->
-    gen_server:call(?SERVER, {next_sequence, DialogId}).
+next_local_seq(#sip_dialog_id{} = DialogId) ->
+    gen_server:call(?SERVER, {next_local_seq, DialogId}).
 
--spec update_sequence(#sip_dialog_id{}, sip_sequence()) -> ok | {error, no_dialog} | {error, out_of_order}.
-update_sequence(#sip_dialog_id{} = DialogId, Sequence) ->
-    gen_server:call(?SERVER, {update_sequence, DialogId, Sequence}).
+-spec update_remote_seq(#sip_dialog_id{}, sip_sequence()) -> ok | {error, no_dialog} | {error, out_of_order}.
+update_remote_seq(#sip_dialog_id{} = DialogId, Sequence) ->
+    gen_server:call(?SERVER, {update_remote_seq, DialogId, Sequence}).
 
 -spec list_dialogs() -> [#sip_dialog{}].
 %% @doc List all active dialogs
@@ -121,7 +121,7 @@ handle_call({lookup_dialog, DialogId}, _Client, State) ->
         [Dialog] -> {reply, {ok, Dialog}, State}
     end;
 
-handle_call({next_sequence, DialogId}, _Client, State) ->
+handle_call({next_local_seq, DialogId}, _Client, State) ->
     case catch ets:update_counter(State#state.table, DialogId, {#sip_dialog.local_seq, 1}) of
         {'EXIT', {badarg, _Pos}} ->
             {reply, {error, no_dialog}, State};
@@ -129,15 +129,16 @@ handle_call({next_sequence, DialogId}, _Client, State) ->
             {reply, {ok, Sequence}, State}
     end;
 
-handle_call({update_sequence, DialogId, Sequence}, _Client, State) ->
+handle_call({update_remote_seq, DialogId, Sequence}, _Client, State) ->
     case catch ets:lookup_element(State#state.table, DialogId, #sip_dialog.remote_seq) of
         {'EXIT', {badarg, _Pos}} ->
             {reply, {error, no_dialog}, State};
-        RemoteSequence when RemoteSequence =:= undefined;
-                            Sequence > RemoteSequence ->
+
+        RemoteSequence when RemoteSequence =:= undefined; Sequence > RemoteSequence ->
             true = ets:update_element(State#state.table, DialogId, {#sip_dialog.remote_seq, Sequence}),
             {reply, ok, State};
-        % XXX: RFC 3261 says "lower", but we return out of order for equal too
+
+        % XXX: RFC 3261 says "lower", but we return "out of order" for equal too
         _RemoteSequence ->
             {reply, {error, out_of_order}, State}
     end;

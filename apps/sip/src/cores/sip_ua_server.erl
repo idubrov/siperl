@@ -134,7 +134,7 @@ update_dialog(Request, Callback, State) ->
         true ->
             DialogId = sip_dialog:dialog_id(uas, Request),
             CSeq = sip_message:header_top_value(cseq, Request),
-            case sip_dialog:update_sequence(DialogId, CSeq#sip_hdr_cseq.sequence) of
+            case sip_dialog:update_remote_seq(DialogId, CSeq#sip_hdr_cseq.sequence) of
                 ok ->
                     error_m:return(ok);
 

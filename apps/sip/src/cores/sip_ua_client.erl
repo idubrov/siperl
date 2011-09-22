@@ -112,7 +112,7 @@ create_request(Method, #sip_dialog_id{} = DialogId) ->
         case Method of
             'ACK' -> 0; % FIXME!!! What should we have here?
             _Other ->
-                {ok, S} = sip_dialog:next_sequence(DialogId),
+                {ok, S} = sip_dialog:next_local_seq(DialogId),
                 S
         end,
     CSeq = {cseq, sip_headers:cseq(LocalSequence, Method)},
