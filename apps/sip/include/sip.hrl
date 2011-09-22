@@ -190,7 +190,8 @@
          remote_uri         :: sip_uri(),
          remote_target_uri  :: sip_uri(),
          secure             :: boolean(),
-         route_set          :: [sip_uri()]}).
+         route_set          :: [sip_uri()],
+         owner              :: pid()}).
 
 %%-----------------------------------------------------------------
 %% SIP UAC/UAS

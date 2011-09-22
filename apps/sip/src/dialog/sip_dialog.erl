@@ -102,14 +102,20 @@ init({}) ->
                  (list_dialogs, gen_from(), #state{}) -> {reply, [#sip_dialog{}], #state{}}.
 handle_call({create_dialog, Dialog}, _Client, State) ->
     case ets:insert_new(State#state.table, Dialog) of
-        true -> {reply, ok, State};
+        true ->
+            % notify
+            gen_event:notify(sip_dialog_man, {dialog_created, Dialog#sip_dialog.id, Dialog#sip_dialog.owner}),
+            {reply, ok, State};
         false -> {reply, {error, dialog_exists}, State}
     end;
 
 handle_call({terminate_dialog, DialogId}, _Client, State) ->
     case ets:member(State#state.table, DialogId) of
         true ->
+            Owner = ets:lookup_element(State#state.table, DialogId, #sip_dialog.owner),
             true = ets:delete(State#state.table, DialogId),
+            % notify
+            gen_event:notify(sip_dialog_man, {dialog_terminated, DialogId, Owner}),
             {reply, ok, State};
         false ->
             {reply, {error, no_dialog}, State}
@@ -204,7 +210,8 @@ dialog_state(Kind, Request, Response) ->
                         remote_uri = From#sip_hdr_address.uri,
                         remote_target_uri = RemoteContact#sip_hdr_address.uri,
                         secure = IsSecure,
-                        route_set = RouteSet};
+                        route_set = RouteSet,
+                        owner = self()};
 
         uac ->
             RemoteContact = sip_message:header_top_value(contact, Response),
@@ -217,7 +224,8 @@ dialog_state(Kind, Request, Response) ->
                         remote_uri = To#sip_hdr_address.uri,
                         remote_target_uri = RemoteContact#sip_hdr_address.uri,
                         secure = IsSecure,
-                        route_set = RouteSet}
+                        route_set = RouteSet,
+                        owner = self()}
     end.
 
 tag(Header) ->

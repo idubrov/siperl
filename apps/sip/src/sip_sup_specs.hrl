@@ -12,3 +12,6 @@
         {Name, {Module, start_link, Args},
          permanent, 2000, worker, [Module]}).
 
+-define(SERVER(Name, Module, Args, Modules),
+        {Name, {Module, start_link, Args},
+         permanent, 2000, worker, Modules}).
