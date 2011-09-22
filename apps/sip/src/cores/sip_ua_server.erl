@@ -159,8 +159,11 @@ handle_bye_request(#sip_request{method = 'BYE'} = Request, Callback) ->
     DialogId = sip_dialog:dialog_id(uas, Request),
     Status =
         case sip_dialog:terminate_dialog(DialogId) of
-            ok -> 200; % Ok
-            {error, no_dialog} -> 481 % Call/Transaction Does Not Exist
+            ok ->
+                % this will terminate session as well
+                200; % Ok
+            {error, no_dialog} ->
+                481 % Call/Transaction Does Not Exist
         end,
     ok = internal_send(Request, Status, Callback),
 
