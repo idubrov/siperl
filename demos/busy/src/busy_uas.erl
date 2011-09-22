@@ -44,7 +44,7 @@ is_applicable(#sip_request{}) -> false;
 is_applicable(#sip_response{}) -> false.
 
 -spec allow(#sip_request{}) -> [atom()].
-allow(_Request) -> ['INVITE', 'CANCEL'].
+allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE'].
 
 -spec 'INVITE'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
 'INVITE'(Request, Context) ->
