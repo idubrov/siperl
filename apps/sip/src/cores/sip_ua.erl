@@ -104,9 +104,10 @@ send_request(Request) when is_record(Request, sip_request) ->
 cancel_request(Id) when is_reference(Id) ->
     sip_ua_client:cancel_request(Id).
 
--spec send_response(#sip_request{}, #sip_response{}) -> ok.
+-spec send_response(#sip_request{}, #sip_response{}) -> ok | {error, Reason :: term()}.
 send_response(Request, Response) ->
-    gen_server:cast(self(), {send_response, Request, Response}).
+    Callback = erlang:get(?CALLBACK),
+    sip_ua_server:send_response(Request, Response, Callback).
 
 %%-----------------------------------------------------------------
 %% Server callbacks
@@ -134,11 +135,6 @@ handle_call(Req, From, State) ->
 
 -spec handle_cast({send_response, #sip_request{}, #sip_response{}}, state()) -> {noreply, state()};
                  (term(), state()) -> {noreply, state()} | {stop, term(), state()}.
-handle_cast({send_response, Request, Response}, State) ->
-    Callback = erlang:get(?CALLBACK),
-    {ok, State2} = sip_ua_server:send_response(Request, Response, Callback, State),
-    {noreply, State2};
-
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
 
