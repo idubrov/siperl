@@ -67,7 +67,8 @@ handle_request(Request, Callback, State) ->
             % FIXME: 8.2.2.1 validation..
             %validate_uris(Request, Callback, State),
             validate_loop(Request, Callback),
-            validate_required(Request, Callback)]),
+            validate_required(Request, Callback),
+            handle_bye_request(Request, Callback)]),
 
     case Result of
         ok ->
@@ -150,6 +151,25 @@ update_remote_seq(Request, Callback) ->
                     error_m:fail(no_dialog)
             end
     end.
+
+-spec handle_bye_request(#sip_request{}, state()) -> error_m:monad(ok).
+%% @doc Default handling of `BYE' requests
+%% @end
+handle_bye_request(#sip_request{method = 'BYE'} = Request, Callback) ->
+    DialogId = sip_dialog:dialog_id(uas, Request),
+    Status =
+        case sip_dialog:terminate_dialog(DialogId) of
+            ok -> 200; % Ok
+            {error, no_dialog} -> 481 % Call/Transaction Does Not Exist
+        end,
+    ok = internal_send(Request, Status, Callback),
+
+    % FIXME: The UAS MUST still respond to any pending requests received for that dialog.
+    % How should we do that? Keep a dialog for some time?
+    error_m:fail(processed);
+
+handle_bye_request(_Request, _Callback) ->
+    error_m:return(ok).
 
 invoke_callback(Request, Callback, State) ->
     Method = Request#sip_request.method,

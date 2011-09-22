@@ -6,7 +6,7 @@
 -module(sip_ua_default).
 
 %% API
--export([allow/1, supported/1, server/1, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, 'BYE'/2]).
+-export([allow/1, supported/1, server/1, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2]).
 -export([handle_response/4, handle_info/2, handle_call/3]).
 
 %% Include files
@@ -55,21 +55,6 @@ server(_Request) ->
             {ok, _TxKey} -> 200 % Ok
         end,
     Response = sip_ua:create_response(Request, Status),
-    {reply, Response, State}.
-
--spec 'BYE'(#sip_request{}, state()) -> {noreply, state()} | {reply, #sip_response{}, state()}.
-%% @doc Default handling of `BYE' method
-%% @end
-'BYE'(Request, State) ->
-    DialogId = sip_dialog:dialog_id(uas, Request),
-    Status =
-        case sip_dialog:terminate_dialog(DialogId) of
-            ok -> 200; % Ok
-            {error, no_dialog} -> 481 % Call/Transaction Does Not Exist
-        end,
-    Response = sip_ua:create_response(Request, Status),
-    % FIXME: The UAS MUST still respond to any pending requests received for that dialog.
-    % How should we do that? Keep a dialog for some time?
     {reply, Response, State}.
 
 -spec handle_response(sip_name(), #sip_response{}, reference(), state()) -> {noreply, state()}.
