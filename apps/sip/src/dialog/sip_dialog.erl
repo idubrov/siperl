@@ -8,6 +8,7 @@
 
 %% API
 -export([start_link/0, create_dialog/3, terminate_dialog/1, lookup_dialog/1, next_local_seq/1, update_remote_seq/2, list_dialogs/0, dialog_id/2]).
+-export([create_session/1, terminate_session/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -31,6 +32,11 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
+create_session(DialogId) ->
+    ok.
+
+terminate_session(DialogId) ->
+    ok.
 
 -spec create_dialog(uac | uas, #sip_request{}, #sip_response{}) -> ok.
 %% @doc Create new dialog for given pair of request/response
@@ -114,6 +120,7 @@ handle_call({terminate_dialog, DialogId}, _Client, State) ->
         true ->
             Owner = ets:lookup_element(State#state.table, DialogId, #sip_dialog.owner),
             true = ets:delete(State#state.table, DialogId),
+            % FIXME: Notify about session being terminated!
             % notify
             gen_event:notify(sip_dialog_man, {dialog_terminated, DialogId, Owner}),
             {reply, ok, State};
