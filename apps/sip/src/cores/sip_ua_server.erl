@@ -58,12 +58,15 @@ handle_request(Request, Callback, State) ->
     % start server transaction
     {ok, _TxPid} = sip_transaction:start_server_tx(Request, []),
 
-    % validate request
     Result =
         do([error_m ||
             validate_method(Request, Callback, State),
+            % FIXME: 8.2.2.1 validation..
+            %validate_uris(Request, Callback, State),
             validate_loop(Request, Callback, State),
-            validate_required(Request, Callback, State)]),
+            validate_required(Request, Callback, State),
+            update_dialog(Request, Callback, State)]),
+
     case Result of
         ok ->
             % pass to the callback
@@ -81,7 +84,6 @@ validate_method(Request, Callback, State) ->
             error_m:return(ok);
         false ->
             % Send "405 Method Not Allowed"
-            % FIXME: log request?
             ok = internal_send(Request, 405, Callback, State),
             error_m:fail(not_allowed)
     end.
@@ -96,7 +98,6 @@ validate_loop(Request, Callback, State) ->
             error_m:return(ok);
         true ->
             % Send "482 Loop Detected"
-            % FIXME: log request?
             ok = internal_send(Request, 482, Callback, State),
             error_m:fail(loop_detected)
     end.
@@ -117,13 +118,37 @@ validate_required(Request, Callback, State) ->
             error_m:return(ok);
         Unsupported ->
             % Send "420 Bad Extension"
-            % FIXME: log request?
             Response = create_response(Request, 420),
             Response2 = sip_message:append_header(unsupported, Unsupported, Response),
             ok = internal_send(Request, Response2, Callback, State),
             error_m:fail(bad_extension)
     end.
 
+-spec update_dialog(#sip_request{}, module(), state()) -> error_m:monad(ok).
+%% @doc Validate and update dialog according to the 12.2.2
+%% @end
+update_dialog(Request, Callback, State) ->
+    case sip_message:is_within_dialog(Request) of
+        false ->
+            error_m:return(ok); % not within dialog
+        true ->
+            DialogId = sip_dialog:dialog_id(uas, Request),
+            CSeq = sip_message:header_top_value(cseq, Request),
+            case sip_dialog:update_sequence(DialogId, CSeq#sip_hdr_cseq.sequence) of
+                ok ->
+                    error_m:return(ok);
+
+                {error, no_dialog} ->
+                    % Send "481 Call/Transaction Does Not Exist"
+                    ok = internal_send(Request, 481, Callback, State),
+                    error_m:fail(no_dialog);
+
+                {error, out_of_order} ->
+                    % Send "500 Server Internal Error"
+                    ok = internal_send(Request, 500, Callback, State),
+                    error_m:fail(no_dialog)
+            end
+    end.
 
 invoke_callback(Request, Callback, State) ->
     Method = Request#sip_request.method,

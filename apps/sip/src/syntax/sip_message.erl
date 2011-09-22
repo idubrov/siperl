@@ -11,7 +11,7 @@
 %%-----------------------------------------------------------------
 %% Exports
 %%-----------------------------------------------------------------
--export([method/1, is_secure/1, is_dialog_establishing/1]).
+-export([method/1, is_secure/1, is_within_dialog/1, is_dialog_establishing/1]).
 -export([validate_request/1, validate_response/1, validate_contact/2]).
 -export([parse_stream/2, parse_datagram/1, parse_all_headers/1, to_binary/1]).
 -export([create_ack/2, create_cancel/1, create_response/2, create_response/3]).
@@ -55,15 +55,22 @@ is_secure(Request) when is_record(Request, sip_request) ->
 
     sip_uri:is_sips(Request#sip_request.uri) orelse sip_uri:is_sips(RROrContactURI).
 
--spec is_dialog_establishing(#sip_request{}) -> boolean().
-%% @doc Check if SIP request is dialog-establishing
+-spec is_within_dialog(#sip_request{}) -> boolean().
+%% @doc Check if SIP request is within dialog (has tag in To: header)
 %% @end
-is_dialog_establishing(#sip_request{method = 'INVITE'} = Request) ->
+is_within_dialog(#sip_request{} = Request) ->
     To = sip_message:header_top_value(to, Request),
     case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
-        false -> true; % no tag in To: header, method is INVITE
-        {tag, _ToTag} -> false
-    end;
+        false -> false;
+        {tag, _ToTag} -> true
+    end.
+
+-spec is_dialog_establishing(#sip_request{}) -> boolean().
+%% @doc Check if SIP request is dialog-establishing
+%% Dialog-establishing request is 'INVITE' which is outside of the dialog.
+%% @end
+is_dialog_establishing(#sip_request{method = 'INVITE'} = Request) ->
+    not is_within_dialog(Request);
 is_dialog_establishing(#sip_request{}) ->
     false.
 
