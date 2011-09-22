@@ -23,7 +23,7 @@
 %%-----------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
-    sip_ua:start_link({local, ?SERVER}, ?MODULE, {}).
+    sip_ua:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 -spec call(string()) -> ok.
 call(To) ->

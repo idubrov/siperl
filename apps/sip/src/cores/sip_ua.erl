@@ -19,7 +19,7 @@
 -compile({parse_transform, do}).
 
 %% API
--export([start_link/2, start_link/3]).
+-export([start_link/3, start_link/4]).
 -export([create_request/2, send_request/1, cancel_request/1]). % UAC
 -export([create_response/2, create_response/3, send_response/2]). % UAS
 
@@ -39,15 +39,17 @@
 -type callback() ::  sip_ua_client:callback(). % Response callback
 -export_type([callback/0]).
 
+-type options() :: [no_detect_loops].
+
 %% API
 
--spec start_link(atom(), module(), term()) -> {ok, pid()} | {error, term()}.
-start_link(Name, Callback, Args) ->
-    gen_server:start_link(Name, ?MODULE, {Callback, Args}, []).
+-spec start_link(atom(), module(), term(), options()) -> {ok, pid()} | {error, term()}.
+start_link(Name, Callback, Args, Opts) when is_atom(Callback), is_list(Opts) ->
+    gen_server:start_link(Name, ?MODULE, {Callback, Args, Opts}, []).
 
--spec start_link(module(), term()) -> {ok, pid()} | {error, term()}.
-start_link(Callback, Args) ->
-    gen_server:start_link(?MODULE, {Callback, Args}, []).
+-spec start_link(module(), term(), options()) -> {ok, pid()} | {error, term()}.
+start_link(Callback, Args, Opts) when is_atom(Callback), is_list(Opts) ->
+    gen_server:start_link(?MODULE, {Callback, Args, Opts}, []).
 
 %% @doc Create request outside of the dialog according to the 8.1.1 Generating the Request
 %%
@@ -112,9 +114,9 @@ send_response(Request, Response) ->
 
 %% @private
 -spec init({module(), term()}) -> {ok, state()}.
-init({Callback, Args}) ->
-    ok = sip_ua_client:init(),
-    ok = sip_ua_server:init(),
+init({Callback, Args, Opts}) ->
+    ok = sip_ua_client:init(Opts),
+    ok = sip_ua_server:init(Opts),
 
     {ok, State} = Callback:init(Args),
 

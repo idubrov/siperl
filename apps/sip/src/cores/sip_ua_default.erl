@@ -6,7 +6,7 @@
 -module(sip_ua_default).
 
 %% API
--export([allow/2, supported/2, server/2, detect_loops/2, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, 'BYE'/2]).
+-export([allow/1, supported/1, server/1, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2, 'BYE'/2]).
 -export([handle_response/4, handle_info/2, handle_call/3]).
 
 %% Include files
@@ -22,26 +22,20 @@
 is_applicable(#sip_request{} = _Request) -> true;
 is_applicable(#sip_response{} = _Response) -> true.
 
--spec allow(#sip_request{}, state()) -> [atom()].
+-spec allow(#sip_request{}) -> [atom()].
 %% @doc Return list of methods, supported by this callback
 %% @end
-allow(_Request, _Context) -> ['BYE', 'OPTIONS', 'CANCEL'].
+allow(_Request) -> ['BYE', 'OPTIONS', 'CANCEL'].
 
--spec detect_loops(#sip_request{}, state()) -> boolean().
-%% @doc Should UAS detect loops for this request
-%% @end
-detect_loops(_Request, _Context) ->
-    true.
-
--spec supported(#sip_request{}, state()) -> [atom()].
+-spec supported(#sip_request{}) -> [atom()].
 %% @doc List of supported extensions for this request
 %% @end
-supported(_Request, _Context) -> [].
+supported(_Request) -> [].
 
--spec server(#sip_request{}, state()) -> binary().
+-spec server(#sip_request{}) -> binary().
 %% @doc Return server name to put into Server: header
 %% @end
-server(_Request, _Context) ->
+server(_Request) ->
     sip_config:server().
 
 -spec 'OPTIONS'(#sip_request{}, state()) -> {noreply, state()} | {reply, #sip_response{}, state()}.

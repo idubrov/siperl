@@ -6,7 +6,7 @@
 -extends(sip_ua_default).
 
 %% UA callbacks
--export([start_link/0, init/1, is_applicable/1, allow/2, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
+-export([start_link/0, init/1, is_applicable/1, allow/1, 'INVITE'/2, 'CANCEL'/2, handle_info/2]).
 
 %% Include files
 -include_lib("sip/include/sip.hrl").
@@ -20,7 +20,7 @@
 %%-----------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
-    sip_ua:start_link({local, ?SERVER}, ?MODULE, {}).
+    sip_ua:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %%-----------------------------------------------------------------
 %% UA callbacks
@@ -43,8 +43,8 @@ is_applicable(#sip_request{uri = #sip_uri{user = <<"busy">>}}) -> true;
 is_applicable(#sip_request{}) -> false;
 is_applicable(#sip_response{}) -> false.
 
--spec allow(#sip_request{}, #context{}) -> [atom()].
-allow(_Request, _Context) -> ['INVITE', 'CANCEL'].
+-spec allow(#sip_request{}) -> [atom()].
+allow(_Request) -> ['INVITE', 'CANCEL'].
 
 -spec 'INVITE'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
 'INVITE'(Request, Context) ->

@@ -27,7 +27,7 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/0, create_request/2, send_request/1, cancel_request/1, handle_response/4]).
+-export([init/1, create_request/2, send_request/1, cancel_request/1, handle_response/4]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -62,8 +62,8 @@
 %% Internal API
 %%-----------------------------------------------------------------
 
--spec init() -> ok.
-init() ->
+-spec init(list()) -> ok.
+init(_Opts) ->
     erlang:put(?REQUESTS, []),
     ok.
 

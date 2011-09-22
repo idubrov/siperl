@@ -9,7 +9,7 @@
 
 %% API
 -export([start_link/1, send_options/2, send_invite/2]).
--export([detect_loops/2, allow/2, 'OPTIONS'/2, 'INVITE'/2]).
+-export([allow/1, 'OPTIONS'/2, 'INVITE'/2]).
 -export([init/1, handle_call/3, handle_response/4]).
 
 %% Include files
@@ -24,7 +24,7 @@
 %%-----------------------------------------------------------------
 -spec start_link(fun(() -> ok)) -> {ok, pid()} | {error, term()}.
 start_link(Handler) ->
-    sip_ua:start_link(?MODULE, {Handler}).
+    sip_ua:start_link(?MODULE, {Handler}, [no_detect_loops]).
 
 -spec send_options(pid(), #sip_hdr_address{}) -> #sip_response{}.
 send_options(Server, To) ->
@@ -44,11 +44,8 @@ send_invite(Server, To) ->
 init({Handler}) ->
     {ok, #state{handler = Handler, requests = []}}.
 
-detect_loops(_Request, _State) ->
-    false.
-
--spec allow(#sip_request{}, #state{}) -> [atom()].
-allow(_Request, _Context) -> ['INVITE', 'OPTIONS'].
+-spec allow(#sip_request{}) -> [atom()].
+allow(_Request) -> ['INVITE', 'OPTIONS'].
 
 'OPTIONS'(Request, #state{handler = Handler} = State) ->
     Response = response(Request, Handler),

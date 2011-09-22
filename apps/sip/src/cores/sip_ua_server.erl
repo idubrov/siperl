@@ -9,11 +9,14 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/0, create_response/2, create_response/3, send_response/4, handle_request/3]).
+-export([init/1, create_response/2, create_response/3, send_response/4, handle_request/3]).
 
 %% Include files
 -include("../sip_common.hrl").
 -include("sip.hrl").
+
+%% Process dictionary key for loop options
+-define(DETECT_LOOPS, sip_ua_server_detect_loops).
 
 -type state() :: term().     % Callback module state
 
@@ -21,8 +24,9 @@
 %% Internal API
 %%-----------------------------------------------------------------
 
--spec init() -> ok.
-init() ->
+-spec init(list()) -> ok.
+init(Opts) ->
+    erlang:put(?DETECT_LOOPS, not proplists:get_bool(no_detect_loops, Opts)),
     ok.
 
 -spec create_response(#sip_request{}, integer()) -> #sip_response{}.
@@ -78,7 +82,7 @@ handle_request(Request, Callback, State) ->
 %% Validate message according to the 8.2.1
 -spec validate_method(#sip_request{}, module(), state()) -> error_m:monad(ok).
 validate_method(Request, Callback, State) ->
-    Allow = Callback:allow(Request, State),
+    Allow = Callback:allow(Request),
     case lists:member(Request#sip_request.method, Allow) of
         true ->
             error_m:return(ok);
@@ -91,8 +95,7 @@ validate_method(Request, Callback, State) ->
 %% Validate message according to the 8.2.2.2
 -spec validate_loop(#sip_request{}, module(), state()) -> error_m:monad(ok).
 validate_loop(Request, Callback, State) ->
-    DetectLoops = Callback:detect_loops(Request, State),
-    IsLoop = DetectLoops andalso sip_transaction:is_loop_detected(Request),
+    IsLoop = detect_loops() andalso sip_transaction:is_loop_detected(Request),
     case IsLoop of
         false ->
             error_m:return(ok);
@@ -108,7 +111,7 @@ validate_required(#sip_request{method = 'CANCEL'}, _Callback, _State) ->
     % ignore Require: for CANCEL requests
     error_m:return(ok);
 validate_required(Request, Callback, State) ->
-    Supported = Callback:supported(Request, State),
+    Supported = Callback:supported(Request),
     IsNotSupported = fun (Ext) -> not lists:member(Ext, Supported) end,
 
     %% FIXME: Ignore for ACKs for non-2xx
@@ -208,15 +211,22 @@ add_to_tag(Response) ->
 %% @end
 internal_send(Request, Status, Callback, State) when is_integer(Status) ->
     internal_send(Request, create_response(Request, Status), Callback, State);
-internal_send(Request, Response, Callback, State) ->
+internal_send(Request, Response, Callback, _State) ->
     % Append Supported, Allow and Server headers, but only if they were not
     % added explicitly
     Fun =
         fun(Header, Acc) ->
-                HeaderValue = Callback:Header(Request, State),
+                HeaderValue = Callback:Header(Request),
                 sip_message:append_header(Header, HeaderValue, Acc)
         end,
     Response2 = lists:foldl(Fun, Response, [allow, supported, server]),
 
     {ok, _TxPid} = sip_transaction:send_response(Response2),
     ok.
+
+%%-----------------------------------------------------------------
+%% State management (functions that use process dictionary)
+%%-----------------------------------------------------------------
+
+detect_loops() ->
+    erlang:get(?DETECT_LOOPS).
