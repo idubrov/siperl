@@ -2,35 +2,6 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UDP SIP socket implementation.
 %%%
-%%% This module could operate in two modes: listening UDP process and
-%%% "connected" UDP process.
-%%%
-%%% When started without destination address, process is started in
-%%% listening mode. In this mode process accepts all messages on given
-%%% port.
-%%%
-%%% When started with destination address, process is started in
-%%% "connected" mode. This mode differs from regular mode in the
-%%% following:
-%%% <ul>
-%%% <li>UDP socket created uses ephemeral port. Note that according
-%%% to the RFC 3261 18.1.1 responses are sent to the port in Via: sent-by,
-%%% therefore, in general, in this mode process will not receive any
-%%% UDP messages.</li>
-%%% <li>When started, process connects to the destination address
-%%% via `gen_udp:connect/3'. This allows receiving subsequent ICMP
-%%% errors.</li>
-%%% <li>When started, process registers via `gproc' under
-%%% {udp, RemoteAddr, RemotePort} local name.</li>
-%%% <li>If no request or message is received within configured timeout,
-%%% process terminates.</li>
-%%% </ul>
-%%% This mode is suitable for communicating with the remote party.
-%%%
-%%% <em>Since this process register itself with `gproc' in "connected"
-%%% mode, the same process should be used by all parties communicating
-%%% with same remote address</em>
-%%%
 %%% <em>Note: transport is responsible for basic validation of
 %%% incoming requests/responses and sending "400 Bad Request/Response".</em>
 %%% @end
@@ -81,26 +52,17 @@ send(Pid, To, Message) when
 %%-----------------------------------------------------------------
 
 %% @private
--spec start_link(integer() | #sip_destination{}) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Param) when is_integer(Param); is_record(Param, sip_destination) ->
-    gen_server:start_link(?MODULE, Param, []).
+-spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Port) when is_integer(Port) ->
+    gen_server:start_link(?MODULE, Port, []).
 
 %% @private
--spec init(integer() | #sip_destination{}) -> {ok, #state{}}.
-init(Port) when is_integer(Port) ->
+-spec init(integer()) -> {ok, #state{}}.
+init(Port) ->
     {ok, Socket} = gen_udp:open(Port, [binary, inet, {reuseaddr, true}]),
-    true = gproc:add_local_name({udp, Port}), % used for looking up socket to send response from
-    {ok, #state{socket = Socket}};
-init(#sip_destination{address = ToAddr, port = ToPort}) ->
-    {ok, Socket} = gen_udp:open(0, [binary, inet, {reuseaddr, true}]),
-
-    % connect and register local name, so it could be reused by another client
-    ok = gen_udp:connect(Socket, ToAddr, ToPort),
-    true = gproc:add_local_name({udp, ToAddr, ToPort}),
-
-    % "connected" sockets should terminate after timeout to free resources
-    Timeout = sip_config:connection_timeout(),
-    {ok, #state{socket = Socket, timeout = Timeout}, Timeout}.
+    % used for looking up socket
+    true = gproc:add_local_name({udp, Port}),
+    {ok, #state{socket = Socket}}.
 
 %% @private
 -spec handle_info({udp, inet:socket(), inet:address(), integer(), binary()} | term(), #state{}) ->

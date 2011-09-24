@@ -45,8 +45,8 @@ start_client_tx(Destination, Request, Options)
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(Destination#sip_destination.transport),
 
-    TxState = #tx_state{destination = Destination, reliable = Reliable},
-    do_start_tx(client, Request, Options, TxState).
+    TxState = #tx_state{reliable = Reliable},
+    do_start_tx(client, Request, Options, TxState, Destination).
 
 %% @doc Start new server transaction
 %%
@@ -64,18 +64,20 @@ start_server_tx(Request, Options)
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
     TxState = #tx_state{reliable = Reliable},
-    do_start_tx(server, Request, Options, TxState).
+    do_start_tx(server, Request, Options, TxState, undefined).
 
 %% Start transaction process
-do_start_tx(Kind, Request, Options, TxState) ->
+do_start_tx(Kind, Request, Options, TxState, Destination) ->
     TU = proplists:get_value(tu, Options, self()), % Default TU is self
     TxKey = tx_key(Kind, Request),
     Module = tx_module(Kind, Request),
-    TxState2 = TxState#tx_state{tx_key = TxKey,
+    Props = tx_props(Kind, TxKey, Request, Destination),
+    TxState2 = TxState#tx_state{destination = Destination,
+                                tx_key = TxKey,
                                 tx_user = TU,
                                 request = Request,
                                 options = Options,
-                                props = tx_props(Kind, TxKey, Request)},
+                                props = Props},
 
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
     ok = gen_fsm:send_event(Pid, {init, TxState2}),
@@ -235,8 +237,12 @@ tx_send(Key, Info) ->
             {ok, Pid}
     end.
 
-tx_props(client, _TxKey, #sip_request{}) -> [];
-tx_props(server, TxKey, #sip_request{} = Msg) ->
+tx_props(client, _TxKey, #sip_request{}, #sip_destination{address = Address, port = Port}) ->
+    % Add gproc: property for transport error detection, see sip_transport_icmp module
+    Prop = {udp_destination, Address, Port},
+    [{Prop, true}];
+
+tx_props(server, TxKey, #sip_request{} = Msg, _To) ->
     % Add gproc: property for loop detection for server transactions, see 8.2.2.2
     From = sip_message:header_top_value(from, Msg),
     case lists:keyfind(tag, 1, From#sip_hdr_address.params) of

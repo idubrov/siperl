@@ -37,7 +37,8 @@ init({}) ->
 
     Children = [?SUPERVISOR(sip_transport_udp_sup, [UDP]),
                 ?SUPERVISOR(sip_transport_tcp_sup, [TCP]),
-                ?SERVER(sip_transport, sip_transport, [])],
+                ?SERVER(sip_transport, sip_transport, []),
+                ?SERVER(sip_transport_icmp, sip_transport_icmp, [])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
 
 %%-----------------------------------------------------------------
