@@ -43,8 +43,19 @@ start_link() ->
 %% @private
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
-    {ok, Socket} = gen_icmp:open(),
-    {ok, #state{socket = Socket}}.
+    % if functionality is unavailable (for example, due to the permissions),
+    % gen_icmp process will die
+    process_flag(trap_exit, true),
+    case catch gen_icmp:open() of
+        {ok, Socket} ->
+            % now we need to detect failures in ICMP socket
+            process_flag(trap_exit, false),
+            {ok, #state{socket = Socket}};
+        Reason ->
+            % report and stop, not a critical error
+            sip_log:no_icmp(Reason),
+            ignore
+    end.
 
 %% @private
 -spec handle_call(_, _, #state{}) -> {reply, {term(), integer()}, #state{}} | {stop, _, #state{}}.
