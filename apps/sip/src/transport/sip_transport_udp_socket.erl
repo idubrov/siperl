@@ -89,13 +89,14 @@ start_link(Param) when is_integer(Param); is_record(Param, sip_destination) ->
 -spec init(integer() | #sip_destination{}) -> {ok, #state{}}.
 init(Port) when is_integer(Port) ->
     {ok, Socket} = gen_udp:open(Port, [binary, inet, {reuseaddr, true}]),
+    true = gproc:add_local_name({udp, Port}), % used for looking up socket to send response from
     {ok, #state{socket = Socket}};
 init(#sip_destination{address = ToAddr, port = ToPort}) ->
     {ok, Socket} = gen_udp:open(0, [binary, inet, {reuseaddr, true}]),
 
     % connect and register local name, so it could be reused by another client
     ok = gen_udp:connect(Socket, ToAddr, ToPort),
-    gproc:add_local_name({udp, ToAddr, ToPort}),
+    true = gproc:add_local_name({udp, ToAddr, ToPort}),
 
     % "connected" sockets should terminate after timeout to free resources
     Timeout = sip_config:connection_timeout(),

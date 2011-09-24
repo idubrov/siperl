@@ -118,21 +118,27 @@ send_response(Response) when is_record(Response, sip_response) ->
 %% @doc See RFC 3261 18.2.2 Sending Responses
 %% @end
 send_response_received(Response) ->
-    Via = sip_message:header_top_value('via', Response),
+    Via = sip_message:header_top_value(via, Response),
+    Params = Via#sip_hdr_via.params,
     Transport = Via#sip_hdr_via.transport,
     IsReliable = is_reliable(Transport),
-    Port = Via#sip_hdr_via.port,
-    case lists:keyfind('maddr', 1, Via#sip_hdr_via.params) of
+    case lists:keyfind(maddr, 1, Params) of
         {_, MAddr} when not IsReliable ->
             % use 'maddr' parameter for unreliable transports
             Addr = sip_resolve:resolve(MAddr),
+            Port = Via#sip_hdr_via.port,
             To = #sip_destination{address = Addr, port = Port, transport = Transport},
             transport_send(To, Response);
         false ->
-            case lists:keyfind('received', 1, Via#sip_hdr_via.params) of
-                % use 'received' parameter, must be IP
-                {_, Received} when is_tuple(Received),
-                                   (size(Received) =:= 4 orelse size(Received) =:= 8) ->
+            case lists:keyfind(received, 1, Params) of
+                % use received parameter, must be IP
+                {_, Received} ->
+                    % if rport is present, send to it, RFC 3581 4
+                    Port =
+                        case lists:keyfind(rport, 1, Params) of
+                            {rport, RPort} -> RPort;
+                            false -> Via#sip_hdr_via.port
+                        end,
                     To = #sip_destination{address = Received, port = Port, transport = Transport},
                     transport_send(To, Response);
                 false ->
@@ -142,7 +148,6 @@ send_response_received(Response) ->
                     send_response_fallback(Destinations, Response)
             end
     end.
-
 
 %% @doc Try sending response to destinations from the list
 %% @end
@@ -161,7 +166,7 @@ send_response_fallback([To|Rest], Response) ->
 
 %% @doc Dispatch request/response, received by the transport socket.
 %%
-%% Dispatch request/response received through given connection. This function
+%% Dispatch request/response received from given destination. This function
 %% is called by concrete transport implementations.
 %% @end
 %% @private
@@ -241,18 +246,20 @@ check_sent_by(Transport, Msg) ->
 % it contains an IP address that differs from the packet source address, the
 % server MUST add a "received" parameter to that Via header field value.
 % RFC 3261, 18.2.1
-add_via_received(#sip_destination{address = Src}, Msg) when is_tuple(Src) ->
-    Fun = fun (TopVia) ->
-                   % compare byte-to-byte with packet source address
-                   case TopVia#sip_hdr_via.host of
-                       Src -> TopVia;
-                       _ ->
-                           Params = lists:keystore(received, 1, TopVia#sip_hdr_via.params,
-                                                   {received, Src}),
-                           TopVia#sip_hdr_via{params = Params}
-                   end
-          end,
-    sip_message:update_top_header('via', Fun, Msg).
+
+add_via_received(#sip_destination{address = Src, port = Port}, Msg) when is_tuple(Src) ->
+    % Note: according to the RFC 3581 4, we always add 'received' parameter
+    Fun =
+        fun (TopVia) ->
+                 Params = lists:keystore(received, 1, TopVia#sip_hdr_via.params, {received, Src}),
+                 UpdateRPort =
+                     fun(rport) -> {rport, Port};
+                        (Value) -> Value
+                     end,
+                 Params2 = lists:map(UpdateRPort, Params),
+                 TopVia#sip_hdr_via{params = Params2}
+        end,
+    sip_message:update_top_header(via, Fun, Msg).
 
 %% @doc
 %% Default transports ports
@@ -265,11 +272,11 @@ default_port(tcp) -> 5060.
 sent_by(Transport) ->
     gen_server:call(?SERVER, {get_sentby, Transport}).
 
-%% @doc
-%% Send the message through the transport.
+%% @doc Send the message through the transport.
 %% @end
 transport_send(#sip_destination{port = undefined} = To, Message) ->
-    transport_send(To#sip_destination{port = default_port(To#sip_destination.transport)}, Message);
+    DefaultPort = default_port(To#sip_destination.transport),
+    transport_send(To#sip_destination{port = DefaultPort}, Message);
 transport_send(To, Message) when is_record(To, sip_destination)->
     Module = transport_module(To#sip_destination.transport),
     Module:send(To, Message);

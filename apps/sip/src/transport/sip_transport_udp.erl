@@ -22,15 +22,25 @@
 send(To, Message) when
   is_record(To, sip_destination),
   (is_record(Message, sip_request) orelse is_record(Message, sip_response)) ->
-    Pid = lookup_socket(To),
+    Pid = lookup_socket(To, Message),
     sip_transport_udp_socket:send(Pid, To, Message).
 
 
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
-lookup_socket(To) ->
-    Key = {n, l, {udp, To#sip_destination.address, To#sip_destination.port}},
+lookup_socket(To, Message) ->
+    Key = case Message of
+              #sip_request{} ->
+                  % try to lookup socket "connected" to given destination
+                  {n, l, {udp, To#sip_destination.address, To#sip_destination.port}};
+              #sip_response{} ->
+                  % we always send responses using the same socket we have
+                  % received it on
+                  % this is requirement of RFC 3581 4
+                  [Port | _] = sip_config:ports(udp),
+                  {n, l, {udp, Port}}
+          end,
 
     % Lookup for the socket
     case gproc:lookup_pids(Key) of

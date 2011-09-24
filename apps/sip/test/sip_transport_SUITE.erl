@@ -194,7 +194,7 @@ receive_response_udp_wrong(Config) ->
     end.
 
 %% - send request through the UDP socket (destination is IP address)
-%% - receive the request from the transport layer
+%% - receive the request from the transport layer, check that 'received' attribute is added
 receive_request_udp(Config) ->
     UDP = ?config(udp, Config),
 
@@ -206,7 +206,8 @@ receive_request_udp(Config) ->
     ok = gen_udp:send(UDP, "127.0.0.1", 15060, sip_message:to_binary(Request)),
     receive
         {request, Msg} ->
-            Request = sip_message:parse_all_headers(Msg);
+            ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
+            ExpectedRequest = sip_message:parse_all_headers(Msg);
 
         {response, _Msg} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
@@ -227,9 +228,7 @@ receive_request_udp2(Config) ->
 
     receive
         {request, Msg} ->
-            ExpectedVia = sip_headers:via(udp, {"localhost", 25060}, [{branch, Branch}, {received, {127, 0, 0, 1}}]),
-            ExpectedRequest = sip_message:replace_top_header('via', ExpectedVia, Request),
-
+            ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
             ExpectedRequest = sip_message:parse_all_headers(Msg);
 
         {response, _Msg2} -> ?fail("Response is not expected here")
@@ -314,7 +313,8 @@ receive_request_send_response_tcp(_Config) ->
     ok = gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
         {request, Msg} ->
-            Request = sip_message:parse_all_headers(Msg);
+            ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
+            ExpectedRequest = sip_message:parse_all_headers(Msg);
 
         {response, _Msg} ->
             ?fail("Response is not expected here")
@@ -351,7 +351,8 @@ receive_request_send_response_tcp_reconnect(Config) ->
     ok = gen_tcp:send(Socket, sip_message:to_binary(Request)),
     receive
         {request, Msg} ->
-            Request = sip_message:parse_all_headers(Msg);
+            ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
+            ExpectedRequest = sip_message:parse_all_headers(Msg);
 
         {response, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")
@@ -394,3 +395,8 @@ send_request_udp_fallback_tcp(Config) ->
     {ok, ExpectedRequestBin} = gen_tcp:recv(RecvSocket, size(ExpectedRequestBin), ?TIMEOUT),
     ok = gen_tcp:close(RecvSocket),
     ok.
+
+add_via_param(Msg, Param) ->
+    Via = sip_message:header_top_value(via, Msg),
+    Via2 = Via#sip_hdr_via{params = Via#sip_hdr_via.params ++ [Param]},
+    sip_message:replace_top_header(via, Via2, Msg).

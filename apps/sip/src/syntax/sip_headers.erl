@@ -1073,15 +1073,16 @@ fold_header(HeaderLine, List) ->
     [{Name3, sip_binary:trim_leading(Value)} | List].
 
 %% Parse standard Via: parameters
-parse_via_param('ttl', TTL) -> sip_binary:binary_to_integer(TTL);
-parse_via_param('maddr', MAddr) ->
+parse_via_param(ttl, TTL) -> sip_binary:binary_to_integer(TTL);
+parse_via_param(maddr, MAddr) ->
     case sip_syntax:parse_ip_address(MAddr) of
         {ok, Addr} -> Addr;
         {error, einval} -> binary_to_list(MAddr)
     end;
-parse_via_param('received', Received) ->
+parse_via_param(received, Received) ->
     {ok, Addr} = sip_syntax:parse_ip_address(Received),
     Addr;
+parse_via_param(rport, Value) -> sip_binary:binary_to_integer(Value);
 parse_via_param(_Name, Value) -> Value.
 
 %% Parse q parameter (used mostly in accept headers)
@@ -1304,8 +1305,8 @@ parse_headers_test_() ->
                     address(<<>>, <<"sip:anonymous@example.com">>, [{param, <<"va lue">>}])],
                    parse('contact', <<"Bob <sip:bob@biloxi.com>;q=0.1, \"Alice\" <sip:alice@atlanta.com>;q=0.2, <sip:anonymous@example.com>;param=\"va lue\"">>)),
      ?_assertEqual('*', parse('contact', <<"*">>)),
-     ?_assertEqual([address(<<>>, <<"sip:bob@biloxi.com">>, []),
-                    address(<<>>, <<"sip:alice@atlanta.com">>, [])],
+     ?_assertEqual([address(<<"sip:bob@biloxi.com">>),
+                    address(<<"sip:alice@atlanta.com">>)],
                    parse('contact', <<"sip:bob@biloxi.com, sip:alice@atlanta.com">>)),
      ?_assertEqual([address(<<"Mr. Watson">>, <<"sip:watson@worcester.bell-telephone.com">>, [{q, 0.7}, {expires, 3600}]),
                     address(<<"Mr. Watson">>, <<"mailto:watson@bell-telephone.com">>, [{q, 0.1}])],
@@ -1577,6 +1578,17 @@ parse_headers_test_() ->
      ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{ttl, 3}, {maddr, "sip.mcast.net"}, {received, {127, 0, 0, 1}}, {branch, <<"z9hG4bK776asdhds">>}])],
                    parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;ttl=3;maddr=sip.mcast.net;received=127.0.0.1;branch=z9hG4bK776asdhds">>)),
 
+     % rport
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}, rport])],
+                   parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds;rport">>)),
+     ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds;rport">>,
+                   format('via', [via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}, rport])])),
+
+     ?_assertEqual([via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}, {rport, 5061}])],
+                   parse('via', <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds;rport=5061">>)),
+     ?_assertEqual(<<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bK776asdhds;rport=5061">>,
+                   format('via', [via(udp, {"pc33.atlanta.com", undefined}, [{branch, <<"z9hG4bK776asdhds">>}, {rport, 5061}])])),
+
      % Warning
      ?_assertEqual([warning(307, <<"isi.edu">>, <<"Session parameter 'foo' not understood">>),
                     warning(301, <<"isi.edu">>, <<"Incompatible network address type 'E.164'">>)],
@@ -1627,11 +1639,7 @@ parse_headers_test_() ->
      ?_assertEqual(<<"123.35">>, format_value(123.35)),
      ?_assertEqual(<<"example.com">>, format_value("example.com")),
      ?_assertEqual(<<"10.0.0.1">>, format_value({10, 0, 0, 1})),
-     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, format_value({8193,3512,4515,2519,7988,35374,1952,30301})),
-
-     % Check parameter without values are parsed as atoms/binaries inside list
-     ?_assertEqual({[rport, <<"another">>], <<>>}, parse_params(<<";rport;another">>, fun parse_generic_param/2)),
-     ?_assertEqual(<<";rport;another=true">>, format_params(<<>>, [rport, {<<"another">>, true}]))
+     ?_assertEqual(<<"[2001:0db8:11a3:09d7:1f34:8a2e:07a0:765d]">>, format_value({8193,3512,4515,2519,7988,35374,1952,30301}))
     ].
 
 -spec utility_test_() -> list().
