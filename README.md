@@ -77,4 +77,4 @@ API Notes
 Implemented RFCs
 ----------------
 * [RFC 3261](http://tools.ietf.org/html/rfc3261 "RFC 3261") SIP: Session Initiation Protocol (partial support)
-* [RFC 6026](http://tools.ietf.org/html/rfc6026 "RFC 6026") "Correct Transaction Handling for 2xx Responses to Session Initiation Protocol (SIP) INVITE Requests"
+* [RFC 6026](http://tools.ietf.org/html/rfc6026 "RFC 6026") Correct Transaction Handling for 2xx Responses to Session Initiation Protocol (SIP) INVITE Requests
