@@ -78,7 +78,7 @@ do_start_tx(Kind, Request, Options, TxState) ->
                                 props = tx_props(Kind, TxKey, Request)},
 
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
-    ok = gen_fsm:sync_send_event(Pid, {init, TxState2}),
+    ok = gen_fsm:send_event(Pid, {init, TxState2}),
     {ok, Pid}.
 
 -spec list_tx() -> [#sip_tx_client{} | #sip_tx_server{}].
@@ -106,9 +106,7 @@ cancel(#sip_request{method = 'CANCEL'} = Request) ->
                           -> Pid end),
     case gproc:select(names, MS) of
         [Pid] ->
-            ok = try gen_fsm:sync_send_event(Pid, cancel)
-                 catch error:noproc -> false % no transaction to handle
-                 end,
+            ok = gen_fsm:send_event(Pid, cancel),
             {ok, Pid};
         [] -> false
     end.
@@ -233,9 +231,7 @@ tx_send(Key, Info) ->
             not_handled;
 
         Pid when is_pid(Pid) ->
-            ok = try gen_fsm:sync_send_event(Pid, Info)
-                 catch error:noproc -> not_handled % no transaction to handle
-                 end,
+            ok = gen_fsm:send_event(Pid, Info),
             {ok, Pid}
     end.
 

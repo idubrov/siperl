@@ -1,10 +1,10 @@
-%%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc
 %%% RFC 3261 17.1.2 Non-INVITE Client Transaction
 %%% @end
+%%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3261</a>.
+%%% @reference See <a href="http://tools.ietf.org/html/rfc6026">RFC 6026</a>.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
-%%%----------------------------------------------------------------
 -module(sip_transaction_client).
 -extends(sip_transaction_base).
 
@@ -18,15 +18,15 @@
 -include("sip_transaction.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/3, 'TRYING'/2, 'TRYING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
+-export(['INIT'/2, 'TRYING'/2, 'PROCEEDING'/2, 'COMPLETED'/2]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {reply, ok, 'TRYING', #tx_state{}}.
-'INIT'({init, TxState}, _From, undefined) ->
+-spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'TRYING', #tx_state{}}.
+'INIT'({init, TxState}, undefined) ->
     gproc:mreg(p, l, TxState#tx_state.props),
 
     % start Timer E only for unreliable transports
@@ -39,11 +39,11 @@
     TxState3 = ?START(timerF, 64 * ?T1, TxState2),
     % send request
     ok = sip_transaction_base:send_request(TxState3#tx_state.request, TxState3),
-    {reply, ok, 'TRYING', TxState3}.
+    {next_state, 'TRYING', TxState3}.
 
+-spec 'TRYING'(term(), #tx_state{}) -> term().
 %% @doc Handle retransmission timer (Timer E).
 %% @end
--spec 'TRYING'(term(), #tx_state{}) -> term().
 'TRYING'({timeout, _Ref, {timerE, Interval}}, TxState) ->
     ok = sip_transaction_base:send_request(TxState#tx_state.request, TxState),
 
@@ -56,21 +56,20 @@
 %% Transaction timed out.
 %% @end
 'TRYING'({timeout, _Ref, {timerF, _}}, TxState) ->
-    {stop, {timeout, timerF}, TxState}.
+    {stop, {timeout, timerF}, TxState};
 
 %% @doc
 %% Handle provisional (1xx) responses. This handles both 'TRYING' and 'PROCEEDING'
 %% states as they are similar.
 %% @end
--spec 'TRYING'(term(), term(), #tx_state{}) -> term().
-'TRYING'({response, Status, Response}, _From, TxState)
+'TRYING'({response, Status, Response}, TxState)
   when Status >= 100, Status =< 199 ->
     %% Provisional response, transition to PROCEEDING state.
 
     ok = sip_transaction_base:pass_to_tu(Response, TxState),
-    {reply, ok, 'PROCEEDING', TxState};
+    {next_state, 'PROCEEDING', TxState};
 
-'TRYING'({response, Status, Response}, _From, TxState)
+'TRYING'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 699 ->
     %% Final response, transition to COMPLETED state.
 
@@ -84,23 +83,23 @@
     case TxState3#tx_state.reliable of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, TxState3};
+            {stop, normal, TxState3};
         false ->
             TxState4 = ?START(timerK, ?T4, TxState3),
-            {reply, ok, 'COMPLETED', TxState4}
+            {next_state, 'COMPLETED', TxState4}
     end.
 
+-spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 %% @doc In 'PROCEEDING' state, act the same way as in 'TRYING' state.
 %% @end
--spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
-'PROCEEDING'({response, Status, Msg}, From, TxState) ->
-    'TRYING'({response, Status, Msg}, From, TxState).
+'PROCEEDING'({response, Status, Msg}, TxState) ->
+    'TRYING'({response, Status, Msg}, TxState);
 
 %% @doc If Timer E fires while in the "Proceeding" state, the request MUST be
 %% passed to the transport layer for retransmission, and Timer E MUST be
 %% reset with a value of T2 seconds.
 %% @end
--spec 'PROCEEDING'(term(), #tx_state{}) -> term().
+
 'PROCEEDING'({timeout, _Ref, {timerE, _Interval}}, TxState) ->
     ok = sip_transaction_base:send_request(TxState#tx_state.request, TxState),
 
@@ -112,16 +111,15 @@
 'PROCEEDING'({timeout, _Ref, {timerF, _}}, TxState) ->
     {stop, {timeout, timerF}, TxState}.
 
+-spec 'COMPLETED'(term(), #tx_state{}) -> term().
 %% @doc Buffer additional response retransmissions.
 %% @end
--spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
-'COMPLETED'({response, _Status, _Response}, _From, TxState) ->
-    {reply, ok, 'COMPLETED', TxState}.
+'COMPLETED'({response, _Status, _Response}, TxState) ->
+    {next_state, 'COMPLETED', TxState};
 
 %% @doc
 %% When Timer K fires while in 'COMPLETED' state, transition to the 'TERMINATED'
 %% state.
 %% @end
--spec 'COMPLETED'(term(), #tx_state{}) -> term().
 'COMPLETED'({timeout, _Ref, {timerK, _}}, TxState) ->
     {stop, normal, TxState}.

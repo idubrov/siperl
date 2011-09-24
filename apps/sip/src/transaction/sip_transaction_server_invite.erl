@@ -2,6 +2,8 @@
 %%% @doc
 %%% RFC 3261 17.2.1 INVITE Server Transaction
 %%% @end
+%%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3261</a>.
+%%% @reference See <a href="http://tools.ietf.org/html/rfc6026">RFC 6026</a>.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_transaction_server_invite).
 -extends(sip_transaction_base).
@@ -16,15 +18,15 @@
 -include("sip_transaction.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3, 'CONFIRMED'/2, 'CONFIRMED'/3, 'ACCEPTED'/2, 'ACCEPTED'/3]).
+-export(['INIT'/2, 'PROCEEDING'/2, 'COMPLETED'/2, 'CONFIRMED'/2, 'ACCEPTED'/2]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {reply, ok, 'PROCEEDING', #tx_state{}}.
-'INIT'({init, TxState}, _From, undefined) ->
+-spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'PROCEEDING', #tx_state{}}.
+'INIT'({init, TxState}, undefined) ->
     gproc:mreg(p, l, TxState#tx_state.props),
 
     % send provisional response
@@ -32,19 +34,19 @@
     TxState2 = TxState#tx_state{provisional = Trying},
 
     ok = sip_transaction_base:send_response(Trying, TxState2),
-    {reply, ok, 'PROCEEDING', TxState2}.
+    {next_state, 'PROCEEDING', TxState2}.
 
--spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
+-spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 %% @doc If a request retransmission is received while in the "Proceeding" state, the
 %% most recent provisional response that was received from the TU MUST be passed
 %% to the transport layer for retransmission.
 %% @end
-'PROCEEDING'({request, _Method, _Request}, _From, TxState) ->
+'PROCEEDING'({request, _Method, _Request}, TxState) ->
 
     % Note: we do not compare the request with original one, assuming it must
     % be the same one.
     ok = sip_transaction_base:send_response(TxState#tx_state.provisional, TxState),
-    {reply, ok, 'PROCEEDING', TxState};
+    {next_state, 'PROCEEDING', TxState};
 
 %% @doc
 %% The TU passes any number of provisional responses to the server
@@ -52,12 +54,12 @@
 %% "Proceeding" state, each of these MUST be passed to the transport
 %% layer for transmission.
 %% @end
-'PROCEEDING'({response, Status, Provisional}, _From, TxState)
+'PROCEEDING'({response, Status, Provisional}, TxState)
   when Status >= 100, Status =< 199 ->
 
     TxState2 = TxState#tx_state{provisional = Provisional},
     ok = sip_transaction_base:send_response(Provisional, TxState2),
-    {reply, ok, 'PROCEEDING', TxState2};
+    {next_state, 'PROCEEDING', TxState2};
 
 %% @doc If, while in the "Proceeding" state, the TU passes a 2xx response to
 %% the server transaction, the server transaction MUST pass this
@@ -66,14 +68,14 @@
 %% responses are handled by the TU.  The server transaction MUST then
 %% transition to the "Accepted" state (RFC 6026).
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, TxState)
+'PROCEEDING'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 299 ->
 
     ok = sip_transaction_base:send_response(Response, TxState),
 
     % Start timer L
     TxState2 = ?START(timerL, 64 * ?T1, TxState),
-    {reply, ok, 'ACCEPTED', TxState2};
+    {next_state, 'ACCEPTED', TxState2};
 
 %% @doc
 %% While in the "Proceeding" state, if the TU passes a response with
@@ -87,7 +89,7 @@
 %% 64*T1 seconds for all transports.  Timer H determines when the server
 %% transaction abandons retransmitting the response.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, TxState)
+'PROCEEDING'({response, Status, Response}, TxState)
   when Status >= 300, Status =< 699 ->
 
     TxState2 = TxState#tx_state{response = Response},
@@ -102,15 +104,15 @@
         end,
     % start Timer H
     TxState4 = ?START(timerH, 64 * ?T1, TxState3),
-    {reply, ok, 'COMPLETED', TxState4};
+    {next_state, 'COMPLETED', TxState4};
 
 %% @doc Transaction cancellation, Section 9.2
 %% Sends "487 Request Terminated"
 %% @end
-'PROCEEDING'(cancel, From, TxState) ->
+'PROCEEDING'(cancel, TxState) ->
     % Simply act as we have received final response from the TU
     Response = sip_message:create_response(TxState#tx_state.request, 487),
-    'PROCEEDING'({response, 487, Response}, From, TxState).
+    'PROCEEDING'({response, 487, Response}, TxState).
 
 %% @doc
 %% If timer G fires, the response is passed to the transport layer once
@@ -133,7 +135,7 @@
 %% that a transaction failure has occurred.
 %% @end
 'COMPLETED'({timeout, _Ref, {timerH, _Interval}}, TxState) ->
-    {stop, {timeout, timerH}, TxState}.
+    {stop, {timeout, timerH}, TxState};
 
 %% @doc
 %%  If an ACK is received while the server transaction is in the
@@ -141,8 +143,7 @@
 %% "Confirmed" state.  As Timer G is ignored in this state, any
 %% retransmissions of the response will cease.
 %% @end
--spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
-'COMPLETED'({request, 'ACK', _Request}, _From, TxState) ->
+'COMPLETED'({request, 'ACK', _Request}, TxState) ->
     % cancel timerG
     TxState2 = ?CANCEL(timerG, TxState),
 
@@ -150,25 +151,25 @@
     case TxState2#tx_state.reliable of
         true ->
             % skip CONFIRMED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, TxState2};
+            {stop, normal, TxState2};
         false ->
             TxState3 = ?START(timerI, ?T4, TxState2),
-            {reply, ok, 'CONFIRMED', TxState3}
+            {next_state, 'CONFIRMED', TxState3}
     end;
 
 %% @doc Furthermore, while in the "Completed" state, if a request retransmission
 %% is received, the server SHOULD pass the response to the transport for
 %% retransmission.
 %% @end
-'COMPLETED'({request, _Method, _Request}, _From, TxState) ->
+'COMPLETED'({request, _Method, _Request}, TxState) ->
     ok = sip_transaction_base:send_response(TxState#tx_state.response, TxState),
-    {reply, ok, 'COMPLETED', TxState};
+    {next_state, 'COMPLETED', TxState};
 
 %% @doc Transaction cancellation, Section 9.2
 %% Effectively does nothing, as we have already sent the final response
 %% @end
-'COMPLETED'(cancel, _From, TxState) ->
-    {reply, ok, 'COMPLETED', TxState}.
+'COMPLETED'(cancel, TxState) ->
+    {next_state, 'COMPLETED', TxState}.
 
 %% @doc
 %% The purpose of the "Confirmed" state is to absorb any additional ACK
@@ -178,51 +179,49 @@
 %% @end
 -spec 'CONFIRMED'(term(), #tx_state{}) -> term().
 'CONFIRMED'({timeout, _Ref, {timerI, _}}, TxState) ->
-    {stop, normal, TxState}.
+    {stop, normal, TxState};
 
 %% @doc
 %% Absorb any additional ACK messages
 %% @end
--spec 'CONFIRMED'(term(), term(), #tx_state{}) -> term().
-'CONFIRMED'({request, _Method, _Response}, _From, TxState) ->
-    {reply, ok, 'CONFIRMED', TxState};
+'CONFIRMED'({request, _Method, _Response}, TxState) ->
+    {next_state, 'CONFIRMED', TxState};
 
 %% @doc Transaction cancellation, Section 9.2
 %% Effectively does nothing, as we have already sent the final response
 %% @end
-'CONFIRMED'(cancel, _From, TxState) ->
-    {reply, ok, 'CONFIRMED', TxState}.
+'CONFIRMED'(cancel, TxState) ->
+    {next_state, 'CONFIRMED', TxState}.
 
--spec 'ACCEPTED'(term(), term(), #tx_state{}) -> term().
+-spec 'ACCEPTED'(term(), #tx_state{}) -> term().
 %% @doc If an ACK is received while the INVITE server transaction is in
 %% the "Accepted" state, then the ACK must be passed up to the TU.
 %% @end
-'ACCEPTED'({request, 'ACK', Request}, _From, TxState) ->
+'ACCEPTED'({request, 'ACK', Request}, TxState) ->
     ok = sip_transaction_base:pass_to_tu(Request, TxState),
-    {reply, ok, 'ACCEPTED', TxState};
+    {next_state, 'ACCEPTED', TxState};
 
 %% @doc The purpose of the "Accepted" state is to absorb retransmissions
 %% of an accepted INVITE request.  Any such retransmissions are absorbed
 %% entirely within the server transaction.
 %% @end
-'ACCEPTED'({request, 'INVITE', _Request}, _From, TxState) ->
+'ACCEPTED'({request, 'INVITE', _Request}, TxState) ->
     % Note: we do not compare the request with original one, assuming it must
     % be the same one.
-    {reply, ok, 'ACCEPTED', TxState};
+    {next_state, 'ACCEPTED', TxState};
 
 %% @doc While in the "Accepted" state, if the TU passes a 2xx response,
 %% the server transaction MUST pass the response to the transport
 %% layer for transmission.
 %% @end
-'ACCEPTED'({response, Status, Response}, _From, TxState)
+'ACCEPTED'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 299 ->
 
     ok = sip_transaction_base:send_response(Response, TxState),
-    {reply, ok, 'ACCEPTED', TxState}.
+    {next_state, 'ACCEPTED', TxState};
 
 %% @doc If Timer L fires while the INVITE server transaction is in the "Accepted"
 %% state, the transaction  MUST transition to the "Terminated" state.
 %% @end
--spec 'ACCEPTED'(term(), #tx_state{}) -> term().
 'ACCEPTED'({timeout, _Ref, {timerL, _}}, TxState) ->
     {stop, normal, TxState}.

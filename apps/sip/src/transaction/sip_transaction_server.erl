@@ -2,6 +2,8 @@
 %%% @doc
 %%% RFC 3261 17.2.2 Non-INVITE Server Transaction
 %%% @end
+%%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3261</a>.
+%%% @reference See <a href="http://tools.ietf.org/html/rfc6026">RFC 6026</a>.
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_transaction_server).
 -extends(sip_transaction_base).
@@ -16,26 +18,26 @@
 -include("sip_transaction.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/3, 'TRYING'/3, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
+-export(['INIT'/2, 'TRYING'/2, 'PROCEEDING'/2, 'COMPLETED'/2]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
 %%-----------------------------------------------------------------
 %% @doc `INIT' state is for heavy-weight initialization (sending request, starting timers)
 %% @end
--spec 'INIT'({init, #tx_state{}}, term(), undefined) -> {reply, ok, 'TRYING', #tx_state{}}.
-'INIT'({init, TxState}, _From, undefined) ->
+-spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'TRYING', #tx_state{}}.
+'INIT'({init, TxState}, undefined) ->
     gproc:mreg(p, l, TxState#tx_state.props),
-    {reply, ok, 'TRYING', TxState}.
+    {next_state, 'TRYING', TxState}.
 
--spec 'TRYING'(term(), term(), #tx_state{}) -> term().
+-spec 'TRYING'(term(), #tx_state{}) -> term().
 %% @doc
 %% Once in the "Trying" state, any further request retransmissions are
 %% discarded.  A request is a retransmission if it matches the same server
 %% transaction.
 %% @end
-'TRYING'({request, _Method, _Request}, _From, TxState) ->
-    {reply, ok, 'TRYING', TxState};
+'TRYING'({request, _Method, _Request}, TxState) ->
+    {next_state, 'TRYING', TxState};
 
 %% @doc
 %% While in the "Trying" state, if the TU passes a provisional response
@@ -43,12 +45,12 @@
 %% "Proceeding" state.  The response MUST be passed to the transport
 %% layer for transmission.
 %% @end
-'TRYING'({response, Status, Provisional}, _From, TxState)
+'TRYING'({response, Status, Provisional}, TxState)
   when Status >= 100, Status =< 199 ->
 
     TxState2 = TxState#tx_state{provisional = Provisional},
     ok = sip_transaction_base:send_response(Provisional, TxState2),
-    {reply, ok, 'PROCEEDING', TxState2};
+    {next_state, 'PROCEEDING', TxState2};
 
 %% @doc
 %% If the TU passes a final response (status codes 200-699) to the server
@@ -56,41 +58,41 @@
 %% state, and the response MUST be passed to the transport layer for
 %% transmission.
 %% @end
-'TRYING'({response, Status, Response}, From, TxState)
+'TRYING'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 699 ->
     % Same handling as in PROCEEDING state
-    'PROCEEDING'({response, Status, Response}, From, TxState);
+    'PROCEEDING'({response, Status, Response}, TxState);
 
 %% @doc Transaction cancellation, Section 9.2
 %% Effectively does nothing for non-INVITE transactions
 %% @end
-'TRYING'(cancel, _From, TxState) ->
-    {reply, ok, 'TRYING', TxState}.
+'TRYING'(cancel, TxState) ->
+    {next_state, 'TRYING', TxState}.
 
 
--spec 'PROCEEDING'(term(), term(), #tx_state{}) -> term().
+-spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 %% @doc
 %% Any further provisional responses that are received from the TU while in
 %% the "Proceeding" state MUST be passed to the transport layer for transmission.
 %% @end
-'PROCEEDING'({response, Status, Provisional}, _From, TxState)
+'PROCEEDING'({response, Status, Provisional}, TxState)
   when Status >= 100, Status =< 199 ->
 
     TxState2 = TxState#tx_state{provisional = Provisional},
     ok = sip_transaction_base:send_response(Provisional, TxState2),
-    {reply, ok, 'PROCEEDING', TxState2};
+    {next_state, 'PROCEEDING', TxState2};
 
 %% @doc
 %% If a retransmission of the request is received while in the "Proceeding" state,
 %% the most recently sent provisional response MUST be passed to the transport
 %% layer for retransmission.
 %% @end
-'PROCEEDING'({request, _Method, _Request}, _From, TxState) ->
+'PROCEEDING'({request, _Method, _Request}, TxState) ->
 
     % Note: we do not compare the request with original one, assuming it must
     % be the same one.
     ok = sip_transaction_base:send_response(TxState#tx_state.provisional, TxState),
-    {reply, ok, 'PROCEEDING', TxState};
+    {next_state, 'PROCEEDING', TxState};
 
 %% @doc
 %% If the TU passes a final response (status codes 200-699) to the server while in
@@ -101,7 +103,7 @@
 %% Timer J to fire in 64*T1 seconds for unreliable transports, and zero
 %% seconds for reliable transports.
 %% @end
-'PROCEEDING'({response, Status, Response}, _From, TxState)
+'PROCEEDING'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 699 ->
 
     TxState2 = TxState#tx_state{response = Response},
@@ -111,43 +113,42 @@
     case TxState2#tx_state.reliable of
         true ->
             % skip COMPLETED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, TxState2};
+            {stop, normal, TxState2};
         false ->
             TxState3 = ?START(timerJ, 64 * ?T1, TxState2),
-            {reply, ok, 'COMPLETED', TxState3}
+            {next_state, 'COMPLETED', TxState3}
     end;
 
 %% @doc Transaction cancellation, Section 9.2
 %% Effectively does nothing for non-INVITE transactions
 %% @end
-'PROCEEDING'(cancel, _From, TxState) ->
-    {reply, ok, 'PROCEEDING', TxState}.
+'PROCEEDING'(cancel, TxState) ->
+    {next_state, 'PROCEEDING', TxState}.
 
--spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
+-spec 'COMPLETED'(term(), #tx_state{}) -> term().
 %% @doc
 %% While in the "Completed" state, the server transaction MUST pass the
 %% final response to the transport layer for retransmission whenever a
 %% retransmission of the request is received.
 %% @end
-'COMPLETED'({request, _Method, _Request}, _From, TxState) ->
+'COMPLETED'({request, _Method, _Request}, TxState) ->
     ok = sip_transaction_base:send_response(TxState#tx_state.response, TxState),
-    {reply, ok, 'COMPLETED', TxState};
+    {next_state, 'COMPLETED', TxState};
 
 %% @doc
 %% Any other final responses passed by the TU to the server transaction MUST
 %% be discarded while in the "Completed" state.
 %% @end
-'COMPLETED'({response, Status, _Response}, _From, TxState)
+'COMPLETED'({response, Status, _Response}, TxState)
   when Status >= 200, Status =< 699 ->
-    {reply, ok, 'COMPLETED', TxState};
+    {next_state, 'COMPLETED', TxState};
 
 %% @doc Transaction cancellation, Section 9.2
 %% Effectively does nothing for non-INVITE transactions
 %% @end
-'COMPLETED'(cancel, _From, TxState) ->
-    {reply, ok, 'COMPLETED', TxState}.
+'COMPLETED'(cancel, TxState) ->
+    {next_state, 'COMPLETED', TxState};
 
--spec 'COMPLETED'(term(), #tx_state{}) -> term().
 %% @doc
 %% The server transaction remains in this state until Timer J fires, at which
 %% point it MUST transition to the "Terminated" state.
