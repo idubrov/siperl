@@ -191,7 +191,7 @@ invoke_callback(Request, Callback, State) ->
 
 %% @doc Create dialog and session if response 2xx and request is 'INVITE' not within a dialog
 %% @end
-create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} = Response) 
+create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} = Response)
   when Status >= 200, Status =< 299, Request#sip_request.method =:= 'INVITE' ->
     case sip_message:is_within_dialog(Request) of
         false ->

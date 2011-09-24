@@ -22,6 +22,8 @@
          timerI             :: reference(),         % Timer I, RFC 3261 17.2.1
          timerJ             :: reference(),         % Timer J, RFC 3261 17.2.2
          timerK             :: reference(),         % Timer K, RFC 3261 17.1.2.2
+         timerL             :: reference(),
+         timerM             :: reference(),         % Timer M, RFC 6026 8.4
          request            :: #sip_request{},      % Original request
          provisional        :: #sip_response{},     % Most recent provisional response
          response           :: #sip_response{},     % Final response
@@ -33,11 +35,6 @@
 
 -define(CANCEL(Timer, TxState), sip_transaction_base:cancel_timer(#tx_state.Timer, TxState)).
 -define(START(Timer, Interval, TxState), sip_transaction_base:start_timer(Timer, #tx_state.Timer, Interval, TxState)).
--define(ACK(Response, TxState), sip_transaction_base:send_ack(Response, TxState)).
--define(REQUEST(TxState), sip_transaction_base:send_request(TxState#tx_state.request, TxState)).
--define(RESPONSE(TxState), sip_transaction_base:send_response(TxState#tx_state.response, TxState)).
--define(PROVISIONAL(TxState), sip_transaction_base:send_response(TxState#tx_state.provisional, TxState)).
--define(TU(Msg, TxState), sip_transaction_base:pass_to_tu(Msg, TxState)).
 -define(T1, sip_config:t1()).
 -define(T2, sip_config:t2()).
 -define(T4, sip_config:t4()).

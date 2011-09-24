@@ -61,8 +61,11 @@ API Notes
    invocation. If core process is found, message is sent to it in form of either
    `{request, Msg}` or `{response, Msg}`.
  * Transaction layer API is in `sip_transaction` module. When transaction is
-   started, a TU PID is provided to the transaction. Responses to client
-   transactions are sent to it in form of `{response, Msg, TxPid}`.
+   started, a TU PID is provided to the transaction. Responses from client
+   transactions are sent to TU in form of `{response, Msg, TxPid}`. Requests
+   from server transactions (the only possible request is `ACK`) are sent to TU
+   in form of `{request, Msg, TxPid}`. Transport errors from server transactions
+   are reported in form of `{tx_error, Reason, TxPid}`.
  * Cores are registered via `sip_cores:register_core/1` invocation. Basically,
    registration is a `gproc` property added to the core process with value of
    `#sip_core_info{}`. For now, it contains single element -- function that returns
@@ -73,4 +76,5 @@ API Notes
 
 Implemented RFCs
 ----------------
-* RFC 3261 (partially)
+* [RFC 3261](http://tools.ietf.org/html/rfc3261 "RFC 3261") SIP: Session Initiation Protocol (partial support)
+* [RFC 6026](http://tools.ietf.org/html/rfc6026 "RFC 6026") "Correct Transaction Handling for 2xx Responses to Session Initiation Protocol (SIP) INVITE Requests"

@@ -54,27 +54,33 @@ send_ack(Response, TxState) ->
     ACK = sip_message:create_ack(TxState#tx_state.request, Response),
     send_request(ACK, TxState).
 
--spec send_request(#sip_request{}, #tx_state{}) -> #tx_state{}.
+-spec send_request(#sip_request{}, #tx_state{}) -> ok.
 send_request(Request, TxState) ->
     % Send request to the given destination address
     % Extract 'ttl' option from the options list
     Opts = lists:filter(fun(N) -> N =:= ttl end, TxState#tx_state.options),
     case sip_transport:send_request(TxState#tx_state.destination, Request, Opts) of
         ok -> ok;
-        {error, Reason} -> erlang:error(Reason)
+        {error, Reason} ->
+            erlang:error(Reason)
     end,
-    TxState.
+    ok.
 
--spec send_response(#sip_response{}, #tx_state{}) -> #tx_state{}.
-send_response(Response, TxState) ->
+-spec send_response(#sip_response{}, #tx_state{}) -> ok.
+send_response(Response, #tx_state{tx_user = TU}) ->
     case sip_transport:send_response(Response) of
         ok -> ok;
-        {error, Reason} -> erlang:error(Reason)
+        % According to the RFC 6026, we should report to TU
+        {error, Reason} ->
+            TU ! {tx, self(), {error, Reason}}
     end,
-    TxState.
+    ok.
 
 -spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
-pass_to_tu(#sip_response{}, #tx_state{tx_user = none}) -> ok; % No TU to report to
+pass_to_tu(_Message, #tx_state{tx_user = none}) -> ok; % No TU to report to
+pass_to_tu(#sip_request{} = Msg, #tx_state{tx_user = TU}) ->
+    TU ! {request, Msg, self()},
+    ok;
 pass_to_tu(#sip_response{} = Msg, #tx_state{tx_user = TU}) ->
     TU ! {response, Msg, self()},
     ok.

@@ -19,7 +19,7 @@
 -export([client_invite_ok/1, client_invite_err/1, client_invite_timeout_calling/1, client_invite_timeout_proceeding/1]).
 -export([client_ok/1, client_timeout_trying/1, client_timeout_proceeding/1]).
 -export([server_invite_ok/1, server_invite_err/1, server_invite_timeout/1]).
--export([server_ok/1, server_err/1]).
+-export([server_ok/1, server_ok_transport_err/1, server_err/1]).
 -export([server_loop/1]).
 
 
@@ -42,6 +42,7 @@ groups() ->
          server_invite_timeout,
 
          server_ok,
+         server_ok_transport_err,
          server_err,
 
          server_loop],
@@ -65,7 +66,11 @@ init_per_suite(Config) ->
                               ok
                      end),
     ok = meck:expect(sip_transport, send_response,
-                     fun (Msg) ->
+                     fun (#sip_response{status = 299}) ->
+                              % emulate transport error to test RFC 6026 8.8
+                              {error, transport_failure};
+                         (Msg) ->
+                             
                               TestPid = sip_test:pid_from_message(Msg),
                               TestPid ! {tp, response, Msg},
                               ok
@@ -139,7 +144,18 @@ client_invite_ok(Config) ->
     ?assertReceive("Expect final response to be passed to TU",
                    {response, Response, TxPid}),
 
-    ?assertReceive("Expect tx to terminate immediately after receiving final response",
+    % Transaction must be in ACCEPTED state now
+
+    % Emulate another 2xx response received by transport layer
+    Response2 = sip_message:create_response(Request, 201, <<"Ok!">>),
+    {ok, TxPid} = sip_transaction:handle_response(Response2),
+
+    ?assertReceive("Expect final response to be passed to TU",
+                   {response, Response2, TxPid}),
+
+    % Wait for Timer M to fire
+    timer:sleep(32000),
+    ?assertReceive("Expect tx to terminate after timer M",
                    {'DOWN', _Ref, process, TxPid, normal}),
 
     ?assertReceiveNot("Message queue is empty", _),
@@ -501,7 +517,24 @@ server_invite_ok(Config) ->
     sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
-    ?assertReceive("Expect tx to terminate immediately after receiving final response",
+    % Check extra INVITEs are absorbed
+    {ok, TxPid} = sip_transaction:handle_request(Request),
+    ?assertReceiveNot("Server transaction must absorb any additional INVITE's", _),
+
+    % Check ACKs are passed to TU
+    ACK = sip_message:create_ack(Request, Response),
+    {ok, TxPid} = sip_transaction:handle_request(ACK),
+
+    ?assertReceive("Expect ACKs are passed to TU in 'ACCEPTED' state", {request, ACK, TxPid}),
+
+    % 2xx response is sent by TU
+    sip_transaction:send_response(Response),
+    ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
+
+    % Wait for Timer L to fire
+    timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after Timer L",
                    {'DOWN', _Ref, process, TxPid, normal}),
 
     ?assertReceiveNot("Message queue is empty", _),
@@ -677,6 +710,39 @@ server_ok(Config) ->
             ?assertReceive("Expect final response is re-sent", {tp, response, Response}),
             ok
     end,
+
+    % wait for timer J to fire
+    Reliable orelse timer:sleep(32000),
+
+    ?assertReceive("Expect tx to terminate after receiving final response",
+                   {'DOWN', _Ref, process, TxPid, normal}),
+
+    ?assertReceiveNot("Message queue is empty", _),
+    ok.
+
+%% @doc
+%% Scenario tested:
+%% - non-INVITE request is received
+%% - request is passed to TU
+%% - 299 response is sent by TU
+%% - transport layer reports error
+%% - error is reported to TU
+%% - transaction terminates
+%% @end
+server_ok_transport_err(Config) ->
+    Transport  = ?config(transport, Config),
+    Reliable = ?config(reliable, Config),
+
+    Request = sip_test:request('OPTIONS', Transport),
+    Response = sip_message:create_response(Request, 299, <<"Ok">>),
+
+    % Start server transaction
+    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
+    _Ref = erlang:monitor(process, TxPid),
+
+    % 299 response is sent by TU
+    sip_transaction:send_response(Response),
+    ?assertReceive("Expect error is reported by transaction", {tx, TxPid, {error, transport_failure}}),
 
     % wait for timer J to fire
     Reliable orelse timer:sleep(32000),

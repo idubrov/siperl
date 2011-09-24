@@ -123,7 +123,11 @@ init({Callback, Args, Opts}) ->
 
     erlang:put(?CALLBACK, Callback),
 
-    IsApplicable = fun(Msg) -> Callback:is_applicable(Msg) end,
+    % according to RFC 6026 8.9 stray responses MUST be dropped
+    IsApplicable =
+        fun(#sip_response{}) -> false;
+           (#sip_request{} = Request) -> Callback:is_applicable(Request)
+        end,
     sip_cores:register_core(#sip_core_info{is_applicable = IsApplicable}),
     {ok, State}.
 
@@ -145,14 +149,19 @@ handle_info({response, #sip_response{} = Response, TxPid}, State) when is_pid(Tx
     Callback = erlang:get(?CALLBACK),
     sip_ua_client:handle_response(Response, TxPid, Callback, State);
 
-handle_info({response, #sip_response{} = _Response}, State) ->
-    % FIXME: Forked response, must be passed to sip_ua_client
-    {noreply, State};
-
+handle_info({request, #sip_request{} = Request, _TxPid}, State) ->
+    % this must be ACK (see RFC 6026), pass it to UAS
+    Callback = erlang:get(?CALLBACK),
+    sip_ua_server:handle_request(Request, Callback, State);
 handle_info({request, #sip_request{} = Request}, State) ->
     % pass requests to UAS
     Callback = erlang:get(?CALLBACK),
     sip_ua_server:handle_request(Request, Callback, State);
+
+handle_info({tx, TxPid, {error, Reason}}, State) ->
+    % Transport error is reported by server transaction, pass to UAS
+    Callback = erlang:get(?CALLBACK),
+    sip_ua_server:handle_error(Reason, TxPid, Callback, State);
 
 handle_info({cancel_request, Id}, State) when is_reference(Id) ->
     % this message is triggered by the timer from sip_ua_client which is set

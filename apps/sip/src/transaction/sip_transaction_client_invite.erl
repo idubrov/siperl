@@ -18,7 +18,7 @@
 -include("sip_transaction.hrl").
 
 %% FSM callbacks (the rest are provided by `sip_transaction_base')
--export(['INIT'/3, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3]).
+-export(['INIT'/3, 'CALLING'/2, 'CALLING'/3, 'PROCEEDING'/2, 'PROCEEDING'/3, 'COMPLETED'/2, 'COMPLETED'/3, 'ACCEPTED'/2, 'ACCEPTED'/3]).
 
 %%-----------------------------------------------------------------
 %% FSM callbacks.
@@ -41,18 +41,19 @@
     % timer B
     TxState3 = ?START(timerB, 64 * ?T1, TxState2),
     % send request
-    TxState4 = ?REQUEST(TxState3),
-    {reply, ok, 'CALLING', TxState4}.
+    ok = sip_transaction_base:send_request(TxState3#tx_state.request, TxState3),
+    {reply, ok, 'CALLING', TxState3}.
 
 %% @doc
 %% Handle retransmission timer (Timer A).
 %% @end
 -spec 'CALLING'(term(), #tx_state{}) -> term().
 'CALLING'({timeout, _Ref, {timerA, Interval}}, TxState) ->
-    TxState2 = ?REQUEST(TxState),
+    ok = sip_transaction_base:send_request(TxState#tx_state.request, TxState),
+
     % request is retransmitted with intervals that double after each transmission
-    TxState3 = ?START(timerA, 2 * Interval, TxState2),
-    {next_state, 'CALLING', TxState3};
+    TxState2 = ?START(timerA, 2 * Interval, TxState),
+    {next_state, 'CALLING', TxState2};
 
 %% @doc Transaction timed out.
 %% @end
@@ -68,41 +69,48 @@
   when Status >= 100, Status =< 199 ->
     %% Provisional response, transition to PROCEEDING state.
 
-    ok = ?TU(Response, TxState),
+    ok = sip_transaction_base:pass_to_tu(Response, TxState),
     % stop retransmissions in 'PROCEEDING' state
     TxState2 = ?CANCEL(timerA, TxState),
     {reply, ok, 'PROCEEDING', TxState2};
 
-%% @doc
-%% Error response, transition to COMPLETED state.
+%% @doc Error response, transition to COMPLETED/TERMINATED state.
 %% @end
 'CALLING'({response, Status, Response}, _From, TxState)
   when Status >= 300, Status =< 699 ->
 
-    ok = ?TU(Response, TxState),
-    TxState2 = ?ACK(Response, TxState),
+    ok = sip_transaction_base:pass_to_tu(Response, TxState),
+    ok = sip_transaction_base:send_ack(Response, TxState),
 
     % cancel the timers A and B
+    TxState2 = ?CANCEL(timerA, TxState),
+    TxState3 = ?CANCEL(timerB, TxState2),
+
+    % start timer D (for unreliable)
+    case TxState3#tx_state.reliable of
+        true ->
+            % skip COMPLETED state and proceed immediately to TERMINATED state
+            {stop, normal, ok, TxState3};
+        false ->
+            TxState4 = ?START(timerD, 32000, TxState3),
+            {reply, ok, 'COMPLETED', TxState4}
+    end;
+
+%% @doc When a 2xx response is received while in either the 'CALLING' or
+%% 'PROCEEDING' states, the client transaction MUST transition to the
+%% 'ACCEPTED' state.
+%% @end
+'CALLING'({response, Status, Response}, _From, TxState)
+  when Status >= 200, Status =< 299 ->
+    % pass response to TU
+    ok = sip_transaction_base:pass_to_tu(Response, TxState),
+
+    % start timer M, cancel timer A and B
+    TxState2 = ?START(timerM, 64 * ?T1, TxState),
     TxState3 = ?CANCEL(timerA, TxState2),
     TxState4 = ?CANCEL(timerB, TxState3),
 
-    % start timer D (for unreliable)
-    case TxState4#tx_state.reliable of
-        true ->
-            % skip COMPLETED state and proceed immediately to TERMINATED state
-            {stop, normal, ok, TxState4};
-        false ->
-            TxState5 = ?START(timerD, 32000, TxState4),
-            {reply, ok, 'COMPLETED', TxState5}
-    end;
-
-
-'CALLING'({response, Status, Response}, _From, TxState)
-  when Status >= 200, Status =< 299 ->
-    %% 2xx response, transition to the 'TERMINATED' state
-
-    ?TU(Response, TxState),
-    {stop, normal, ok, TxState}.
+    {reply, ok, 'ACCEPTED', TxState4}.
 
 %% @doc
 %% In 'PROCEEDING' state, act the same way as in 'CALLING' state.
@@ -120,19 +128,34 @@
 'PROCEEDING'({timeout, Ref, {timerB, Interval}}, TxState) ->
     'CALLING'({timeout, Ref, {timerB, Interval}}, TxState).
 
-%% @doc
-%% In 'COMPLETED' state transaction re-sends ACK without passing the response
+%% @doc In 'COMPLETED' state transaction re-sends ACK without passing the response
 %% to the Transaction User
 %% @end
 -spec 'COMPLETED'(term(), term(), #tx_state{}) -> term().
 'COMPLETED'({response, _Status, Response}, _From, TxState) ->
-    TxState2 = ?ACK(Response, TxState),
-    {reply, ok, 'COMPLETED', TxState2}.
+    ok = sip_transaction_base:send_ack(Response, TxState),
+    {reply, ok, 'COMPLETED', TxState}.
 
-%% @doc
-%% When Timer D fires while in 'COMPLETED' state, transition to the 'TERMINATED'
+%% @doc When Timer D fires while in 'COMPLETED' state, transition to the 'TERMINATED'
 %% state.
 %% @end
 -spec 'COMPLETED'(term(), #tx_state{}) -> term().
 'COMPLETED'({timeout, _Ref, {timerD, _}}, TxState) ->
+    {stop, normal, TxState}.
+
+-spec 'ACCEPTED'(term(), term(), #tx_state{}) -> term().
+%% @doc Any 2xx responses that match this client transaction and that are
+%% received while in the 'ACCEPTED' state MUST be passed up to the TU.
+%% @end
+'ACCEPTED'({response, Status, Response}, _From, TxState)
+  when Status >= 200, Status =< 299 ->
+    % pass response to TU
+    ok = sip_transaction_base:pass_to_tu(Response, TxState),
+    {reply, ok, 'ACCEPTED', TxState}.
+
+%% @doc If Timer M fires while the client transaction is in the 'ACCEPTED'
+%% state, the client transaction MUST move to the 'TERMINATED' state.
+%% @end
+-spec 'ACCEPTED'(term(), #tx_state{}) -> term().
+'ACCEPTED'({timeout, _Ref, {timerM, _}}, TxState) ->
     {stop, normal, TxState}.

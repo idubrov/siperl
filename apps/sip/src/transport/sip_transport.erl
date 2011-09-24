@@ -285,6 +285,8 @@ transport_module(tcp) -> sip_transport_tcp.
 dispatch_core(Kind, Msg) ->
     case sip_cores:lookup_core(Msg) of
         {ok, Pid, _Reg} ->
+            % Note: according to RFC 6026 responses MUST be dropped by any element
+            % other than stateless proxy
             Pid ! {Kind, Msg},
             ok;
         undefined ->

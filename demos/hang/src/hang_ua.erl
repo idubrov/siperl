@@ -41,9 +41,7 @@ bye(DialogId) ->
 %% @doc Serve requests to user `hang' and also extra 2xx responses.
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"hang">>}}) -> true;
-is_applicable(#sip_response{status = Status}) when Status >= 200; Status =< 299 -> true;
-is_applicable(#sip_request{}) -> false;
-is_applicable(#sip_response{}) -> false.
+is_applicable(#sip_request{}) -> false.
 
 -spec init({}) -> {ok, #state{}}.
 init({}) ->

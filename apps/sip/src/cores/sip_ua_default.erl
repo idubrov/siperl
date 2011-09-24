@@ -17,10 +17,9 @@
 -type gen_from() :: {pid(), term()}.
 
 -spec is_applicable(#sip_request{}) -> boolean().
-%% @doc Check if this callback is applicable for the request/response
+%% @doc Check if this callback is applicable for the request
 %% @end
-is_applicable(#sip_request{} = _Request) -> true;
-is_applicable(#sip_response{} = _Response) -> true.
+is_applicable(#sip_request{} = _Request) -> true.
 
 -spec allow(#sip_request{}) -> [atom()].
 %% @doc Return list of methods, supported by this callback

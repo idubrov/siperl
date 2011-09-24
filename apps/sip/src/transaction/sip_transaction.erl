@@ -45,13 +45,14 @@ start_client_tx(Destination, Request, Options)
     % XXX: Note that request could be sent via TCP instead of UDP due to the body being oversized
     Reliable = sip_transport:is_reliable(Destination#sip_destination.transport),
 
-    % Default TU is self
-    TU = proplists:get_value(tu, Options, self()),
-
-    TxState = #tx_state{destination = Destination, reliable = Reliable, tx_user = TU},
+    TxState = #tx_state{destination = Destination, reliable = Reliable},
     do_start_tx(client, Request, Options, TxState).
 
 %% @doc Start new server transaction
+%%
+%% `tu' is pid of the process to report progress to. If `none' is specified,
+%% transaction will not report its progress (fire-and-forget transaction).
+%% By default, current process is used.
 %% @end
 -spec start_server_tx(#sip_request{}, []) -> {ok, pid()}.
 start_server_tx(Request, Options)
@@ -62,14 +63,16 @@ start_server_tx(Request, Options)
     Via = sip_message:header_top_value('via', Request),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
-   TxState = #tx_state{reliable = Reliable, tx_user = none},
+    TxState = #tx_state{reliable = Reliable},
     do_start_tx(server, Request, Options, TxState).
 
 %% Start transaction process
 do_start_tx(Kind, Request, Options, TxState) ->
+    TU = proplists:get_value(tu, Options, self()), % Default TU is self
     TxKey = tx_key(Kind, Request),
     Module = tx_module(Kind, Request),
     TxState2 = TxState#tx_state{tx_key = TxKey,
+                                tx_user = TU,
                                 request = Request,
                                 options = Options,
                                 props = tx_props(Kind, TxKey, Request)},

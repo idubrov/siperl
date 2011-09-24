@@ -40,8 +40,7 @@ init({}) ->
 %% Responses will be delivered directly via transaction layer.
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"busy">>}}) -> true;
-is_applicable(#sip_request{}) -> false;
-is_applicable(#sip_response{}) -> false.
+is_applicable(#sip_request{}) -> false.
 
 -spec allow(#sip_request{}) -> [atom()].
 allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE'].
