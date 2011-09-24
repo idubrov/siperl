@@ -171,32 +171,32 @@ send_response_fallback([To|Rest], Response) ->
 %% @end
 %% @private
 -spec dispatch(#sip_destination{}, sip_message()) -> ok.
-dispatch(From, Msg) when is_record(Msg, sip_request) ->
+dispatch(From, Request) when is_record(Request, sip_request) ->
     % pre-parse message
-    Msg2 = pre_parse(Msg),
+    Request2 = pre_parse(Request),
 
-    Msg3 = add_via_received(From, Msg2),
+    Request3 = add_via_received(From, Request2),
     % 18.2.1: route to server transaction or to core
-    case sip_transaction:handle_request(Msg3) of
-        not_handled -> dispatch_core(request, Msg3);
+    case sip_transaction:handle_request(Request3) of
+        not_handled -> dispatch_core(request, Request3);
         {ok, _TxRef} -> ok
     end,
     ok;
-dispatch(From, Msg) when is_record(Msg, sip_response) ->
+dispatch(From, Response) when is_record(Response, sip_response) ->
     % When a response is received, the client transport examines the top
     % Via header field value.  If the value of the "sent-by" parameter in
     % that header field value does not correspond to a value that the
     % client transport is configured to insert into requests, the response
     % MUST be silently discarded.
-    case check_sent_by(From#sip_destination.transport, Msg) of
+    case check_sent_by(From#sip_destination.transport, Response) of
         true ->
             % 18.1.2: route to client transaction or to core
-            case sip_transaction:handle_response(Msg) of
-                not_handled -> dispatch_core(response, Msg);
+            case sip_transaction:handle_response(Response) of
+                not_handled -> dispatch_core(response, Response);
                 {ok, _TxRef} -> ok
             end;
         {ExpectedSentBy, SentBy} ->
-            sip_log:sentby_mismatch(Msg, ExpectedSentBy, SentBy)
+            sip_log:sentby_mismatch(Response, ExpectedSentBy, SentBy)
     end,
     ok.
 
