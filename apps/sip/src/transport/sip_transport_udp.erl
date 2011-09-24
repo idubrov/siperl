@@ -38,6 +38,8 @@ lookup_socket(To, Message) ->
                   % we always send responses using the same socket we have
                   % received it on
                   % this is requirement of RFC 3581 4
+                  % note that if we will have more than one listening socket,
+                  % we would need a way to choose proper one
                   [Port | _] = sip_config:ports(udp),
                   {n, l, {udp, Port}}
           end,
