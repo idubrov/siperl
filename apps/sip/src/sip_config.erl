@@ -58,7 +58,7 @@ connection_timeout() ->
 
 -spec server() -> binary().
 server() ->
-    list_to_binary(entry(server, "")).
+    list_to_binary(entry(server, "siperl")).
 
 %%%----------------------------------------------------------------
 %% Internal functions
