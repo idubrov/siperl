@@ -27,7 +27,7 @@
 %% @end
 -spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'PROCEEDING', #tx_state{}}.
 'INIT'({init, TxState}, undefined) ->
-    gproc:mreg(p, l, TxState#tx_state.props),
+    true = gproc:mreg(p, l, TxState#tx_state.props),
 
     % send provisional response
     Trying = sip_message:create_response(TxState#tx_state.request, 100),

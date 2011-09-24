@@ -27,7 +27,7 @@
 %% @end
 -spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'TRYING', #tx_state{}}.
 'INIT'({init, TxState}, undefined) ->
-    gproc:mreg(p, l, TxState#tx_state.props),
+    true = gproc:mreg(p, l, TxState#tx_state.props),
     {next_state, 'TRYING', TxState}.
 
 -spec 'TRYING'(term(), #tx_state{}) -> term().

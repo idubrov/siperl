@@ -242,7 +242,7 @@ tx_props(client, _TxKey, #sip_request{}, #sip_destination{address = Address, por
     Prop = {udp_destination, Address, Port},
     [{Prop, true}];
 
-tx_props(server, TxKey, #sip_request{} = Msg, _To) ->
+tx_props(server, TxKey, #sip_request{} = Msg, _Destination) ->
     % Add gproc: property for loop detection for server transactions, see 8.2.2.2
     From = sip_message:header_top_value(from, Msg),
     case lists:keyfind(tag, 1, From#sip_hdr_address.params) of

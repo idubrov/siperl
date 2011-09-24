@@ -809,6 +809,10 @@ server_loop(Config) ->
     {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
     _Ref = erlang:monitor(process, TxPid),
 
+    % wait for transaction to start
+    % FIXME: should transaction register all its props immediately?
+    timer:sleep(500),
+
     % Request2 does not match the transaction, but matches criteria in 8.2.2.2
     Request2 = sip_message:with_branch(sip_idgen:generate_branch(), Request),
     true = sip_transaction:is_loop_detected(Request2),
