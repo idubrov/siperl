@@ -101,7 +101,7 @@ handle_sync_event(Event, _From, _State, TxState) ->
 %% @private
 -spec handle_info(term(), atom(), #tx_state{}) -> {stop, term(), #tx_state{}}.
 handle_info({error, econnrefused}, _State, TxState) ->
-    % sent by `gen_icmp' (for UDP only) to all with gproc {p, l, {udp, Addr, Port}}
+    % sent by `gen_icmp' (for UDP only) to all with gproc {p, l, {icmp, econnrefused, Addr, Port}}
     % property registered (for now, only client transactions register it)
     % FIXME: server transactions should receive it too and report to TU!
     {stop, {error, econnrefused}, TxState};

@@ -45,14 +45,12 @@ start_link() ->
 init({}) ->
     % if functionality is unavailable (for example, due to the permissions),
     % gen_icmp process will die
-    process_flag(trap_exit, true),
-    case catch gen_icmp:open() of
+    _Ignore = process_flag(trap_exit, true),
+    case gen_icmp:open() of
         {ok, Socket} ->
-            % now we need to detect failures in ICMP socket
-            process_flag(trap_exit, false),
             {ok, #state{socket = Socket}};
         Reason ->
-            % report and stop, not a critical error
+            % report and stop, UDP failures detection will be unavailable
             sip_log:no_icmp(Reason),
             ignore
     end.
@@ -73,7 +71,9 @@ handle_info({icmp, _Socket, _Address, <<?ICMP_DEST_UNREACH:8, _Rest/binary>> = P
             % Notify about UDP destination being unreachable.
             % FIXME: More clean API. Probably, sip_transport:send_request/send_response should have an
             % option to send message back to the caller in case of transport layer errors.
-            gproc:send({p, l, {udp_destination, IPV4#ipv4.daddr, UDP#udp.dport}}, {error, econnrefused}),
+            Addr = IPV4#ipv4.daddr,
+            Port = UDP#udp.dport,
+            gproc:send({p, l, {icmp, econnrefused, Addr, Port}}, {error, econnrefused}),
             {noreply, State};
         _Other ->
             {noreply, State}
@@ -82,6 +82,10 @@ handle_info({icmp, _Socket, _Address, <<?ICMP_DEST_UNREACH:8, _Rest/binary>> = P
 handle_info({icmp, _Socket, _Address, _Packet}, State) ->
     % Ignore other ICMP messages
     {noreply, State};
+
+handle_info({'EXIT', Socket, Reason}, State) when State#state.socket =:= Socket ->
+    % Handle socket failures
+    {stop, Reason};
 
 handle_info(Req, State) ->
     {stop, {unexpected, Req}, State}.

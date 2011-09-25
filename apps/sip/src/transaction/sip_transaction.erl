@@ -60,7 +60,7 @@ start_server_tx(Request, Options)
        is_list(Options) ->
 
     % Check top via in received request to check transport reliability
-    Via = sip_message:header_top_value('via', Request),
+    Via = sip_message:header_top_value(via, Request),
     Reliable = sip_transport:is_reliable(Via#sip_hdr_via.transport),
 
     TxState = #tx_state{reliable = Reliable},
@@ -238,8 +238,8 @@ tx_send(Key, Info) ->
     end.
 
 tx_props(client, _TxKey, #sip_request{}, #sip_destination{address = Address, port = Port}) ->
-    % Add gproc: property for transport error detection, see sip_transport_icmp module
-    Prop = {udp_destination, Address, Port},
+    % Add gproc property for UDP error detection, see sip_transport_icmp module
+    Prop = {icmp, econnrefused, Address, Port},
     [{Prop, true}];
 
 tx_props(server, TxKey, #sip_request{} = Msg, _Destination) ->
