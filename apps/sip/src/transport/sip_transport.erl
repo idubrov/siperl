@@ -19,7 +19,7 @@
 
 %% API
 -export([start_link/0]).
--export([send_request/3, send_response/1, is_reliable/1]).
+-export([send_request/3, send_response/1, is_reliable/1, monitor/1]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -44,12 +44,26 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
-%% @doc
-%% Check if given transport is reliable.
+%% @doc Check if given transport is reliable.
 %% @end
 -spec is_reliable(atom()) -> boolean().
 is_reliable(udp) -> false;
 is_reliable(tcp) -> true.
+
+
+-spec monitor(#sip_destination{}) -> ok.
+%% @doc Start monitoring errors coming from given destination
+%%
+%% Process calling this function will receive messages in form of
+%% `{transport_error, #sip_destination{}, Reason}' in case error
+%% occurs while contacting to this destination (for example, destination port is unreachable).
+%%
+%% <em>Only errors that could not be reported synchronously are reported via
+%% this mechanism (for example, ICMP messages coming from remote host after
+%% sending UDP message)</em>.
+%% @end
+monitor(#sip_destination{address = Address, port = Port}) ->
+    sip_transport_icmp:monitor(Address, Port).
 
 %% @doc
 %% Send request via the specified connection.

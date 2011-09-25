@@ -27,7 +27,8 @@
 %% @end
 -spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'TRYING', #tx_state{}}.
 'INIT'({init, TxState}, undefined) ->
-    true = gproc:mreg(p, l, TxState#tx_state.props),
+    ok = sip_transaction_base:setup_loop_detection(TxState),
+
     {next_state, 'TRYING', TxState}.
 
 -spec 'TRYING'(term(), #tx_state{}) -> term().

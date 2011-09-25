@@ -29,8 +29,7 @@
          response           :: #sip_response{},     % Final response
          destination        :: #sip_destination{},  % Address to send request to
          reliable           :: boolean(),           % If request was made via reliable connection
-         options = []       :: [{atom(), term()}],  % Options
-         props = []         :: [{term(), term()}]   % Any gproc properties to register
+         options = []       :: [{atom(), term()}]   % Options
         }).
 
 -define(CANCEL(Timer, TxState), sip_transaction_base:cancel_timer(#tx_state.Timer, TxState)).

@@ -30,7 +30,7 @@
 %% @end
 -spec 'INIT'({init, #tx_state{}}, undefined) -> {next_state, 'CALLING', #tx_state{}}.
 'INIT'({init, TxState}, undefined) ->
-    true = gproc:mreg(p, l, TxState#tx_state.props),
+    ok = sip_transport:monitor(TxState#tx_state.destination),
 
     % start Timer A only for unreliable transports
     IsReliable = TxState#tx_state.reliable,
@@ -45,8 +45,7 @@
     {next_state, 'CALLING', TxState3}.
 
 -spec 'CALLING'(term(), #tx_state{}) -> term().
-%% @doc
-%% Handle retransmission timer (Timer A).
+%% @doc Handle retransmission timer (Timer A).
 %% @end
 'CALLING'({timeout, _Ref, {timerA, Interval}}, TxState) ->
     ok = sip_transaction_base:send_request(TxState#tx_state.request, TxState),

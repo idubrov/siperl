@@ -13,7 +13,7 @@
 %% Exports
 
 %% API
--export([start_link/0]).
+-export([start_link/0, monitor/2]).
 
 %% Server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -35,6 +35,11 @@
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
+
+-spec monitor(inet:ip_address(), 0..65535) -> ok.
+monitor(Address, Port) ->
+    true = gproc:add_local_property({icmp, econnrefused, Address, Port}, true),
+    ok.
 
 %%-----------------------------------------------------------------
 %% Server callbacks

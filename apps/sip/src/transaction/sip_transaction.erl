@@ -71,13 +71,11 @@ do_start_tx(Kind, Request, Options, TxState, Destination) ->
     TU = proplists:get_value(tu, Options, self()), % Default TU is self
     TxKey = tx_key(Kind, Request),
     Module = tx_module(Kind, Request),
-    Props = tx_props(Kind, TxKey, Request, Destination),
     TxState2 = TxState#tx_state{destination = Destination,
                                 tx_key = TxKey,
                                 tx_user = TU,
                                 request = Request,
-                                options = Options,
-                                props = Props},
+                                options = Options},
 
     {ok, Pid} = sip_transaction_tx_sup:start_tx(Module, TxKey),
     ok = gen_fsm:send_event(Pid, {init, TxState2}),
@@ -142,31 +140,8 @@ send_response(Msg) ->
 %% Check if loop is detected by by following procedures from 8.2.2.2
 %% @end
 -spec is_loop_detected(#sip_request{}) -> boolean().
-is_loop_detected(#sip_request{} = Msg) ->
-    To = sip_message:header_top_value(to, Msg),
-
-    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
-        false ->
-            TxKey = sip_transaction:tx_key(server, Msg),
-
-            From = sip_message:header_top_value(from, Msg),
-            {tag, FromTag} = lists:keyfind(tag, 1, From#sip_hdr_address.params),
-
-            CallId = sip_message:header_top_value('call-id', Msg),
-            CSeq = sip_message:header_top_value('cseq', Msg),
-            List = gproc:lookup_local_properties({tx_loop, FromTag, CallId, CSeq}),
-            case List of
-                % either no transactions with same From: tag, Call-Id and CSeq
-                % or there is one such transaction and message matches it
-                [] -> false;
-                [{_Pid, TxKey}] -> false;
-                % there are transactions that have same From: tag, Call-Id and CSeq,
-                % but message does not matches them --> loop detected
-                _Other -> true
-            end;
-        % tag present, no loop
-        {tag, _Tag} -> false
-    end.
+is_loop_detected(#sip_request{} = Request) ->
+    sip_transaction_base:is_loop_detected(Request).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -235,22 +210,4 @@ tx_send(Key, Info) ->
         Pid when is_pid(Pid) ->
             ok = gen_fsm:send_event(Pid, Info),
             {ok, Pid}
-    end.
-
-tx_props(client, _TxKey, #sip_request{}, #sip_destination{address = Address, port = Port}) ->
-    % Add gproc property for UDP error detection, see sip_transport_icmp module
-    Prop = {icmp, econnrefused, Address, Port},
-    [{Prop, true}];
-
-tx_props(server, TxKey, #sip_request{} = Msg, _Destination) ->
-    % Add gproc: property for loop detection for server transactions, see 8.2.2.2
-    From = sip_message:header_top_value(from, Msg),
-    case lists:keyfind(tag, 1, From#sip_hdr_address.params) of
-        {tag, FromTag} ->
-            CallId = sip_message:header_top_value('call-id', Msg),
-            CSeq = sip_message:header_top_value(cseq, Msg),
-            Prop = {tx_loop, FromTag, CallId, CSeq},
-            [{Prop, TxKey}];
-        false ->
-            []
     end.

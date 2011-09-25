@@ -19,6 +19,7 @@
 %% API
 -export([start_timer/4, cancel_timer/2]).
 -export([send_ack/2, send_request/2, send_response/2, init/1, pass_to_tu/2]).
+-export([setup_loop_detection/1, is_loop_detected/1]).
 
 %%-----------------------------------------------------------------
 %% API
@@ -100,11 +101,15 @@ handle_sync_event(Event, _From, _State, TxState) ->
 
 %% @private
 -spec handle_info(term(), atom(), #tx_state{}) -> {stop, term(), #tx_state{}}.
-handle_info({error, econnrefused}, _State, TxState) ->
-    % sent by `gen_icmp' (for UDP only) to all with gproc {p, l, {icmp, econnrefused, Addr, Port}}
-    % property registered (for now, only client transactions register it)
-    % FIXME: server transactions should receive it too and report to TU!
-    {stop, {error, econnrefused}, TxState};
+handle_info({error, Reason}, _State, #tx_state{tx_key = #sip_tx_client{}} = TxState) ->
+    % sent by transport implementation to all processes with gproc property `{icmp, econnrefused, Addr, Port}'
+    {stop, {error, Reason}, TxState};
+
+handle_info({error, Reason}, _State, #tx_state{tx_key = #sip_tx_server{}, tx_user = TU} = TxState) ->
+    % according to the RFC 6026, we should report to TU
+    TU ! {tx, self(), {error, Reason}},
+    {noreply, TxState};
+
 handle_info(Info, _State, TxState) ->
     {stop, {unexpected, Info}, TxState}.
 
@@ -146,3 +151,54 @@ failed_status(#sip_tx_client{}, _Reason) -> 503.
 -spec code_change(term(), atom(), #tx_state{}, term()) -> {ok, atom(), #tx_state{}}.
 code_change(_OldVsn, State, TxState, _Extra) ->
     {ok, State, TxState}.
+
+-spec setup_loop_detection(#tx_state{}) -> ok.
+%% @doc Setup loop detection (see RFC 3261 8.2.2.2)
+%% Implemented on transaction side since it requires several properties of transaction
+%% not available to UA.
+%% @end
+setup_loop_detection(#tx_state{request = Request, tx_key = TxKey}) ->
+    % Add gproc: property for loop detection for server transactions, see 8.2.2.2
+    From = sip_message:header_top_value(from, Request),
+    case lists:keyfind(tag, 1, From#sip_hdr_address.params) of
+        {tag, FromTag} ->
+            CallId = sip_message:header_top_value('call-id', Request),
+            CSeq = sip_message:header_top_value(cseq, Request),
+            Key = {tx_loop, FromTag, CallId, CSeq},
+            true = gproc:add_local_property(Key, TxKey),
+            ok;
+        false ->
+            ok
+    end.
+
+%% @doc Check message against loop conditions
+%%
+%% Check if loop is detected by by following procedures from 8.2.2.2
+%% @end
+-spec is_loop_detected(#sip_request{}) -> boolean().
+is_loop_detected(#sip_request{} = Request) ->
+    To = sip_message:header_top_value(to, Request),
+
+    case lists:keyfind(tag, 1, To#sip_hdr_address.params) of
+        false ->
+            TxKey = sip_transaction:tx_key(server, Request),
+
+            From = sip_message:header_top_value(from, Request),
+            {tag, FromTag} = lists:keyfind(tag, 1, From#sip_hdr_address.params),
+
+            CallId = sip_message:header_top_value('call-id', Request),
+            CSeq = sip_message:header_top_value(cseq, Request),
+            Key = {tx_loop, FromTag, CallId, CSeq},
+            List = gproc:lookup_local_properties(Key),
+            case List of
+                % either no transactions with same From: tag, Call-Id and CSeq
+                % or there is one such transaction and message matches it
+                [] -> false;
+                [{_Pid, TxKey}] -> false;
+                % there are transactions that have same From: tag, Call-Id and CSeq,
+                % but message does not matches them --> loop detected
+                _Other -> true
+            end;
+        % tag present, no loop
+        {tag, _Tag} -> false
+    end.
