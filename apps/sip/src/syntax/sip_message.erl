@@ -79,7 +79,7 @@ is_dialog_establishing(#sip_request{}) ->
 %% Returns `Method' from `start-line' for requests, `Method' from `CSeq' header
 %% for responses.
 %% @end
--spec method(sip_message()) -> sip_name().
+-spec method(sip_message()) -> sip_method().
 method(#sip_request{method = Method}) -> Method;
 method(#sip_response{} = Msg) ->
     CSeq = header_top_value(cseq, Msg),
@@ -485,8 +485,8 @@ parse_start_line(StartLine) when is_binary(StartLine) ->
     [First, Rest] = binary:split(StartLine, <<" ">>),
     [Second, Third] = binary:split(Rest, <<" ">>),
     case {First, Second, Third} of
-        {Method, RequestURI, <<?SIPVERSION>>} ->
-            #sip_request{method = sip_syntax:parse_name(sip_binary:to_upper(Method)),
+        {MethodBin, RequestURI, <<?SIPVERSION>>} ->
+            #sip_request{method = sip_syntax:parse_method(MethodBin),
                          uri = RequestURI};
 
         {<<?SIPVERSION>>, <<A,B,C>>, ReasonPhrase} when

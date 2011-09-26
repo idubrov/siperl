@@ -1,10 +1,8 @@
-%%%----------------------------------------------------------------
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc
-%%% SIP implementation data types.
+%%% @doc SIP implementation data types.
 %%% @end
+%%% @reference http://www.iana.org/assignments/sip-parameters
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
-%%%----------------------------------------------------------------
 
 %%-----------------------------------------------------------------
 %% SIP core data types
@@ -50,15 +48,31 @@
 
 %% SIP message types.
 
--type sip_status()  :: 100..699.
+%% Methods, as defined in IANA registry
+-type sip_method()   :: 'ACK'           % RFC3261
+                      | 'BYE'           % RFC3261
+                      | 'CANCEL'        % RFC3261
+                      | 'INFO'          % RFC6086
+                      | 'INVITE'        % RFC3261, RFC6026
+                      | 'MESSAGE'       % RFC3428
+                      | 'NOTIFY'        % RFC3265
+                      | 'OPTIONS'       % RFC3261
+                      | 'PRACK'         % RFC3262
+                      | 'PUBLISH'       % RFC3903
+                      | 'REFER'         % RFC3515
+                      | 'REGISTER'      % RFC3261
+                      | 'SUBSCRIBE'     % RFC3265
+                      | 'UPDATE'.       % RFC3311
+
 %% 1xx Provisional
 %% 2xx Success
 %% 3xx Redirection
 %% 4xx Client Error
 %% 5xx Server Error
 %% 6xx Global Failure
+-type sip_status()  :: 100..699.
 
--record(sip_request, {method        :: sip_name(),
+-record(sip_request, {method        :: sip_method(),
                       uri           :: sip_uri(),
                       headers = []  :: sip_headers(),
                       body = <<>>   :: binary()}).
@@ -131,7 +145,7 @@
                                       {sip_name(), term()} | sip_name()]}).
 
 -record(sip_hdr_cseq, {sequence :: sip_sequence(),
-                       method :: atom() | binary()}).
+                       method   :: sip_method()}).
 
 %% Value for address headers (`Route:', `Record-Route', `To:', `From:', `Contact')
 -record(sip_hdr_address,

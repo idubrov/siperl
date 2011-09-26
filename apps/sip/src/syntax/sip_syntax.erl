@@ -13,6 +13,7 @@
 -export([parse_integer/1, parse_ip_address/1, parse_host_port/1]).
 -export([format_addr/1]).
 -export([parse_name/1, format_name/1]).
+-export([parse_method/1, format_method/1]).
 
 %% Includes
 -include("../sip_common.hrl").
@@ -332,6 +333,33 @@ parse_name(Bin) ->
 -spec format_name(sip_name()) -> binary().
 format_name(Name) when is_binary(Name) -> Name;
 format_name(Name) when is_atom(Name) -> atom_to_binary(Name, utf8).
+
+-spec parse_method(binary()) -> sip_method().
+%% @doc Parse method given in binary format into atom
+%% @end
+parse_method(Bin) when is_binary(Bin) ->
+    case sip_binary:to_upper(Bin) of
+        <<"ACK">>       -> 'ACK';       % RFC3261
+        <<"BYE">>       -> 'BYE';       % RFC3261
+        <<"CANCEL">>    -> 'CANCEL';    % RFC3261
+        <<"INFO">>      -> 'INFO';      % RFC6086
+        <<"INVITE">>    -> 'INVITE';    % RFC3261, RFC6026
+        <<"MESSAGE">>   -> 'MESSAGE';   % RFC3428
+        <<"NOTIFY">>    -> 'NOTIFY';    % RFC3265
+        <<"OPTIONS">>   -> 'OPTIONS';   % RFC3261
+        <<"PRACK">>     -> 'PRACK';     % RFC3262
+        <<"PUBLISH">>   -> 'PUBLISH';   % RFC3903
+        <<"REFER">>     -> 'REFER';     % RFC3515
+        <<"REGISTER">>  -> 'REGISTER';  % RFC3261
+        <<"SUBSCRIBE">> -> 'SUBSCRIBE'; % RFC3265
+        <<"UPDATE">>    -> 'UPDATE'     % RFC3311
+    end.
+
+-spec format_method(atom()) -> binary().
+%% @doc Format method into binary form
+%% @end
+format_method(Method) when is_atom(Method) ->
+    atom_to_binary(Method, utf8).
 
 %%-----------------------------------------------------------------
 %% Tests
