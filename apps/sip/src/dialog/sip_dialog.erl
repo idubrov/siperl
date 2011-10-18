@@ -1,7 +1,7 @@
 %%% @author  Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc SIP dialog server
 %%%
-%%% Manages SIP dialog creation, state, updates and expiration.
+%%% Manages SIP dialog usage (creation, state, updates and expiration).
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
 -module(sip_dialog).
