@@ -38,7 +38,7 @@ bye(DialogId) ->
 %% UA callbacks
 %%-----------------------------------------------------------------
 -spec is_applicable(#sip_request{}) -> boolean().
-%% @doc Serve requests to user `hang' and also extra 2xx responses.
+%% @doc Serve requests to user `hang'
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"hang">>}}) -> true;
 is_applicable(#sip_request{}) -> false.
