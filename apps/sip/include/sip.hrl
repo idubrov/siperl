@@ -208,6 +208,23 @@
          owner              :: pid()}).
 
 %%-----------------------------------------------------------------
+%% SIP sessions
+%%-----------------------------------------------------------------
+
+-type sip_session_id() :: #sip_dialog_id{}.
+-type sip_session_desc() :: term().
+
+-record(sip_offer, {side    :: local | remote,
+                    session :: sip_session_desc()}).
+
+%% SIP session is identified by dialog id.
+-record(sip_session,
+        {id     :: sip_session_id(),                 % Session id
+         offer  :: #sip_offer{} | undefined,         % Offer received, but not yet updated
+         remote :: sip_session_desc() | undefined,   % Remote session descriptor
+         local  :: sip_session_desc() | undefined}). % Local session descriptor
+
+%%-----------------------------------------------------------------
 %% SIP UAC/UAS
 %%-----------------------------------------------------------------
 

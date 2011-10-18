@@ -30,6 +30,7 @@ start_link() ->
 -spec init({}) -> {ok, _}.
 init({}) ->
     Children = [?SERVER(sip_dialog, sip_dialog, []),
+                ?SERVER(sip_session, sip_session, []),
                 ?SERVER(sip_dialog_man, gen_event, [{local, sip_dialog_man}], [dynamic])],
     {ok, {{one_for_one, 1000, 3600}, Children}}.
 
