@@ -7,5 +7,6 @@ demos/rel/demos
 deps
 apps/sip/doc
 apps/sip/logs
-apps/sip/*.coverdata
 apps/sip/*.coverage.xml
+apps/sip/test/*.coverdata
+apps/sip/test/*.coverage.xml
