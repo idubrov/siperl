@@ -47,7 +47,7 @@ is_loose_router(#sip_uri{params = Params}) ->
 is_strict_router(URI) ->
     not is_loose_router(URI).
 
--spec is_sips(sip_uri()) -> boolean.
+-spec is_sips(sip_uri()) -> boolean().
 %% @doc Check if URI is SIPS URI.
 %% @end
 is_sips(#sip_uri{scheme = sips}) -> true;

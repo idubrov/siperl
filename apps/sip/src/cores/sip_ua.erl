@@ -36,14 +36,11 @@
 -type state() :: term().     % Callback module state
 -type gen_from() :: {pid(), term()}.
 
--type callback() ::  sip_ua_client:callback(). % Response callback
--export_type([callback/0]).
-
 -type options() :: [no_detect_loops].
 
 %% API
 
--spec start_link(atom(), module(), term(), options()) -> {ok, pid()} | {error, term()}.
+-spec start_link({global,_} | {local, atom()}, module(), term(), options()) -> {ok, pid()} | {error, term()}.
 start_link(Name, Callback, Args, Opts) when is_atom(Callback), is_list(Opts) ->
     gen_server:start_link(Name, ?MODULE, {Callback, Args, Opts}, []).
 
@@ -60,13 +57,13 @@ start_link(Callback, Args, Opts) when is_atom(Callback), is_list(Opts) ->
 %% Clients are free to modify any part of the request according to their needs.
 %% @end
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
-create_request(Method, To) when is_record(To, sip_hdr_address); is_record(To, sip_dialog_id) ->
+create_request(Method, To) when is_record(To, sip_hdr_address) ->
     sip_ua_client:create_request(Method, To);
 
 %% @doc Create request within the  dialog according to the 12.2.1.1 Generating the Request
 %% Clients are free to modify any part of the request according to their needs.
 %% @end
-create_request(Method, Dialog) when is_record(Dialog, sip_dialog) ->
+create_request(Method, Dialog) when is_record(Dialog, sip_dialog_id) ->
     sip_ua_client:create_request(Method, Dialog).
 
 %% @doc Create request outside of the dialog according to the 8.2.6 Generating the Response
@@ -114,7 +111,7 @@ send_response(Request, Response) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec init({module(), term()}) -> {ok, state()}.
+-spec init({module(), term(), options()}) -> {ok, state()}.
 init({Callback, Args, Opts}) ->
     ok = sip_ua_client:init(Opts),
     ok = sip_ua_server:init(Opts),
@@ -137,8 +134,7 @@ handle_call(Req, From, State) ->
     Callback = erlang:get(?CALLBACK),
     Callback:handle_call(Req, From, State).
 
--spec handle_cast({send_response, #sip_request{}, #sip_response{}}, state()) -> {noreply, state()};
-                 (term(), state()) -> {noreply, state()} | {stop, term(), state()}.
+-spec handle_cast(term(), state()) -> {stop, term(), state()}.
 handle_cast(Cast, State) ->
     {stop, {unexpected, Cast}, State}.
 

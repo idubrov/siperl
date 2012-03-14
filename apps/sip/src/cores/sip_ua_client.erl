@@ -183,7 +183,7 @@ cancel_request(Id) ->
 %%-----------------------------------------------------------------
 
 %% @private
--spec handle_response(#sip_response{}, #sip_tx_client{}, module(), state()) -> {ok, state()}.
+-spec handle_response(#sip_response{}, pid(), module(), state()) -> {noreply, state()}.
 handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
     #request_info{} = ReqInfo = lookup_by_tx(TxPid),
 

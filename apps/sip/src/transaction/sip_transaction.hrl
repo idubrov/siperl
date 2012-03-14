@@ -11,7 +11,7 @@
 %% Transaction state record. Used both for client and server transactions.
 -record(tx_state,
         {tx_key             :: sip_tx_key(),        % Transaction key
-         tx_user            :: pid(),               % Transaction user
+         tx_user            :: pid() | none,        % Transaction user
          timerA             :: reference(),         % Timer A, RFC 3261 17.1.1.2
          timerB             :: reference(),         % Timer B, RFC 3261 17.1.1.2
          timerD             :: reference(),         % Timer D, RFC 3261 17.1.1.2

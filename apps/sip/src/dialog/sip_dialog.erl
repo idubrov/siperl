@@ -48,7 +48,7 @@ create_dialog(Kind, Request, Response) when
     Dialog = dialog_state(Kind, Request, Response),
     gen_server:call(?SERVER, {create_dialog, Dialog}).
 
--spec terminate_dialog(#sip_dialog_id{}) -> ok.
+-spec terminate_dialog(#sip_dialog_id{}) -> ok | {error, no_dialog}.
 %% @doc Terminate dialog based on dialog id
 %% @end
 terminate_dialog(DialogId) when is_record(DialogId, sip_dialog_id) ->

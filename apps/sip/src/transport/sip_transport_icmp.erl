@@ -61,7 +61,7 @@ init({}) ->
     end.
 
 %% @private
--spec handle_call(_, _, #state{}) -> {reply, {term(), integer()}, #state{}} | {stop, _, #state{}}.
+-spec handle_call(_, _, #state{}) -> {stop, _, #state{}}.
 handle_call(Req, _From, State) ->
     {stop, {unexpected, Req}, State}.
 

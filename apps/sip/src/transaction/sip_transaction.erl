@@ -36,7 +36,7 @@
 %% @end
 -spec start_client_tx(#sip_destination{},
                       #sip_request{},
-                      [{ttl, non_neg_integer()} | {tu, pid()}]) -> {ok, pid()}.
+                      [{ttl, non_neg_integer()} | {tu, pid() | none}]) -> {ok, pid()}.
 start_client_tx(Destination, Request, Options)
   when is_record(Destination, sip_destination),
        is_record(Request, sip_request),
@@ -86,8 +86,7 @@ list_tx() ->
     MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
     gproc:select(names, MS).
 
--spec cancel(#sip_request{}) -> {ok, pid()} | false;
-            (#sip_tx_client{}) -> {ok, #sip_tx_client{}} | false.
+-spec cancel(#sip_request{}) -> {ok, pid()} | false.
 %% @doc Cancel server transaction based on the `CANCEL' request
 %%
 %% This functionality was moved from the UAS here, because transaction

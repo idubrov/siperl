@@ -55,7 +55,7 @@ send_response(Request, Response, Callback) when is_record(Request, sip_request),
         internal_send(Request, Response2, Callback)]).
 
 %% @private
--spec handle_request(#sip_request{}, module(), state()) -> {ok, state()}.
+-spec handle_request(#sip_request{}, module(), state()) -> {noreply, state()}.
 handle_request(Request, Callback, State) ->
     % start server transaction
     {ok, _TxPid} = sip_transaction:start_server_tx(Request, []),

@@ -50,7 +50,7 @@ start_timer(TimerName, TimerIdx, Interval, TxState) ->
     Timer = gen_fsm:start_timer(Interval, {TimerName, Interval}),
     setelement(TimerIdx, TxState, Timer).
 
--spec send_ack(#sip_response{}, #tx_state{}) -> #tx_state{}.
+-spec send_ack(#sip_response{}, #tx_state{}) -> ok.
 send_ack(Response, TxState) ->
     ACK = sip_message:create_ack(TxState#tx_state.request, Response),
     send_request(ACK, TxState).
@@ -69,15 +69,16 @@ send_request(Request, TxState) ->
 
 -spec send_response(#sip_response{}, #tx_state{}) -> ok.
 send_response(Response, #tx_state{tx_user = TU}) ->
-    case sip_transport:send_response(Response) of
+    ok = case sip_transport:send_response(Response) of
         ok -> ok;
+
         % According to the RFC 6026, we should report to TU
         {error, Reason} ->
-            TU ! {tx, self(), {error, Reason}}
-    end,
-    ok.
+            TU ! {tx, self(), {error, Reason}},
+            ok
+    end.
 
--spec pass_to_tu(#sip_response{}, #tx_state{}) -> ok.
+-spec pass_to_tu(sip_message(), #tx_state{}) -> ok.
 pass_to_tu(_Message, #tx_state{tx_user = none}) -> ok; % No TU to report to
 pass_to_tu(#sip_request{} = Msg, #tx_state{tx_user = TU}) ->
     TU ! {request, Msg, self()},

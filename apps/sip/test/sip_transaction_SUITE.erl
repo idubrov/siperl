@@ -70,7 +70,7 @@ init_per_suite(Config) ->
                               % emulate transport error to test RFC 6026 8.8
                               {error, transport_failure};
                          (Msg) ->
-                             
+
                               TestPid = sip_test:pid_from_message(Msg),
                               TestPid ! {tp, response, Msg},
                               ok
@@ -500,7 +500,7 @@ server_invite_ok(Config) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Provisional response is sent by TU
-    sip_transaction:send_response(Ringing),
+    {ok, TxPid} = sip_transaction:send_response(Ringing),
     ?assertReceive("Expect provisional response is sent", {tp, response, Ringing}),
 
     case Reliable of
@@ -514,7 +514,7 @@ server_invite_ok(Config) ->
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     % Check extra INVITEs are absorbed
@@ -528,7 +528,7 @@ server_invite_ok(Config) ->
     ?assertReceive("Expect ACKs are passed to TU in 'ACCEPTED' state", {request, ACK, TxPid}),
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     % Wait for Timer L to fire
@@ -570,7 +570,7 @@ server_invite_err(Config) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect response is sent", {tp, response, Response}),
 
     % Check retransmissions handling
@@ -632,7 +632,7 @@ server_invite_timeout(Config) ->
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Final response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect response is sent", {tp, response, Response}),
 
     timer:sleep(32000),
@@ -677,11 +677,11 @@ server_ok(Config) ->
     {ok, TxPid} = sip_transaction:handle_request(Request),
 
     % Provisional response is sent by TU
-    sip_transaction:send_response(Trying),
+    {ok, TxPid} = sip_transaction:send_response(Trying),
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
 
     % Additional provisioning responses
-    sip_transaction:send_response(Trying2),
+    {ok, TxPid} = sip_transaction:send_response(Trying2),
     ?assertReceive("Expect provisional response is sent", {tp, response, Trying2}),
 
     case Reliable of
@@ -695,7 +695,7 @@ server_ok(Config) ->
     end,
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     case Reliable of
@@ -704,7 +704,7 @@ server_ok(Config) ->
             ok;
         false ->
             % additional responses are discarded
-            sip_transaction:send_response(Response2),
+            {ok, TxPid} = sip_transaction:send_response(Response2),
 
             {ok, TxPid} = sip_transaction:handle_request(Request),
             ?assertReceive("Expect final response is re-sent", {tp, response, Response}),
@@ -741,7 +741,7 @@ server_ok_transport_err(Config) ->
     _Ref = erlang:monitor(process, TxPid),
 
     % 299 response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect error is reported by transaction", {tx, TxPid, {error, transport_failure}}),
 
     % wait for timer J to fire
@@ -774,7 +774,7 @@ server_err(Config) ->
     _Ref = erlang:monitor(process, TxPid),
 
     % 500 response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     % wait for timer J to fire
@@ -824,7 +824,7 @@ server_loop(Config) ->
     false = sip_transaction:is_loop_detected(Request3),
 
     % 2xx response is sent by TU
-    sip_transaction:send_response(Response),
+    {ok, TxPid} = sip_transaction:send_response(Response),
     ?assertReceive("Expect 2xx response is sent", {tp, response, Response}),
 
     % wait for timer J to fire

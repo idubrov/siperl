@@ -311,10 +311,11 @@ receive_request_send_response_tcp(_Config) ->
                                    [inet, binary, {active, false}, {packet, raw}]),
 
     ok = gen_tcp:send(Socket, sip_message:to_binary(Request)),
-    receive
+    ok = receive
         {request, Msg} ->
             ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
-            ExpectedRequest = sip_message:parse_all_headers(Msg);
+            ExpectedRequest = sip_message:parse_all_headers(Msg),
+            ok;
 
         {response, _Msg} ->
             ?fail("Response is not expected here")
@@ -349,10 +350,11 @@ receive_request_send_response_tcp_reconnect(Config) ->
                                    [inet, binary, {active, false}, {packet, raw}]),
 
     ok = gen_tcp:send(Socket, sip_message:to_binary(Request)),
-    receive
+    ok = receive
         {request, Msg} ->
             ExpectedRequest = add_via_param(Request, {received, {127, 0, 0, 1}}),
-            ExpectedRequest = sip_message:parse_all_headers(Msg);
+            ExpectedRequest = sip_message:parse_all_headers(Msg),
+            ok;
 
         {response, _Msg2} -> ?fail("Response is not expected here")
         after ?TIMEOUT -> ?fail("Message expected to be received by transport layer")

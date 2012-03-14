@@ -22,16 +22,16 @@
 %%-----------------------------------------------------------------
 %% API
 %%-----------------------------------------------------------------
--spec start_link(fun(() -> ok)) -> {ok, pid()} | {error, term()}.
+-spec start_link(fun((#sip_request{}) -> ok)) -> {ok, pid()} | {error, term()}.
 start_link(Handler) ->
     sip_ua:start_link(?MODULE, {Handler}, [no_detect_loops]).
 
--spec send_options(pid(), #sip_hdr_address{}) -> #sip_response{}.
+-spec send_options(pid(), #sip_hdr_address{}) -> {ok, #sip_response{}}.
 send_options(Server, To) ->
     Request = sip_ua:create_request('OPTIONS', To),
     gen_server:call(Server, {send_request, Request}).
 
--spec send_invite(pid(), #sip_hdr_address{}) -> #sip_response{}.
+-spec send_invite(pid(), #sip_hdr_address{}) -> {ok, #sip_response{}}.
 send_invite(Server, To) ->
     Contact = uac_contact(),
     Request = sip_ua:create_request('INVITE', To),
