@@ -205,24 +205,27 @@
          remote_target_uri  :: sip_uri(),
          secure             :: boolean(),
          route_set          :: [sip_uri()],
-         owner              :: pid()}).
+         owner              :: pid(),
+         session            :: boolean()}).     % true if session was established in this dialog
 
 %%-----------------------------------------------------------------
 %% SIP sessions
 %%-----------------------------------------------------------------
 
 -type sip_session_id() :: #sip_dialog_id{}.
--type sip_session_desc() :: term().
+
+-record(sip_session_desc, {type    :: #sip_hdr_mediatype{},
+                           body    :: binary() | term()}).
 
 -record(sip_offer, {side    :: local | remote,
-                    session :: sip_session_desc()}).
+                    session :: #sip_session_desc{}}).
 
 %% SIP session is identified by dialog id.
 -record(sip_session,
         {id     :: sip_session_id(),                 % Session id
          offer  :: #sip_offer{} | undefined,         % Offer received, but not yet updated
-         remote :: sip_session_desc() | undefined,   % Remote session descriptor
-         local  :: sip_session_desc() | undefined}). % Local session descriptor
+         remote :: #sip_session_desc{} | undefined,   % Remote session descriptor
+         local  :: #sip_session_desc{} | undefined}). % Local session descriptor
 
 %%-----------------------------------------------------------------
 %% SIP UAC/UAS
