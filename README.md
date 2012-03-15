@@ -48,6 +48,16 @@ Running simplest scenario of UAC and UAS interaction:
 
     $ shell/ct.sh apps/sip/test/ua.spec
 
+### Cheatsheet
+
+Add `code:load_abs("<PROJECT>/shell/user_default").` to the `~/.erlang` to get
+few helpful commands in the Erlang shell:
+
+ * lm() reload all modified modules
+ * mm() print list of all modified modules
+ * ctl(Module) run all EUnit tests in the module `Module` with line level coverage
+   analysis and print the results
+
 API Notes
 ---------
 
