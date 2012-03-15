@@ -17,6 +17,7 @@
 -export([create_ack/2, create_cancel/1, create_response/2, create_response/3]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
+-export([disposition/1]).
 -export([with_branch/2, foldl_headers/4]).
 -export([default_reason/1]).
 
@@ -226,6 +227,26 @@ has_header(Name, Msg) when is_record(Msg, sip_request); is_record(Msg, sip_respo
     case lists:keyfind(Name, 1, Headers) of
         {Name, _Value} -> true;
         false -> false
+    end.
+
+
+%% @doc Return effective Content-Disposition value
+%% If header is present, return its value. If not and Content-Type
+%% is `application/sdp', return `session'. Otherwise, return `render'.
+%% @end
+-spec disposition(sip_message()) -> #sip_hdr_disposition{}.
+disposition(Msg) ->
+    case header_values('content-disposition', Msg) of
+        [#sip_hdr_disposition{} = Disposition] ->
+            Disposition;
+
+        [] ->
+            case header_values('content-type', Msg) of
+                [#sip_hdr_mediatype{type = application, subtype = sdp}] ->
+                    #sip_hdr_disposition{type = session};
+                _Other ->
+                    #sip_hdr_disposition{type = render}
+            end
     end.
 
 %% @doc RFC 3261, 17.1.1.3 Construction of the ACK Request
@@ -989,6 +1010,19 @@ is_secure_test_() ->
      ?_assertEqual(false, is_secure(append_header('record-route', RecordRoute, replace_top_header(contact, SecureContact, Request))))
      ].
 
+-spec disposition_test_() -> list().
+disposition_test_() ->
+    [% explicit Content-Disposition
+     ?_assertEqual(#sip_hdr_disposition{type = session},
+                   disposition(#sip_request{headers = [{'content-disposition', <<"session">>},
+                                                       {'content-type', <<"application/sdp">>}]})),
+     % no Content-Disposition, Content-Type is different from application/sdp
+     ?_assertEqual(#sip_hdr_disposition{type = render},
+                   disposition(#sip_request{headers = [{'content-type', <<"application/x-sdp">>}]})),
+     % no Content-Disposition, but Content-Type is application/sdp
+     ?_assertEqual(#sip_hdr_disposition{type = session},
+                   disposition(#sip_request{headers = [{'content-type', <<"application/sdp">>}]}))
+     ].
 
 -spec fake_test() -> ok.
 fake_test() ->
