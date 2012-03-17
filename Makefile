@@ -14,4 +14,11 @@ clean:
 	@$(REBAR) clean
 check: compile dialyzer
 dialyzer:
-	@dialyzer --no_check_plt --quiet apps/sip/ebin --verbose -Wunmatched_returns -Werror_handling -Wrace_conditions
+	@dialyzer --no_check_plt \
+	          -Wunmatched_returns \
+	          -Werror_handling \
+	          -Wrace_conditions \
+	          --quiet \
+	          apps/sip/ebin \
+	          demos/hang/ebin \
+	          demos/busy/ebin
