@@ -252,7 +252,7 @@ disposition(Msg) ->
 %% @doc Extract session descriptor from the message
 %% Returns `false' if message does not contain session descriptor.
 %% @end
--spec session(sip_message()) -> #sip_session_desc{}.
+-spec session(sip_message()) -> #sip_session_desc{} | false.
 session(Msg) ->
     case disposition(Msg) of
         #sip_hdr_disposition{type = session} ->

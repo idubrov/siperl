@@ -19,6 +19,7 @@
 -export([new/0, put/3, take/1]).
 
 -type priority_set(T) :: {ordsets:ordset(T), ordsets:ordset({float(), T})}.
+-export_type([priority_set/1]).
 
 -spec new() -> {[], []}.
 new() ->
