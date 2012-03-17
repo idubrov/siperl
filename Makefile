@@ -12,5 +12,6 @@ test: deps
 	erl -noshell -pa ebin deps/*/ebin -run ct_surefire to_surefire_xml $(CURDIR)/apps/sip/logs $(CURDIR)/apps/sip/logs -s init stop
 clean:
 	@$(REBAR) clean
-check: compile
-	@dialyzer apps/sip/ebin --verbose -Wunmatched_returns -Werror_handling -Wrace_conditions
+check: compile dialyzer
+dialyzer:
+	@dialyzer --no_check_plt --quiet apps/sip/ebin --verbose -Wunmatched_returns -Werror_handling -Wrace_conditions
