@@ -142,6 +142,13 @@ update_remote_seq(Request, Callback) ->
                     error_m:return(ok);
 
                 {error, no_dialog} ->
+                    % XXX: should we treat OPTIONS differently?
+                    % http://www.mail-archive.com/sip-implementors@lists.cs.columbia.edu/msg02364.html
+                    % https://issues.asterisk.org/view.php?id=11264
+                    %
+                    % Currently we give same response we would give on re-INVITE,
+                    % which matches the 11.2 RFC 3261 behavior
+
                     % Send "481 Call/Transaction Does Not Exist"
                     ok = internal_send(Request, 481, Callback),
                     error_m:fail(no_dialog);
