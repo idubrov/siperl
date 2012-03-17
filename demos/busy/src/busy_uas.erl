@@ -67,7 +67,7 @@ allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE', 'OPTIONS'].
 
     % Lookup original transaction and cancel its timer
     TxKey = (sip_transaction:tx_key(server, Request))#sip_tx_server{method = 'INVITE'},
-    timer:cancel(dict:fetch(TxKey, Context#context.timers)),
+    {ok, cancel} = timer:cancel(dict:fetch(TxKey, Context#context.timers)),
     Timers = dict:erase(TxKey, Context#context.timers),
 
     % Delegate to standard UAS CANCEL handling
@@ -79,7 +79,7 @@ handle_info({reply, Request}, Context) ->
 
     % Send 486 Busy Here response
     Response = sip_ua:create_response(Request, 486),
-    sip_ua:send_response(Request, Response),
+    ok = sip_ua:send_response(Request, Response),
 
     TxKey = sip_transaction:tx_key(server, Request),
     Timers = dict:erase(TxKey, Context#context.timers),

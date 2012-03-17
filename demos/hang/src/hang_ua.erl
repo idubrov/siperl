@@ -108,7 +108,7 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     % put session in ACK
     %ACK3 = sip_message:append_header('content-type', <<"application/sdp">>, ACK2),
     %ACK4 = ACK3#sip_request{body = sdp()},
-    sip_ua:send_request(ACK2),
+    {ok, _Ref} = sip_ua:send_request(ACK2),
 
     {noreply, State};
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
