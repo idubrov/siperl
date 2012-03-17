@@ -41,7 +41,9 @@ bye(DialogId) ->
 %% @doc Serve requests to user `hang'
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"hang">>}}) -> true;
-is_applicable(#sip_request{}) -> false.
+is_applicable(#sip_request{} = Request) ->
+    To = sip_message:header_top_value('to', Request),
+    To#sip_hdr_address.uri#sip_uri.user == <<"hang">>.
 
 -spec init({}) -> {ok, #state{}}.
 init({}) ->
@@ -62,9 +64,13 @@ handle_call({call, To}, _From, #state{} = State) ->
     % Request will be cancelled automatically after 5 seconds
     Request4 = sip_message:append_header(expires, 5, Request3),
 
+    % put session in INVITE
+    Request5 = sip_message:append_header('content-type', <<"application/sdp">>, Request4),
+    Request6 = Request5#sip_request{body = sdp()},
+
     % Call
-    io:format("HANG: Calling to ~s~n", [to(Request4)]),
-    {ok, _RequestId} = sip_ua:send_request(Request4),
+    io:format("HANG: Calling to ~s~n", [to(Request6)]),
+    {ok, _RequestId} = sip_ua:send_request(Request6),
 
     {reply, ok, State};
 
@@ -98,9 +104,11 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
 
     CSeq = sip_message:header_top_value(cseq, Response),
     ACK2 = sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK),
-    ACK3 = sip_message:append_header('content-type', <<"application/sdp">>, ACK2),
-    ACK4 = ACK3#sip_request{body = sdp()},
-    sip_ua:send_request(ACK4),
+
+    % put session in ACK
+    %ACK3 = sip_message:append_header('content-type', <<"application/sdp">>, ACK2),
+    %ACK4 = ACK3#sip_request{body = sdp()},
+    sip_ua:send_request(ACK2),
 
     {noreply, State};
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
@@ -127,7 +135,5 @@ sdp() ->
       "c=IN IP4 0.0.0.0\r\n",
       "t=0 0\r\n",
       "m=audio ", Port/binary, " RTP/AVP 112 113\r\n",
-      "a=rtpmap:112 L16/48000/2\r\n",
-      "a=rtpmap:113 DAT12/32000/4\r\n",
-      "a=fmtp:113 contents:DV L/R/C/WO\r\n">>.
-
+      "a=rtpmap:112 speex/32000/1\r\n",
+      "a=fmtp:112 vbr=on">>.
