@@ -17,7 +17,7 @@
 -export([create_ack/2, create_cancel/1, create_response/2, create_response/3]).
 -export([update_top_header/3, replace_top_header/3, append_header/3]).
 -export([header_values/2, header_top_value/2, has_header/2]).
--export([disposition/1]).
+-export([disposition/1, session/1]).
 -export([with_branch/2, foldl_headers/4]).
 -export([default_reason/1]).
 
@@ -247,6 +247,19 @@ disposition(Msg) ->
                 _Other ->
                     #sip_hdr_disposition{type = render}
             end
+    end.
+
+%% @doc Extract session descriptor from the message
+%% Returns `false' if message does not contain session descriptor.
+%% @end
+-spec session(sip_message()) -> #sip_session_desc{}.
+session(Msg) ->
+    case disposition(Msg) of
+        #sip_hdr_disposition{type = session} ->
+            ContentType = header_top_value('content-type', Msg),
+            #sip_session_desc{type = ContentType, body = body(Msg)};
+        _Other ->
+            false
     end.
 
 %% @doc RFC 3261, 17.1.1.3 Construction of the ACK Request
@@ -1022,6 +1035,20 @@ disposition_test_() ->
      % no Content-Disposition, but Content-Type is application/sdp
      ?_assertEqual(#sip_hdr_disposition{type = session},
                    disposition(#sip_request{headers = [{'content-type', <<"application/sdp">>}]}))
+     ].
+
+-spec session_test_() -> list().
+session_test_() ->
+    [% have session
+     ?_assertEqual(#sip_session_desc{type = sip_headers:media(application, 'x-sdp', []), body = <<"Session">>},
+                   session(#sip_request{headers = [{'content-disposition', <<"session">>},
+                                                   {'content-type', <<"application/x-sdp">>}],
+                                        body = <<"Session">>})),
+     % no session
+     ?_assertEqual(false,
+                   session(#sip_request{headers = [{'content-disposition', <<"render">>},
+                                                   {'content-type', <<"application/x-sdp">>}],
+                                        body = <<"Session">>}))
      ].
 
 -spec fake_test() -> ok.

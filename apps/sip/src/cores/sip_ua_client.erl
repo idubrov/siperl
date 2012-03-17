@@ -188,7 +188,7 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
     #request_info{} = ReqInfo = lookup_by_tx(TxPid),
 
     % If we got 408 Request Timeout and request was cancelled, treat it as 487 Request Terminated
-    % (RFC 2543 compliant UAS will not generate such a response)
+    % (RFC 2543 compliant UAS will not generate such a response), see 9.1 RFC3261
     Response2 =
         case (ReqInfo#request_info.cancel andalso Response#sip_response.status =:= 408) of
             true ->
@@ -201,6 +201,7 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
     % Callback:answer(Offer) and send ACK automatically?
     Result = do([error_m ||
                  validate_vias(Response2),
+                 handle_session(ReqInfo, Response2),
                  handle_provisional_response(ReqInfo, Response2),
                  handle_redirect_response(ReqInfo, Response2),
                  handle_failure_response(ReqInfo, Response2),
@@ -232,6 +233,26 @@ validate_vias(Msg) ->
             % discard response, too much/few Via's
             sip_log:wrong_vias(Msg),
             error_m:fail(discarded)
+    end.
+
+%% @doc Handle offer/answer from the remote side
+%% @end
+-spec handle_session(#request_info{}, #sip_response{}) -> error_m:monad(ok).
+handle_session(ReqInfo, Response) ->
+    case sip_offer_answer:validate_response(ReqInfo#request_info.request, Response) of
+        ok ->
+            error_m:return(ok); % nothing of interest
+        cancel ->
+            io:format("FIXME: UAC SESSION CANCEL~n"),
+            error_m:return(ok);
+        Kind when Kind =:= offer; Kind =:= answer ->
+            case sip_message:session(Response) of
+                false ->
+                    error_m:fail(session_expected);
+                #sip_session_desc{} = SessionDesc ->
+                    io:format("FIXME: UAC SESSION ~p ~p~n", [Kind, SessionDesc]),
+                    error_m:return(ok)
+            end
     end.
 
 -spec handle_provisional_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).

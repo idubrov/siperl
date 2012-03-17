@@ -68,6 +68,7 @@ handle_request(Request, Callback, State) ->
             %validate_uris(Request, Callback, State),
             validate_loop(Request, Callback),
             validate_required(Request, Callback),
+            handle_session(Request, Callback),
             handle_bye_request(Request, Callback)]),
 
     case Result of
@@ -152,7 +153,7 @@ update_remote_seq(Request, Callback) ->
             end
     end.
 
--spec handle_bye_request(#sip_request{}, state()) -> error_m:monad(ok).
+-spec handle_bye_request(#sip_request{}, module()) -> error_m:monad(ok).
 %% @doc Default handling of `BYE' requests
 %% @end
 handle_bye_request(#sip_request{method = 'BYE'} = Request, Callback) ->
@@ -170,9 +171,23 @@ handle_bye_request(#sip_request{method = 'BYE'} = Request, Callback) ->
     % FIXME: The UAS MUST still respond to any pending requests received for that dialog.
     % How should we do that? Keep a dialog for some time?
     error_m:fail(processed);
-
 handle_bye_request(_Request, _Callback) ->
     error_m:return(ok).
+
+%% @doc Handle offer/answer from the remote side
+%% @end
+-spec handle_session(#sip_request{}, module()) -> error_m:monad(ok).
+handle_session(Request, _Callback) ->
+    case sip_offer_answer:validate_request(Request) of
+        ok -> error_m:return(ok); % nothing of interest
+        Kind ->
+            case sip_message:session(Request) of
+                false ->
+                    error_m:fail(session_expected);
+                #sip_session_desc{} = SessionDesc ->
+                    io:format("FIXME: UAS SESSION ~p ~p~n", [Kind, SessionDesc])
+            end
+    end.
 
 invoke_callback(Request, Callback, State) ->
     Method = Request#sip_request.method,
