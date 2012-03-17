@@ -40,10 +40,12 @@ init({}) ->
 %% Responses will be delivered directly via transaction layer.
 %% @end
 is_applicable(#sip_request{uri = #sip_uri{user = <<"busy">>}}) -> true;
-is_applicable(#sip_request{}) -> false.
+is_applicable(#sip_request{} = Request) ->
+    To = sip_message:header_top_value('to', Request),
+    To#sip_hdr_address.uri#sip_uri.user == <<"busy">>.
 
 -spec allow(#sip_request{}) -> [atom()].
-allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE'].
+allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE', 'OPTIONS'].
 
 -spec 'INVITE'(#sip_request{}, #context{}) -> {reply, #sip_response{}, #context{}}.
 'INVITE'(Request, Context) ->
