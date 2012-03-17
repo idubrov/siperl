@@ -41,7 +41,7 @@ server(_Request) ->
 %% @doc Default implementation of `OPTIONS' method.
 %% @end
 'OPTIONS'(Request, State) ->
-    Response = sip_ua:create_response(Request, 501),
+    Response = sip_ua:create_response(Request, 200),
     {reply, Response, State}.
 
 -spec 'CANCEL'(#sip_request{}, state()) -> {noreply, state()} | {reply, #sip_response{}, state()}.
