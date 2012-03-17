@@ -218,6 +218,7 @@ create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} =
     case sip_message:is_within_dialog(Request) of
         false ->
             {ok, DialogId} = sip_dialog:create_dialog(uas, Request, Response),
+            % FIXME: should add 'invite' usage to the dialog?
             ok = sip_dialog:create_session(DialogId), % session is created upon 2xx response sending
             error_m:return(ok);
         true ->

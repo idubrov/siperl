@@ -13,33 +13,36 @@
 
 -record(state, {ua :: pid(), timers = []}).
 
+-spec init({pid()}) -> {ok, #state{}}.
 init({UA}) ->
     {ok, #state{ua = UA}}.
 
 %% FIXME: How should we filter dialogs? We are not interested in all of them...
+-spec handle_event(any(), #state{}) -> {ok, #state{}}.
 handle_event({dialog_created, DialogId, Owner}, State) when State#state.ua =:= Owner ->
     % Hang up after 5 seconds
     TimerRef = erlang:send_after(5000, self(), {bye, DialogId}),
     Timers = [{DialogId, TimerRef} | State#state.timers],
     {ok, State#state{timers = Timers}};
-
-handle_event({dialog_terminated, DialogId, Owner}, State) ->
+handle_event({dialog_terminated, DialogId, _Owner}, State) ->
     State2 = cancel_bye_timer(DialogId, State),
     {ok, State2};
-
 handle_event(_Event, State) ->
     {ok, State}.
 
+-spec handle_call(any(), #state{}) -> {ok, ok, #state{}}.
 handle_call(_Request, State) ->
     {ok, ok, State}.
 
+-spec handle_info({bye, #sip_dialog_id{}}, #state{}) -> {ok, #state{}}.
 handle_info({bye, DialogId}, State) ->
-    % Send BYE request
+    % handle timer message, send BYE request
     io:format("HANG: Sending BYE~n"),
     hang_ua:bye(DialogId),
     {ok, State}.
 
-terminate(_Arg, State) ->
+-spec terminate(any(), #state{}) -> ok.
+terminate(_Arg, _State) ->
     ok.
 
 %% @private

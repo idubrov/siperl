@@ -72,6 +72,18 @@ init({}) ->
     {ok, #state{table = Table}}.
 
 %% @private
+-spec handle_call
+        ({offer, #sip_dialog_id{}, local | remote, #sip_session_desc{}}, gen_from(), #state{}) ->
+          {reply, ok, #state{}} |
+          {reply, {error, already_offered}, #state{}};
+        ({answer, #sip_dialog_id{}, local | remote, #sip_session_desc{}}, gen_from(), #state{}) ->
+          {reply, ok, #state{}} |
+          {reply, {error, no_session}, #state{}} |
+          {reply, {error, not_offered}, #state{}} |
+          {reply, {error, wrong_side}, #state{}};
+        ({lookup, #sip_dialog_id{}}, gen_from(), #state{}) ->
+          {reply, {ok, #sip_session{}}, #state{}} |
+          {reply, {error, no_session}, #state{}}.
 handle_call({offer, SessionId, Side, SessionDesc}, _From, State) ->
     case lookup_create(SessionId, State) of
         #sip_session{offer = undefined} = Session ->

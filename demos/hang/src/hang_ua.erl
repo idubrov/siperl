@@ -79,7 +79,7 @@ handle_call({bye, DialogId}, _From, State) ->
     {ok, _Id} = sip_ua:send_request(BYE),
     {reply, ok, State}.
 
-%-spec handle_response(ReqId, Response).
+-spec handle_response(#sip_request{}, #sip_response{}, reference(), #state{}) -> {noreply, #state{}}.
 handle_response(#sip_request{method = 'BYE'}, Response, _RequestId, State) ->
     io:format("HANG: Got ~w response on BYE from ~s~n", [Response#sip_response.status, to(Response)]),
     {noreply, State};
@@ -90,7 +90,7 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
     {noreply, State};
 
-handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 200, Status =< 299 ->
+handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, _RequestId, State) when Status >= 200, Status =< 299 ->
     io:format("HANG: Got success response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
 
@@ -111,7 +111,7 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     {ok, _Ref} = sip_ua:send_request(ACK2),
 
     {noreply, State};
-handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, RequestId, State) when Status >= 300 ->
+handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, _RequestId, State) when Status >= 300 ->
     io:format("HANG: Got failure response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
     {noreply, State}.
