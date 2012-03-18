@@ -9,6 +9,7 @@
 %% API
 %-export([create_dialog/3, destroy_dialog/1]).
 -export([create_invite_usage/3, destroy_invite_usage/1]). % INVITE dialog usage
+-export([update_session/2, update_session/3]). % INVITE dialog usage
 -export([create_request/2, update_remote_seq/2, dialog_id/2]).
 
 %% Include files
@@ -72,6 +73,25 @@ create_request(Method, #sip_dialog_id{} = DialogId) when is_record(DialogId, sip
 -spec update_remote_seq(#sip_dialog_id{}, sip_sequence()) -> ok | {error, no_dialog} | {error, out_of_order}.
 update_remote_seq(#sip_dialog_id{} = DialogId, Sequence) ->
     sip_dialog_ets:update_remote_seq(DialogId, Sequence).
+
+%%-----------------------------------------------------------------
+%% INVITE dialog usage
+%%-----------------------------------------------------------------
+
+%% @doc Update session based on the offer/answer from the remote side
+%% @end
+-spec update_session(uac | uas, #sip_request{}) -> error_m:monad(ok).
+update_session(UA, Request) when is_record(Request, sip_request) ->
+    Result = sip_offer_answer:validate_request(Request),
+    update_session_internal(UA, Result, Request).
+
+%% @doc Update session based on the offer/answer from the local side
+%% @end
+-spec update_session(uac | uas, #sip_request{}, #sip_response{}) -> error_m:monad(ok).
+update_session(UA, Request, Response) when is_record(Request, sip_request), is_record(Response, sip_response) ->
+    Result = sip_offer_answer:validate_response(Request, Response),
+    io:format("RESPONSE ~p ~p~n", [Request, Response]),
+    update_session_internal(UA, Result, Response).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -216,4 +236,22 @@ destroy_dialog(DialogId) when is_record(DialogId, sip_dialog_id) ->
                                               DialogId,
                                               Owner});
         Error -> Error
+    end.
+
+%% @doc Update session based on the offer/answer that could be present in message
+%% @end
+update_session_internal(UA, Result, Msg) ->
+    case Result of
+        ok -> error_m:return(ok); % no offer/answer, nothing to update
+        cancel ->
+            io:format("FIXME: ~p SESSION CANCEL~n", [UA]),
+            error_m:return(ok);
+        Kind when Kind =:= offer; Kind =:= answer -> % offer or answer expected
+            case sip_message:session(Msg) of
+                false ->
+                    error_m:fail(session_expected);
+                #sip_session_desc{} = SessionDesc ->
+                    io:format("FIXME: ~p SESSION ~p ~p~n", [UA, Kind, SessionDesc]),
+                    error_m:return(ok)
+            end
     end.
