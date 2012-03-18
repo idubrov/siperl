@@ -43,7 +43,8 @@ end_per_testcase(_TestCase, Config) ->
 %% @doc Configure UAS to reply with 200 Ok
 %% @end
 invite_200_handler(Request) ->
-    sip_ua:create_response(Request, 200).
+    Response = sip_ua:create_response(Request, 200),
+    sip_message:append_header('content-type', <<"application/sdp">>, Response).
 
 invite_200(Config) ->
     UA = ?config(ua, Config),

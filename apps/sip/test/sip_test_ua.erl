@@ -36,7 +36,8 @@ send_invite(Server, To) ->
     Contact = uac_contact(),
     Request = sip_ua:create_request('INVITE', To),
     Request2 = sip_message:append_header(contact, Contact, Request),
-    gen_server:call(Server, {send_request, Request2}).
+    Request3 = sip_message:append_header('content-type', <<"application/sdp">>, Request2),
+    gen_server:call(Server, {send_request, Request3}).
 
 %%-----------------------------------------------------------------
 %% UA callbacks

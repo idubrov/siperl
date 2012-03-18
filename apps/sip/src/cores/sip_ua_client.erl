@@ -102,7 +102,7 @@ send_request(Request) ->
     RequestId = make_ref(),
     Result = do([error_m ||
                  sip_message:validate_request(Request),
-                 sip_dialog:update_session(uac, Request),
+                 sip_ua_session:process_request(uac, Request),
                  next_uri(RequestId, Request)]),
     case Result of
         {error, processed} -> {ok, RequestId};
@@ -138,11 +138,11 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
     % Callback:answer(Offer) and send ACK automatically?
     Result = do([error_m ||
                  validate_vias(Response2),
-                 sip_dialog:update_session(uac, ReqInfo#request_info.request, Response2),
                  handle_provisional_response(ReqInfo, Response2),
                  handle_redirect_response(ReqInfo, Response2),
                  handle_failure_response(ReqInfo, Response2),
                  handle_dialog_response(ReqInfo, Response2),
+                 sip_ua_session:process_response(uac, ReqInfo#request_info.request, Response2),
                  handle_final_response(ReqInfo, Response2)]),
     % FIXME: 12.2.1.2
 
@@ -219,6 +219,9 @@ handle_dialog_response(#request_info{request = Request}, #sip_response{status = 
         false ->
             % FIXME: non-100 provisional response should create early dialog.
             {ok, _DialogId} = sip_dialog:create_invite_usage(uac, Request, Response),
+
+            % Analyze initial request since we now have dialog
+            sip_ua_session:process_invite(uac, Request, Response),
             error_m:return(ok);
         true ->
             % Response to re-INVITE

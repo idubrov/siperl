@@ -52,7 +52,7 @@ send_response(Request, Response, Callback) when is_record(Request, sip_request),
     do([error_m ||
         sip_message:validate_response(Response2),
         create_dialog_session(Request, Response2),
-        sip_dialog:update_session(uas, Request, Response2),
+        sip_ua_session:process_response(uas, Request, Response2),
         internal_send(Request, Response2, Callback)]).
 
 %% @private
@@ -69,7 +69,7 @@ handle_request(Request, Callback, State) ->
             %validate_uris(Request, Callback, State),
             validate_loop(Request, Callback),
             validate_required(Request, Callback),
-            sip_dialog:update_session(uas, Request),
+            sip_ua_session:process_request(uas, Request),
             handle_bye_request(Request, Callback)]),
 
     case Result of
@@ -204,6 +204,9 @@ create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} =
     case sip_message:is_within_dialog(Request) of
         false ->
             {ok, _DialogId} = sip_dialog:create_invite_usage(uas, Request, Response),
+
+            % Analyze initial request since we now have dialog
+            sip_ua_session:process_invite(uas, Request, Response),
             error_m:return(ok);
         true ->
             % Response to re-INVITE
