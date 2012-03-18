@@ -67,6 +67,7 @@ init(_Opts) ->
     erlang:put(?REQUESTS, []),
     ok.
 
+%% FIXME: should be possible to return error
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
 %% @doc Create request outside of the dialog
 %% @end
@@ -92,69 +93,9 @@ create_request(Method, #sip_hdr_address{} = ToAddress) ->
     #sip_request{method = Method,
                  uri = RequestURI,
                  headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]};
-
-%% @doc Create request as part of the dialog
-%% @end
-create_request(Method, #sip_dialog_id{} = DialogId) ->
-    {ok, Dialog} = sip_dialog:lookup_dialog(DialogId),
-    #sip_dialog{remote_uri = RemoteURI,
-                local_uri = LocalURI} = Dialog,
-
-    #sip_dialog_id{local_tag = LocalTag,
-                   call_id = CallIdValue,
-                   remote_tag = RemoteTag} = DialogId,
-
-    To = {to, sip_headers:address(<<>>, RemoteURI, tag_params(RemoteTag))},
-    From = {from, sip_headers:address(<<>>, LocalURI, tag_params(LocalTag))},
-    CallId = {'call-id', CallIdValue},
-
-    LocalSequence =
-        case Method of
-            'ACK' -> 0; % FIXME!!! What should we have here?
-            _Other ->
-                {ok, S} = sip_dialog:next_local_seq(DialogId),
-                S
-        end,
-    CSeq = {cseq, sip_headers:cseq(LocalSequence, Method)},
-
-    RouteSet = Dialog#sip_dialog.route_set,
-    RemoteTargetURI = Dialog#sip_dialog.remote_target_uri,
-    {RequestURI, Routes} = determine_routing(RemoteTargetURI, RouteSet),
-
-    Via = {via, #sip_hdr_via{}},
-    MaxForwards = {'max-forwards', 70},
-
-    % Build the route set
-    #sip_request{method = Method,
-                 uri = RequestURI,
-                 headers = [Via, MaxForwards, From, To, CSeq, CallId | Routes]}.
-
-determine_routing(RemoteTargetURI, []) ->
-    % 1. empty target route
-    {RemoteTargetURI, []};
-determine_routing(RemoteTargetURI, [TopRoute | RestRouteSet] = RouteSet) ->
-    case sip_uri:is_loose_router(TopRoute) of
-        true ->
-            % 2. top route is loose router
-            Routes = [{route, sip_headers:address(Route)} || Route <- RouteSet],
-            {RemoteTargetURI, Routes};
-        false ->
-            % 3. top route is strict router
-            RequestURI = strip_parameters(TopRoute),
-            Routes = [{route, sip_headers:address(Route)} || Route <- RestRouteSet] ++ [RemoteTargetURI],
-            {RequestURI, Routes}
-    end.
-
-%% @doc Convert null tag into empty list of parameters
-%% @end
-tag_params(<<>>) -> [];
-tag_params(Tag) -> [{tag, Tag}].
-
-%% @doc Strip any parameters that are not allowed in a Request-URI.
-%% XXX: For now, all parameters are stripped.
-%% @end
-strip_parameters(URI) ->
-    URI#sip_uri{params = []}.
+create_request(Method, DialogId) when is_record(DialogId, sip_dialog_id) ->
+    {ok, Request} = sip_dialog:create_request(Method, DialogId),
+    Request.
 
 -spec send_request(#sip_request{}) -> {ok, reference()} | {error, no_destinations}.
 send_request(Request) ->
@@ -293,16 +234,15 @@ handle_dialog_response(#request_info{request = #sip_request{method = 'BYE'}}, #s
   when (Status >= 200 andalso Status =< 299); Status =:= 481; Status =:= 408 ->
 
     DialogId = sip_dialog:dialog_id(uac, Response),
-    ok = sip_dialog:terminate_dialog(DialogId),
+    ok = sip_dialog:destroy_invite_usage(DialogId),
     error_m:return(ok);
 
 handle_dialog_response(#request_info{request = Request}, #sip_response{status = Status} = Response)
   when Status >= 200, Status =< 299, Request#sip_request.method =:= 'INVITE' ->
     case sip_message:is_within_dialog(Request) of
         false ->
-            {ok, DialogId} = sip_dialog:create_dialog(uac, Request, Response),
-            % FIXME: should add 'invite' usage to the dialog?
-            ok = sip_dialog:create_session(DialogId), % session is created upon 2xx response receival
+            % FIXME: non-100 provisional response should create early dialog.
+            {ok, _DialogId} = sip_dialog:create_invite_usage(uac, Request, Response),
             error_m:return(ok);
         true ->
             % Response to re-INVITE
@@ -399,9 +339,15 @@ next_destination(#request_info{request = Request, destinations = [Top | Fallback
     % send us final response in any case
     MonitorRef = erlang:monitor(process, TxPid),
 
-    % Once BYE is passed to client transaction, consider session terminated
-    DialogId = sip_dialog:dialog_id(uac, Request),
-    ok = sip_dialog:terminate_session(DialogId),
+    %% FIXME: should cancel the sesssion
+%%     ok = case Request#sip_request.method of
+%%              'BYE' ->
+%%                 % Once BYE is passed to client transaction, consider session terminated
+%%                 DialogId = sip_dialog:dialog_id(uac, Request),
+%%                 ok = sip_dialog:destroy_invite_usage(DialogId);
+%%              _Other ->
+%%                  ok
+%%          end,
 
     % Start expiration timer if Expires: is present
     ok = start_expiration_timer(ReqInfo),

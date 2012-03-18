@@ -165,8 +165,9 @@ update_remote_seq(Request, Callback) ->
 %% @end
 handle_bye_request(#sip_request{method = 'BYE'} = Request, Callback) ->
     DialogId = sip_dialog:dialog_id(uas, Request),
+    % FIXME: should go through offer/answer tracker.
     Status =
-        case sip_dialog:terminate_dialog(DialogId) of
+        case sip_dialog:destroy_invite_usage(DialogId) of
             ok ->
                 % this will terminate session as well
                 200; % Ok
@@ -217,9 +218,7 @@ create_dialog_session(#sip_request{} = Request, #sip_response{status = Status} =
   when Status >= 200, Status =< 299, Request#sip_request.method =:= 'INVITE' ->
     case sip_message:is_within_dialog(Request) of
         false ->
-            {ok, DialogId} = sip_dialog:create_dialog(uas, Request, Response),
-            % FIXME: should add 'invite' usage to the dialog?
-            ok = sip_dialog:create_session(DialogId), % session is created upon 2xx response sending
+            {ok, _DialogId} = sip_dialog:create_invite_usage(uas, Request, Response),
             error_m:return(ok);
         true ->
             % Response to re-INVITE

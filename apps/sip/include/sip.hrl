@@ -205,8 +205,7 @@
          remote_target_uri  :: sip_uri(),
          secure             :: boolean(),
          route_set          :: [sip_uri()],
-         owner              :: pid(),
-         session            :: boolean()}).     % true if session was established in this dialog
+         owner              :: pid()}). % FIXME: replace 'owner' with something more flexible
 
 %%-----------------------------------------------------------------
 %% SIP sessions
