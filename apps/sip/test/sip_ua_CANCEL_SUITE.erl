@@ -56,7 +56,7 @@ cancel_487(Config) ->
     {ok, _TRef} = timer:apply_after(500, sip_test_ua, cancel, [UA]),
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     {ok, Response} = sip_test_ua:send_invite(UA, To),
-    
+
     % validate INVITE response status
     #sip_response{status = 487, reason = <<"Request Terminated">>} = Response,
     timer:sleep(5000),
