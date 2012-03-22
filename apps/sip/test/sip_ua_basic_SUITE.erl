@@ -68,7 +68,7 @@ options_200(Config) ->
     #sip_hdr_address{} = sip_message:header_top_value(to, Response),
     #sip_hdr_address{} = sip_message:header_top_value(from, Response),
     #sip_hdr_cseq{method = 'OPTIONS'} = sip_message:header_top_value(cseq, Response),
-    ['INVITE', 'OPTIONS'] = sip_message:header_values(allow, Response),
+    ['INVITE', 'OPTIONS', 'BYE', 'CANCEL'] = sip_message:header_values(allow, Response),
 
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
