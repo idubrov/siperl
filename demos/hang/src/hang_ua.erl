@@ -94,21 +94,11 @@ handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} 
     io:format("HANG: Got success response ~s: ~w ~s~n",
               [to(Response), Status, binary_to_list(Response#sip_response.reason)]),
 
-    % FIXME: Where do we get dialog id? Maybe, sip_ua_client should pass it?
-    DialogId = sip_dialog:dialog_id(uac, Response),
-
-    % FIXME: Should have create_ack in sip_ua, so we don't have to deal with CSeq constructions...
-    % Or: maybe sip_ua_client should generate ACK on its own (it is required anyway), by
-    % retrieving SDP from callback? Like: Callback:answer(Offer).
-    ACK = sip_ua:create_request('ACK', DialogId),
-
-    CSeq = sip_message:header_top_value(cseq, Response),
-    ACK2 = sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK),
-
+    ACK = sip_ua:create_ack(Response),
     % put session in ACK
-    %ACK3 = sip_message:append_header('content-type', <<"application/sdp">>, ACK2),
-    %ACK4 = ACK3#sip_request{body = sdp()},
-    {ok, _Ref} = sip_ua:send_request(ACK2),
+    %ACK2 = sip_message:append_header('content-type', <<"application/sdp">>, ACK),
+    %ACK3 = ACK2#sip_request{body = sdp()},
+    {ok, _Ref} = sip_ua:send_request(ACK),
 
     {noreply, State};
 handle_response(#sip_request{method = 'INVITE'}, #sip_response{status = Status} = Response, _RequestId, State) when Status >= 300 ->

@@ -20,7 +20,7 @@
 
 %% API
 -export([start_link/3, start_link/4]).
--export([create_request/2, send_request/1, cancel_request/1]). % UAC
+-export([create_request/2, create_ack/1, send_request/1, cancel_request/1]). % UAC
 -export([create_response/2, create_response/3, send_response/2]). % UAS
 
 %% Server callbacks
@@ -66,6 +66,13 @@ create_request(Method, To) when is_record(To, sip_hdr_address) ->
 create_request(Method, Dialog) when is_record(Dialog, sip_dialog_id) ->
     sip_ua_client:create_request(Method, Dialog).
 
+%% @doc Create ACK based on the 2xx response to the INVITE message
+%% FIXME: UAC should create and send ACK automatically?
+%% @end
+-spec create_ack(#sip_response{}) -> #sip_request{}.
+create_ack(Response) when is_record(Response, sip_response) ->
+    sip_ua_client:create_ack(Response).
+
 %% @doc Create request outside of the dialog according to the 8.2.6 Generating the Response
 %% @end
 -spec create_response(#sip_request{}, integer()) -> #sip_response{}.
@@ -84,7 +91,7 @@ create_response(Request, Status, Reason) ->
 %% generic server. Responses are provided via `Callback:handle_response/4' function.
 %% <em>Should be called from UAC/UAS process only</em>
 %% @end
--spec send_request(sip_message()) -> {ok, reference()}.
+-spec send_request(#sip_request{}) -> {ok, reference()}.
 send_request(Request) when is_record(Request, sip_request) ->
     sip_ua_client:send_request(Request).
 

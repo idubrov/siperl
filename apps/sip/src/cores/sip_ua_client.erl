@@ -27,7 +27,7 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/1, create_request/2, send_request/1, cancel_request/1, handle_response/4]).
+-export([init/1, create_request/2, create_ack/1, send_request/1, cancel_request/1, handle_response/4]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -96,6 +96,13 @@ create_request(Method, #sip_hdr_address{} = ToAddress) ->
 create_request(Method, DialogId) when is_record(DialogId, sip_dialog_id) ->
     {ok, Request} = sip_dialog:create_request(Method, DialogId),
     Request.
+
+-spec create_ack(#sip_response{}) -> #sip_request{}.
+create_ack(#sip_response{status = 200} = Response) ->
+    DialogId = sip_dialog:dialog_id(uac, Response),
+    ACK = create_request('ACK', DialogId),
+    CSeq = sip_message:header_top_value(cseq, Response),
+    sip_message:replace_top_header(cseq, CSeq#sip_hdr_cseq{method = 'ACK'}, ACK).
 
 -spec send_request(#sip_request{}) -> {ok, reference()} | {error, no_destinations}.
 send_request(Request) ->
@@ -308,7 +315,11 @@ next_destination(#request_info{request = Request, destinations = [Top | _Fallbac
     % FIXME: Since transport layer returns errors immediately, send to fallback destinations
     % if error is returned...
     % FIXME: How UDP errors are to be handled? Maybe, ICMP support on transport layer, track unreachable ports?
-    ok = sip_transport:send_request(Top, Request, []), % FIXME: options..
+    % FIXME: ACK should be on 2xx only...
+    % The ACK for a 2xx response to an INVITE request is a separate transaction.
+    Branch = sip_idgen:generate_branch(),
+    Request2 = sip_message:with_branch(Branch, Request),
+    ok = sip_transport:send_request(Top, Request2, []), % FIXME: options..
 
     % stop processing
     error_m:fail(processed);
