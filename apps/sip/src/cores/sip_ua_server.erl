@@ -57,6 +57,11 @@ send_response(Request, Response, Callback) when is_record(Request, sip_request),
 
 %% @private
 -spec handle_request(#sip_request{}, module(), state()) -> {noreply, state()}.
+handle_request(#sip_request{method = 'ACK'} = Request, Callback, State) ->
+    % FIXME: handle ACK requests...
+    % FIXME: must retransmit 2xx response until ACK is received!!! 13.3.1.4
+    % FIXME: should send BYE if not ACK in 64*T1
+    {noreply, State};
 handle_request(Request, Callback, State) ->
     % start server transaction
     {ok, _TxPid} = sip_transaction:start_server_tx(Request, []),

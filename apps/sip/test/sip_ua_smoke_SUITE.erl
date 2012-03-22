@@ -4,7 +4,7 @@
 %%% Dialogless requests, simple redirects, going to fallback destinations.
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
--module(sip_ua_basic_SUITE).
+-module(sip_ua_smoke_SUITE).
 
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).

@@ -2,7 +2,7 @@
 %%% @doc INVITE tests
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.
--module(sip_invite_SUITE).
+-module(sip_ua_INVITE_SUITE).
 
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
@@ -54,4 +54,10 @@ invite_200(Config) ->
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
+
+    % FIXME: verify that ACK is actually sent to Contact: value...
+    % send ACK
+    ACK = sip_ua:create_ack(Response),
+    {ok, _Ref} = sip_ua:send_request(ACK),
+    timer:sleep(500),
     ok.
