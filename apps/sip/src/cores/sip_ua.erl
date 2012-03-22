@@ -103,7 +103,7 @@ cancel_request(Id) when is_reference(Id) ->
 
 -spec send_response(#sip_request{}, #sip_response{}) -> ok | {error, Reason :: term()}.
 send_response(Request, Response) ->
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     sip_ua_server:send_response(Request, Response, Callback).
 
 %%-----------------------------------------------------------------
@@ -131,7 +131,7 @@ init({Callback, Args, Opts}) ->
 %% @private
 -spec handle_call(term(), gen_from(), state()) -> {stop, {unexpected, term()}, state()}.
 handle_call(Req, From, State) ->
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     Callback:handle_call(Req, From, State).
 
 -spec handle_cast(term(), state()) -> {stop, term(), state()}.
@@ -142,21 +142,21 @@ handle_cast(Cast, State) ->
 -spec handle_info(_, state()) -> {noreply, state()}.
 handle_info({response, #sip_response{} = Response, TxPid}, State) when is_pid(TxPid) ->
     % pass responses to UAC
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     sip_ua_client:handle_response(Response, TxPid, Callback, State);
 
 handle_info({request, #sip_request{} = Request, _TxPid}, State) ->
     % this must be ACK (see RFC 6026), pass it to UAS
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     sip_ua_server:handle_request(Request, Callback, State);
 handle_info({request, #sip_request{} = Request}, State) ->
     % pass requests to UAS
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     sip_ua_server:handle_request(Request, Callback, State);
 
 handle_info({tx, TxPid, {error, Reason}}, State) ->
     % Transport error is reported by server transaction, pass to UAS
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     sip_ua_server:handle_error(Reason, TxPid, Callback, State);
 
 handle_info({cancel_request, Id}, State) when is_reference(Id) ->
@@ -166,7 +166,7 @@ handle_info({cancel_request, Id}, State) when is_reference(Id) ->
     {noreply, State};
 
 handle_info(Info, State) ->
-    Callback = erlang:get(?CALLBACK),
+    Callback = callback(),
     Callback:handle_info(Info, State).
 
 %% @private
@@ -180,4 +180,16 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% Internal functions
+
+
+%% @doc Get callback module from the process registry
+%% Fail if callback is not set (wrong process is used)
+%% @end
+callback() ->
+    case erlang:get(?CALLBACK) of
+        undefined ->
+            erlang:exit(wrong_process);
+        Callback ->
+            Callback
+    end.
 
