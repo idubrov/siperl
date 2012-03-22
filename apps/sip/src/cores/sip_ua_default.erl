@@ -7,7 +7,7 @@
 
 %% API
 -export([allow/1, supported/1, server/1, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2]).
--export([handle_response/4, handle_info/2, handle_call/3]).
+-export([handle_response/4, handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -78,3 +78,11 @@ handle_info(Info, State) ->
 %% @end
 handle_call(Call, _From, State) ->
     {stop, {unexpected, Call}, State}.
+
+%% @doc Handle casts
+%% @end
+-spec handle_cast(term(), state()) ->
+          {noreply, state()} |
+          {stop, Reason :: term(), state()}.
+handle_cast(Cast, State) ->
+    {stop, {unexpected, Cast}, State}.

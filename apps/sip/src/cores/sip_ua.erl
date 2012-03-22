@@ -134,9 +134,13 @@ handle_call(Req, From, State) ->
     Callback = callback(),
     Callback:handle_call(Req, From, State).
 
--spec handle_cast(term(), state()) -> {stop, term(), state()}.
+%% @private
+-spec handle_cast(term(), state()) ->
+          {noreply, state()} |
+          {stop, Reason :: term(), state()}.
 handle_cast(Cast, State) ->
-    {stop, {unexpected, Cast}, State}.
+    Callback = callback(),
+    Callback:handle_cast(Cast, State).
 
 %% @private
 -spec handle_info(_, state()) -> {noreply, state()}.
