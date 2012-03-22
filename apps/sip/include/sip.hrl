@@ -45,8 +45,9 @@
 -record(tel_uri, {phone = <<>> :: binary()}).
 -type sip_uri() :: #sip_uri{} | #tel_uri{} | binary().
 
-
+%%-----------------------------------------------------------------
 %% SIP message types.
+%%-----------------------------------------------------------------
 
 %% Methods, as defined in IANA registry
 -type sip_method()   :: 'ACK'           % RFC3261
