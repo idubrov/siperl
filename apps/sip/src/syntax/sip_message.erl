@@ -280,7 +280,7 @@ create_cancel(#sip_request{} = Request) ->
 
 %% Internal method to create ACK/CANCEL requests (they are similar)
 create_ack_cancel(Request, To, Method) ->
-    % Call-Id, From, CSeq (only numberic part) and Route are taken from
+    % Call-Id, From, CSeq (only numeric part) and Route are taken from
     % the original request
     ACKHeaders =
         [case Name of
