@@ -7,7 +7,7 @@
 %% Exports
 -export([all/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2, end_per_testcase/2]).
 -export([apply_fun/2]).
--export([cancel_487/1, cancel_487_handler/2, cancel_481/1]).
+-export([cancel_487/1, cancel_487_handler/2, cancel_481/1, cancel_200/1, cancel_200_handler/2]).
 
 %% Include files
 -include_lib("common_test/include/ct.hrl").
@@ -17,7 +17,8 @@
 
 %% Common tests
 all() ->
-    [cancel_487, cancel_481].
+    %[cancel_487, cancel_481].
+    [cancel_200].
 
 init_per_suite(Config) ->
     ok = application:start(gproc),
@@ -62,6 +63,28 @@ cancel_487(Config) ->
     timer:sleep(5000),
     ok.
 
+%% @doc Do not reply on INVITE request (it will be cancelled)
+%% @end
+cancel_200_handler(#sip_request{method = 'INVITE'} = Request, ReplyFun) ->
+    Response = sip_ua:create_response(Request, 200),
+    Response2 = sip_message:append_header('content-type', <<"application/sdp">>, Response),
+    ReplyFun(Response2),
+    ok.
+
+%% @doc Verify that CANCEL on responded INVITE has no effect
+%% @end
+cancel_200(Config) ->
+    UA = ?config(ua, Config),
+
+    % send INVITE and receive response
+    To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
+    {ok, Response} = sip_test_ua:send_invite(UA, To),
+    #sip_response{status = 200, reason = <<"Ok">>} = Response,
+    
+    % cancel the request
+    ok = sip_test_ua:cancel(UA),
+    ok.
+
 %% @doc Verify that CANCEL on non-existent transaction returns status 481
 %% @end
 cancel_481(Config) ->
@@ -73,5 +96,3 @@ cancel_481(Config) ->
     {ok, Response} = sip_test_ua:send_request(UA, Cancel),
     #sip_response{status = 481, reason = <<"Call/Transaction Does Not Exist">>} = Response,
     ok.
-
-% FIXME: CANCEL after 2xx!

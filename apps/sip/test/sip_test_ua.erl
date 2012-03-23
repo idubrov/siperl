@@ -43,9 +43,9 @@ send_invite(Server, To) ->
 send_request(Server, Request) ->
     gen_server:call(Server, {send_request, Request}).
 
-%% @doc Cancel last request sent
+%% @doc Cancel last request sent (even if it was answered already)
 %% @end
--spec cancel(pid()) -> {ok, #sip_response{}}.
+-spec cancel(pid()) -> ok.
 cancel(Server) ->
     gen_server:call(Server, cancel).
 
@@ -86,9 +86,8 @@ handle_response(_Request, #sip_response{status = Status}, _RequestId, State) whe
 handle_response(_Request, Response, RequestId, State) ->
     {RequestId, From} = lists:keyfind(RequestId, 1, State#state.requests),
     gen_server:reply(From, {ok, Response}),
-
-    Requests = lists:keydelete(RequestId, 1, State#state.requests),
-    {noreply, State#state{requests = Requests}}.
+    % note: always leaving last request id on the top, so we can use it for cancel, for example
+    {noreply, State}.
 
 handle_cast({reply, Request, Response}, State) ->
     sip_ua:send_response(Request, Response),
