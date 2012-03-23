@@ -27,7 +27,7 @@
 -compile({parse_transform, do}).
 
 %% Internal API
--export([init/1, create_request/2, create_ack/1, send_request/1, cancel_request/1, handle_response/4]).
+-export([init/1, create_request/2, create_ack/1, send_request/1, cancel_request/1, handle_response/4, handle_down/3]).
 
 %% Include files
 -include("../sip_common.hrl").
@@ -51,7 +51,7 @@
          request             :: #sip_request{},       % Original request
          destinations = []   :: [#sip_destination{}], % list of IP addresses to try next
          target_set          :: target_set(),         % URI to visit next (redirects)
-         provisional = false :: boolean(),          % If provisional response was received already
+         provisional = false :: boolean(),            % If provisional response was received already
          cancel = false      :: boolean(),            % Start `CANCEL' transaction on next provisional
          cancelled = false   :: boolean(),            % If `CANCEL' transaction is already sent
          last_destination    :: #sip_destination{}}). % Destination last transaction was sent to
@@ -162,6 +162,24 @@ handle_response(#sip_response{} = Response, TxPid, Callback, State) ->
             {noreply, State}
     end.
 
+%% @doc Handle transaction termination
+%% When transaction is terminated, kill the request and destroy all early dialogs.
+%% Note that this function is also used to implement 13.2.2.4 behavior. When 2xx
+%% response is received, we rely on RFC 6026 transaction behavior to have the
+%% Timer M of 64*T1. When timer fires, we get 'DOWN' event, which we process here.
+%% @end
+-spec handle_down(reference(), pid(), term()) -> boolean().
+handle_down(_Ref, TxPid, _Info) ->
+    case lookup_by_tx(TxPid) of
+        false -> false;
+        #request_info{id = Id, request = Request} ->
+            % FIXME: processing non-'normal' terminations!
+            % consider request terminated
+            ok = destroy_early_dialogs(Request),
+            ok = delete(Id),
+            true
+    end.
+
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
@@ -251,14 +269,23 @@ handle_failure_response(ReqInfo, #sip_response{status = Status}) when Status >= 
 handle_failure_response(_ReqInfo, _Response) ->
     error_m:return(ok).
 
--spec handle_final_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
-%% @doc Remove request information, if final response is received
+%% @doc Handle final responses
+%% If non 2xx final response is received, request is immediately deleted
+%% If first 2xx final response is received, timer is started
+%% All subsequent 2xx final responses are ignored
 %% @end
+-spec handle_final_response(#request_info{}, #sip_response{}) -> error_m:monad(ok).
+handle_final_response(#request_info{request = #sip_request{method = 'INVITE'}},
+                      #sip_response{status = Status}) when Status >= 200, Status =< 299 ->
+    % we rely on RFC 6026 behavior of transaction layer to terminate because of Timer M
+    % continue monitoring the transaction
+    error_m:return(ok);
 handle_final_response(ReqInfo, #sip_response{status = Status}) when Status >= 200 ->
+    % either non-INVITE or non-2xx INVITE
+    ok = destroy_early_dialogs(ReqInfo#request_info.request),
     ok = tx_demonitor(ReqInfo),
     ok = delete(ReqInfo#request_info.id),
     error_m:return(ok);
-
 handle_final_response(_ReqInfo, _Response) ->
     error_m:return(ok).
 
@@ -417,6 +444,11 @@ send_cancel(#request_info{} = ReqInfo) ->
 tx_demonitor(#request_info{tx_monitor = undefined}) -> ok;
 tx_demonitor(#request_info{tx_monitor = MonitorRef}) ->
     true = erlang:demonitor(MonitorRef, [flush]),
+    ok.
+
+destroy_early_dialogs(#sip_request{method = 'INVITE'} = _Request) ->
+    ok;
+destroy_early_dialogs(_Request) ->
     ok.
 
 %%-----------------------------------------------------------------

@@ -164,18 +164,23 @@ handle_info({request, #sip_request{} = Request}, State) ->
     % pass requests to UAS
     Callback = callback(),
     sip_ua_server:handle_request(Request, Callback, State);
-
 handle_info({tx, TxPid, {error, Reason}}, State) ->
     % Transport error is reported by server transaction, pass to UAS
     Callback = callback(),
     sip_ua_server:handle_error(Reason, TxPid, Callback, State);
-
 handle_info({cancel_request, Id}, State) when is_reference(Id) ->
     % this message is triggered by the timer from sip_ua_client which is set
     % when Expires: header present in the initial INVITE
     _Ignore = sip_ua_client:cancel_request(Id),
     {noreply, State};
-
+handle_info({'DOWN', Ref, process, Pid, Info}, State) ->
+    case sip_ua_client:handle_down(Ref, Pid, Info) of
+        true -> {noreply, State};
+        false ->
+            % let the callback deal with that info
+            Callback = callback(),
+            Callback:handle_info(Info, State)
+    end;
 handle_info(Info, State) ->
     Callback = callback(),
     Callback:handle_info(Info, State).

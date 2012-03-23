@@ -61,3 +61,5 @@ invite_200(Config) ->
     {ok, _Ref} = sip_ua:send_request(ACK),
     timer:sleep(500),
     ok.
+
+% FIXME: 12.2.2, invalid To tag in request?
