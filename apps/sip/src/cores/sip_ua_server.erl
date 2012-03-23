@@ -236,7 +236,9 @@ copy_record_route(Request, #sip_response{status = Status} = Response) ->
 
 %% @doc Append `To:' header tag if not present and response is not provisional response
 %% @end
-add_to_tag(#sip_response{status = Status} = Response) when Status >= 100, Status =< 199 -> Response;
+add_to_tag(#sip_response{status = Status} = Response) when Status >= 100, Status =< 199 ->
+    % FIXME: MUST generate To: tag for non-100 provisional responses!!! 8.2.6.2
+    Response;
 add_to_tag(Response) ->
     Fun =
         fun(#sip_hdr_address{params = Params} = To) ->
