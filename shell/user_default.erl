@@ -1,6 +1,6 @@
 -module(user_default).
 
--export([help/0, lm/0, mm/0, ctl/1, ctf/1, cc/1]).
+-export([help/0, lm/0, mm/0, ctl/1, ctf/1, cc/1, ctctl/1, ctctf/1]).
 
 help() ->
     shell_default:help(),
@@ -27,6 +27,17 @@ ctl(Module) ->
 
 ctf(Module) ->
     ct(Module, function).
+
+ctct(Module, Level) ->
+    cover:import("apps/sip/test/ct.coverdata"),
+    {ok, Items} = cover:analyze(Module, coverage, Level),
+    [{Item, {Cov, NotCov}} || {Item, {Cov, NotCov}} <- Items, NotCov > 0].
+
+ctctl(Module) ->
+    ctct(Module, line).
+
+ctctf(Module) ->
+    ctct(Module, function).
 
 modified_modules() ->
     [M || {M, _} <- code:all_loaded(), module_modified(M) == true].

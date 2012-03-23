@@ -57,6 +57,7 @@ few helpful commands in the Erlang shell:
  * mm() print list of all modified modules
  * ctl(Module) run all EUnit tests in the module `Module` with line level coverage
    analysis and print the results
+ * ctctl(Module) show `Module` code Coverage after Common Test run
 
 API Notes
 ---------
