@@ -83,6 +83,7 @@ cancel_200(Config) ->
     
     % cancel the request
     ok = sip_test_ua:cancel(UA),
+    timer:sleep(500), % wait until CANCEL is processed
     ok.
 
 %% @doc Verify that CANCEL on non-existent transaction returns status 481
