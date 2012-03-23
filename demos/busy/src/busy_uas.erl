@@ -52,7 +52,7 @@ allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE', 'OPTIONS'].
     io:format("BUSY: ~s is calling~n", [from(Request)]),
 
     % Will send busy after 10 seconds
-    {ok, Timer} = timer:send_after(10000, {reply, Request}),
+    Timer = erlang:send_after(10000, self(), {reply, Request}),
     TxKey = sip_transaction:tx_key(server, Request),
 
     % Send 180 Ringing immediately
@@ -67,7 +67,7 @@ allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE', 'OPTIONS'].
 
     % Lookup original transaction and cancel its timer
     TxKey = (sip_transaction:tx_key(server, Request))#sip_tx_server{method = 'INVITE'},
-    {ok, cancel} = timer:cancel(dict:fetch(TxKey, Context#context.timers)),
+    _Time = erlang:cancel_timer(dict:fetch(TxKey, Context#context.timers)),
     Timers = dict:erase(TxKey, Context#context.timers),
 
     % Delegate to standard UAS CANCEL handling
