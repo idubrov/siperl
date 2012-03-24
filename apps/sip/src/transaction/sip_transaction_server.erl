@@ -62,14 +62,7 @@
 'TRYING'({response, Status, Response}, TxState)
   when Status >= 200, Status =< 699 ->
     % Same handling as in PROCEEDING state
-    'PROCEEDING'({response, Status, Response}, TxState);
-
-%% @doc Transaction cancellation, Section 9.2
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'TRYING'(cancel, TxState) ->
-    {next_state, 'TRYING', TxState}.
-
+    'PROCEEDING'({response, Status, Response}, TxState).
 
 -spec 'PROCEEDING'(term(), #tx_state{}) -> term().
 %% @doc
@@ -118,13 +111,7 @@
         false ->
             TxState3 = ?START(timerJ, 64 * ?T1, TxState2),
             {next_state, 'COMPLETED', TxState3}
-    end;
-
-%% @doc Transaction cancellation, Section 9.2
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'PROCEEDING'(cancel, TxState) ->
-    {next_state, 'PROCEEDING', TxState}.
+    end.
 
 -spec 'COMPLETED'(term(), #tx_state{}) -> term().
 %% @doc
@@ -142,12 +129,6 @@
 %% @end
 'COMPLETED'({response, Status, _Response}, TxState)
   when Status >= 200, Status =< 699 ->
-    {next_state, 'COMPLETED', TxState};
-
-%% @doc Transaction cancellation, Section 9.2
-%% Effectively does nothing for non-INVITE transactions
-%% @end
-'COMPLETED'(cancel, TxState) ->
     {next_state, 'COMPLETED', TxState};
 
 %% @doc
