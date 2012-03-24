@@ -32,11 +32,13 @@ end_per_suite(_Config) ->
 
 init_per_testcase(TestCase, Config) ->
     Fun = list_to_atom(atom_to_list(TestCase) ++ "_handler"),
-    {ok, UA} = sip_test_ua:start_link(fun(Request) -> ?MODULE:Fun(Request) end),
-    [{ua, UA} | Config].
+    {ok, UAC} = sip_simple_uac:start_link(),
+    {ok, UAS} = sip_simple_uas:start_link(fun(Request, ReplyFun) -> ReplyFun(?MODULE:Fun(Request)) end),
+    [{uac, UAC}, {uas, UAS} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(ua, Config)),
+    ok = sip_test:shutdown(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(uas, Config)),
     ok.
 
 
@@ -47,10 +49,10 @@ invite_200_handler(Request) ->
     sip_message:append_header('content-type', <<"application/sdp">>, Response).
 
 invite_200(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:test_uas@127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_invite(UA, To),
+    {ok, Response} = sip_simple_uac:send_invite(UAC, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,

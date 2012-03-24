@@ -33,11 +33,13 @@ end_per_suite(_Config) ->
 
 init_per_testcase(TestCase, Config) ->
     Fun = list_to_atom(atom_to_list(TestCase) ++ "_handler"),
-    {ok, UA} = sip_test_ua:start_link(fun(Request, ReplyFun) -> ?MODULE:Fun(Request, ReplyFun) end),
-    [{ua, UA} | Config].
+    {ok, UAC} = sip_simple_uac:start_link(),
+    {ok, UAS} = sip_simple_uas:start_link(fun(Request, ReplyFun) -> ?MODULE:Fun(Request, ReplyFun) end),
+    [{uac, UAC}, {uas, UAS} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(ua, Config)),
+    ok = sip_test:shutdown(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(uas, Config)),
     ok.
 
 apply_fun(Fun, Args) ->
@@ -51,12 +53,12 @@ cancel_487_handler(#sip_request{method = 'INVITE'}, _ReplyFun) ->
 %% @doc Verify that CANCEL on active INVITE requests forces INVITE to return status 487
 %% @end
 cancel_487(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     % cancel the request after 500 milliseconds
-    {ok, _TRef} = timer:apply_after(500, sip_test_ua, cancel, [UA]),
+    {ok, _TRef} = timer:apply_after(500, sip_simple_uac, cancel, [UAC]),
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_invite(UA, To),
+    {ok, Response} = sip_simple_uac:send_invite(UAC, To),
 
     % validate INVITE response status
     #sip_response{status = 487, reason = <<"Request Terminated">>} = Response,
@@ -74,26 +76,26 @@ cancel_200_handler(#sip_request{method = 'INVITE'} = Request, ReplyFun) ->
 %% @doc Verify that CANCEL on responded INVITE has no effect
 %% @end
 cancel_200(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     % send INVITE and receive response
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_invite(UA, To),
+    {ok, Response} = sip_simple_uac:send_invite(UAC, To),
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
     
     % cancel the request
-    ok = sip_test_ua:cancel(UA),
+    ok = sip_simple_uac:cancel(UAC),
     timer:sleep(500), % wait until CANCEL is processed
     ok.
 
 %% @doc Verify that CANCEL on non-existent transaction returns status 481
 %% @end
 cancel_481(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     Invite = sip_ua:create_request('INVITE', To),
     Cancel = sip_message:create_cancel(Invite),
-    {ok, Response} = sip_test_ua:send_request(UA, Cancel),
+    {ok, Response} = sip_simple_uac:send_request(UAC, Cancel),
     #sip_response{status = 481, reason = <<"Call/Transaction Does Not Exist">>} = Response,
     ok.

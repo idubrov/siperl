@@ -6,7 +6,8 @@
 -module(sip_ua_default).
 
 %% API
--export([allow/1, supported/1, server/1, is_applicable/1, 'OPTIONS'/2, 'CANCEL'/2]).
+-export([allow/1, supported/1, server/1, is_applicable/1]).
+-export(['INVITE'/2, 'OPTIONS'/2, 'CANCEL'/2]).
 -export([handle_response/4, handle_info/2, handle_call/3, handle_cast/2]).
 
 %% Include files
@@ -24,7 +25,7 @@ is_applicable(#sip_request{} = _Request) -> true.
 -spec allow(#sip_request{}) -> [atom()].
 %% @doc Return list of methods, supported by this callback
 %% @end
-allow(_Request) -> ['BYE', 'OPTIONS', 'CANCEL'].
+allow(_Request) -> ['INVITE', 'BYE', 'OPTIONS', 'CANCEL'].
 
 -spec supported(#sip_request{}) -> [atom()].
 %% @doc List of supported extensions for this request
@@ -36,6 +37,13 @@ supported(_Request) -> [].
 %% @end
 server(_Request) ->
     sip_config:server().
+
+-spec 'INVITE'(#sip_request{}, state()) -> {noreply, state()} | {reply, #sip_response{}, state()}.
+%% @doc Default implementation of `INVITE' method.
+%% @end
+'INVITE'(Request, State) ->
+    Response = sip_ua:create_response(Request, 501),
+    {reply, Response, State}.
 
 -spec 'OPTIONS'(#sip_request{}, state()) -> {noreply, state()} | {reply, #sip_response{}, state()}.
 %% @doc Default implementation of `OPTIONS' method.

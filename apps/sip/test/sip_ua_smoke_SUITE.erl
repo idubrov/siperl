@@ -36,11 +36,13 @@ end_per_suite(_Config) ->
 
 init_per_testcase(TestCase, Config) ->
     Fun = list_to_atom(atom_to_list(TestCase) ++ "_handler"),
-    {ok, UA} = sip_test_ua:start_link(fun(Request) -> ?MODULE:Fun(Request) end),
-    [{ua, UA} | Config].
+    {ok, UAC} = sip_simple_uac:start_link(),
+    {ok, UAS} = sip_simple_uas:start_link(fun(Request, ReplyFun) -> ReplyFun(?MODULE:Fun(Request)) end),
+    [{uac, UAC}, {uas, UAS} | Config].
 
 end_per_testcase(_TestCase, Config) ->
-    ok = sip_test:shutdown(?config(ua, Config)),
+    ok = sip_test:shutdown(?config(uac, Config)),
+    ok = sip_test:shutdown(?config(uas, Config)),
     ok.
 
 %% @doc
@@ -50,10 +52,10 @@ options_200_handler(Request) ->
     sip_ua:create_response(Request, 200).
 
 options_200(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_options(UA, To),
+    {ok, Response} = sip_simple_uac:send_options(UAC, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -68,7 +70,7 @@ options_200(Config) ->
     #sip_hdr_address{} = sip_message:header_top_value(to, Response),
     #sip_hdr_address{} = sip_message:header_top_value(from, Response),
     #sip_hdr_cseq{method = 'OPTIONS'} = sip_message:header_top_value(cseq, Response),
-    ['INVITE', 'OPTIONS', 'BYE', 'CANCEL'] = sip_message:header_values(allow, Response),
+    ['INVITE', 'BYE', 'OPTIONS', 'CANCEL'] = sip_message:header_values(allow, Response),
 
     _Bin = sip_message:header_top_value('call-id', Response),
     ok.
@@ -85,10 +87,10 @@ options_302_handler(#sip_request{uri = #sip_uri{user = <<"second">>}} = Request)
     sip_ua:create_response(Request, 200).
 
 options_302(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_options(UA, To),
+    {ok, Response} = sip_simple_uac:send_options(UAC, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -109,10 +111,10 @@ options_302_failed_handler(#sip_request{uri = #sip_uri{user = <<"third">>}} = Re
     sip_ua:create_response(Request, 200).
 
 options_302_failed(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:first@127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_options(UA, To),
+    {ok, Response} = sip_simple_uac:send_options(UAC, To),
 
     % validate status code
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
@@ -125,10 +127,10 @@ options_501_handler(Request) ->
     sip_ua:create_response(Request, 501).
 
 options_501(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
-    {ok, Response} = sip_test_ua:send_options(UA, To),
+    {ok, Response} = sip_simple_uac:send_options(UAC, To),
 
     % validate status
     #sip_response{status = 501, reason = <<"Not Implemented">>} = Response,
@@ -148,7 +150,7 @@ options_503_next_200_handler(Request) ->
 
 %% RFC 3263 4.3, when transaction layer/transport layer occurs, try next destination
 options_503_next_200(Config) ->
-    UA = ?config(ua, Config),
+    UAC = ?config(uac, Config),
 
     % Mock sip_resolve to return two destinations for fake URI
     % Both destinations point to 127.0.0.1, but have different transports
@@ -160,7 +162,7 @@ options_503_next_200(Config) ->
                      end),
 
     To = sip_headers:address(<<>>, <<"sip:example.test">>, []),
-    {ok, Response} = sip_test_ua:send_options(UA, To),
+    {ok, Response} = sip_simple_uac:send_options(UAC, To),
 
     % validate status
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
