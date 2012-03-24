@@ -56,12 +56,7 @@ server(_Request) ->
 %% @doc Default handling of `CANCEL' method.
 %% @end
 'CANCEL'(Request, State) ->
-    Status =
-        case sip_transaction:cancel(Request) of
-            false -> 481;       % Call/Transaction Does Not Exist
-            {ok, _TxKey} -> 200 % Ok
-        end,
-    Response = sip_ua:create_response(Request, Status),
+    Response = sip_ua:create_response(Request, 501),
     {reply, Response, State}.
 
 -spec handle_response(sip_name(), #sip_response{}, reference(), state()) -> {noreply, state()}.

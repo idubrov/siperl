@@ -13,7 +13,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(context, {timers = dict:new()}).
+-record(context, {requests = dict:new()}).
 
 %%-----------------------------------------------------------------
 %% API
@@ -52,26 +52,44 @@ allow(_Request) -> ['INVITE', 'CANCEL', 'ACK', 'BYE', 'OPTIONS'].
     io:format("BUSY: ~s is calling~n", [from(Request)]),
 
     % Will send busy after 10 seconds
-    Timer = erlang:send_after(10000, self(), {reply, Request}),
+    TimerRef = erlang:send_after(10000, self(), {reply, Request}),
     TxKey = sip_transaction:tx_key(server, Request),
 
     % Send 180 Ringing immediately
     Ringing = sip_ua:create_response(Request, 180),
 
-    Timers = dict:store(TxKey, Timer, Context#context.timers),
-    {reply, Ringing, Context#context{timers = Timers}}.
+    Requests = dict:store(TxKey, {Request, TimerRef}, Context#context.requests),
+    {reply, Ringing, Context#context{requests = Requests}}.
 
 -spec 'CANCEL'(#sip_request{}, #context{}) -> {default, #context{}}.
-'CANCEL'(Request, Context) ->
-    io:format("BUSY: ~s has cancelled the call~n", [from(Request)]),
-
+'CANCEL'(Cancel, Context) ->
     % Lookup original transaction and cancel its timer
-    TxKey = (sip_transaction:tx_key(server, Request))#sip_tx_server{method = 'INVITE'},
-    _Time = erlang:cancel_timer(dict:fetch(TxKey, Context#context.timers)),
-    Timers = dict:erase(TxKey, Context#context.timers),
+    TxKey = sip_transaction:tx_key(server, Cancel),
+    TxKey2 = TxKey#sip_tx_server{method = 'INVITE'},
 
-    % Delegate to standard UAS CANCEL handling
-    {default, Context#context{timers = Timers}}.
+    case dict:is_key(TxKey2, Context#context.requests) of
+        true ->
+            io:format("BUSY: ~s has cancelled the call~n", [from(Cancel)]),
+
+            % cancel timer
+            {Invite, TimerRef} = dict:fetch(TxKey2, Context#context.requests),
+            _Time = erlang:cancel_timer(TimerRef),
+
+            % reply with 487
+            Response = sip_ua:create_response(Invite, 487),
+            ok = sip_ua:send_response(Invite, Response),
+
+            % erase request from the dictionary
+            Requests = dict:erase(TxKey2, Context#context.requests),
+
+            % reply with 200 to cancel
+            Response2 = sip_ua:create_response(Cancel, 200),
+            {reply, Response2, Context#context{requests = Requests}};
+        false ->
+            % reply with 481 to cancel
+            Response = sip_ua:create_response(Cancel, 481),
+            {reply, Response, Context}
+    end.
 
 -spec handle_info({reply, #sip_request{}}, #context{}) -> {noreply, #context{}}.
 handle_info({reply, Request}, Context) ->
@@ -82,8 +100,8 @@ handle_info({reply, Request}, Context) ->
     ok = sip_ua:send_response(Request, Response),
 
     TxKey = sip_transaction:tx_key(server, Request),
-    Timers = dict:erase(TxKey, Context#context.timers),
-    {noreply, Context#context{timers = Timers}}.
+    Requests = dict:erase(TxKey, Context#context.requests),
+    {noreply, Context#context{requests = Requests}}.
 
 from(Request) ->
     #sip_hdr_address{uri = From} = sip_message:header_top_value(from, Request),

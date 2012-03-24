@@ -20,7 +20,6 @@
 -export([client_ok/1, client_timeout_trying/1, client_timeout_proceeding/1]).
 -export([server_invite_ok/1, server_invite_err/1, server_invite_timeout/1]).
 -export([server_ok/1, server_ok_transport_err/1, server_err/1]).
--export([server_invite_cancel/1]).
 -export([server_loop/1]).
 
 
@@ -41,10 +40,6 @@ groups() ->
          server_invite_ok,
          server_invite_err,
          server_invite_timeout,
-
-         server_invite_cancel,
-         %server_invite_ok_cancel,
-         %server_invite_err_cancel,
 
          server_ok,
          server_ok_transport_err,
@@ -838,46 +833,5 @@ server_loop(Config) ->
     ?assertReceive("Expect tx to terminate after receiving final response",
                    {'DOWN', _Ref, process, TxPid, normal}),
 
-    ?assertReceiveNot("Message queue is empty", _),
-    ok.
-
-%% @doc
-%% Scenario tested:
-%% - INVITE request is received
-%% - request is passed to TU
-%% - 100 Trying is sent
-%% - CANCEL request is received
-%% - 487 response is sent by TU
-%% - transaction terminates
-%% @end
-server_invite_cancel(Config) ->
-    Transport  = ?config(transport, Config),
-    Reliable = ?config(reliable, Config),
-
-    Request = sip_test:invite(Transport),
-    Trying = sip_message:create_response(Request, 100, <<"Trying">>),
-    Response = sip_message:create_response(Request, 487, <<"Request Terminated">>),
-
-    % Start server transaction
-    {ok, TxPid} = sip_transaction:start_server_tx(Request, []),
-    _Ref = erlang:monitor(process, TxPid),
-
-    ?assertReceive("Expect provisional response is sent", {tp, response, Trying}),
-
-    CancelRequest = sip_message:create_cancel(Request),
-    {ok, TxPid} = sip_transaction:cancel(CancelRequest),
-
-    % 487 response is sent by TU
-    ?assertReceive("Expect 487 response is sent", {tp, response, Response}),
-
-    ACK = sip_message:create_ack(Request, Response),
-    % ACK is received
-    {ok, TxPid} = sip_transaction:handle_request(ACK),
-
-    % Wait for Timer I to fire
-    Reliable orelse timer:sleep(5000), % T4
-
-    ?assertReceive("Expect tx to terminate after receiving final response",
-                   {'DOWN', _Ref, process, TxPid, normal}),
     ?assertReceiveNot("Message queue is empty", _),
     ok.

@@ -15,7 +15,7 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 
 % Client API
--export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2, cancel/1]).
+-export([start_client_tx/3, start_server_tx/2, send_response/1, tx_key/2]).
 -export([list_tx/0, is_loop_detected/1]).
 
 % Internal API for transport layer
@@ -85,30 +85,6 @@ do_start_tx(Kind, Request, Options, TxState, Destination) ->
 list_tx() ->
     MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, _Pid, _Value}) -> TxKey end),
     gproc:select(names, MS).
-
--spec cancel(#sip_request{}) -> {ok, pid()} | false.
-%% @doc Cancel server transaction based on the `CANCEL' request
-%%
-%% This functionality was moved from the UAS here, because transaction
-%% layer have the information if request was replied and can process
-%% cancellation atomically (in transaction FSM process).
-%% @end
-cancel(#sip_request{method = 'CANCEL'} = Request) ->
-    Key = tx_key(server, Request),
-    % lookup by the key, but with method not CANCEL/ACK
-    MS = ets:fun2ms(fun ({{n, l, {tx, TxKey}}, Pid, _Value})
-                          when is_record(TxKey, sip_tx_server),
-                               TxKey#sip_tx_server.branch =:= Key#sip_tx_server.branch,
-                               TxKey#sip_tx_server.host =:= Key#sip_tx_server.host,
-                               TxKey#sip_tx_server.port =:= Key#sip_tx_server.port,
-                               TxKey#sip_tx_server.method =/= 'CANCEL', TxKey#sip_tx_server.method =/= 'ACK'
-                          -> Pid end),
-    case gproc:select(names, MS) of
-        [Pid] ->
-            ok = gen_fsm:send_event(Pid, cancel),
-            {ok, Pid};
-        [] -> false
-    end.
 
 %% @doc
 %% Handle the given request on the transaction layer. Returns not_handled

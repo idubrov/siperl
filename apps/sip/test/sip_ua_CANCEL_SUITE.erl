@@ -1,5 +1,5 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
-%%% @doc CANCEL method tests
+%%% @doc CANCEL method tests. Note that implementation of `CANCEL' processing is in sip_simple_uas.
 %%% @end
 %%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_CANCEL_SUITE).
@@ -17,8 +17,7 @@
 
 %% Common tests
 all() ->
-    %[cancel_487, cancel_481].
-    [cancel_200].
+    [cancel_487, cancel_481, cancel_200].
 
 init_per_suite(Config) ->
     ok = application:start(gproc),
@@ -47,7 +46,10 @@ apply_fun(Fun, Args) ->
 
 %% @doc Do not reply on INVITE request (it will be cancelled)
 %% @end
-cancel_487_handler(#sip_request{method = 'INVITE'}, _ReplyFun) ->
+cancel_487_handler(Request, ReplyFun) ->
+    Response = sip_ua:create_response(Request, 200),
+    Response2 = sip_message:append_header('content-type', <<"application/sdp">>, Response),
+    timer:apply_after(2000, erlang, apply, [ReplyFun, [Response2]]),
     ok.
 
 %% @doc Verify that CANCEL on active INVITE requests forces INVITE to return status 487
