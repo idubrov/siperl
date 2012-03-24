@@ -84,7 +84,7 @@ cancel_200(Config) ->
     To = sip_headers:address(<<>>, <<"sip:127.0.0.1">>, []),
     {ok, Response} = sip_simple_uac:send_invite(UAC, To),
     #sip_response{status = 200, reason = <<"Ok">>} = Response,
-    
+
     % cancel the request
     ok = sip_simple_uac:cancel(UAC),
     timer:sleep(500), % wait until CANCEL is processed
