@@ -61,7 +61,7 @@ client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI,
         false -> Target = URI#sip_uri.host
     end,
 
-    % Check do we need TLS
+    % Check if we need TLS
     case Scheme of
         sips -> TLS = true, Params = [tls], DefTransport = tcp;
         sip -> TLS = false, Params = [], DefTransport = udp
@@ -72,7 +72,6 @@ client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI,
         {'transport', <<"sctp">>} -> Explicit = true, Transport = sctp;
         false -> Explicit = false, Transport = DefTransport
     end,
-
 
     if
         is_tuple(Target) ->
@@ -136,13 +135,17 @@ service_dest("sips+d2s") -> #sip_destination{transport = sctp, params = [tls]}.
 %% @end
 is_supported("sip+d2u", false) -> true;
 is_supported("sip+d2t", false) -> true;
+is_supported("sip+d2s", false) -> true;
 is_supported("sips+d2t", _TLS) -> true;
+is_supported("sips+d2s", _TLS) -> true;
 is_supported(_Service, _TLS) -> false.
 
+%% @doc Resolve hostname to IP address
+%% @end
 -spec resolve(string() | binary()) -> inet:ip_address().
 resolve(Host) when is_binary(Host) -> resolve(binary_to_list(Host));
 resolve(Host) when is_list(Host) ->
-    {ok, Addr} = inet:getaddr(Host, inet),
+    {ok, Addr} = inet:getaddr(Host, inet), % FIXME: ipv6?
     Addr;
 resolve(Addr) -> Addr. % must be an IPv4 or IPv6
 
@@ -227,7 +230,7 @@ select_byweight([{_, Weight, _, _}|Rest], RunWeight) -> select_byweight(Rest, Ru
 %% @doc Lookup A or AAAA records for given name and return list of `#sip_destination{}'
 %% @end
 resolve_dest_a(Host, Destination) when is_list(Host) ->
-    Addrs = inet_res:lookup(Host, in, a),
+    {ok, Addrs} = inet:getaddrs(Host, inet), % FIXME: ipv6
     [Destination#sip_destination{address = Addr} || Addr <- Addrs].
 
 %% @doc Determine proper SRV record based on given `#sip_destination{}' record.
