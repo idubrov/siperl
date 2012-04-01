@@ -88,7 +88,7 @@ client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI,
             % Transport is provided explicitly, make SRV query
             Domain = service_proto(Transport, TLS) ++ Target,
             Dest = #sip_destination{transport = Transport, params = Params},
-            resolve_dest_srv(Domain, Dest);
+            resolve_dest_srv(Target, Domain, Dest);
         true ->
             % make NAPTR query
             select_bynaptr(Target, TLS)
@@ -102,15 +102,15 @@ select_bynaptr(Host, TLS) when is_boolean(TLS) ->
     List = lists:sort(inet_res:lookup(Host, in, naptr)),
     case List of
         [] ->
-            % no NAPTR records -- try making SRV queries
+            % no NAPTR records -- try making SRV queries for all supported protocols
             if TLS -> Params = [tls]; not TLS -> Params = [] end,
             DomainTCP = service_proto(tcp, TLS) ++ Host,
             DestTCP = #sip_destination{transport = tcp, params = Params},
-            case resolve_dest_srv(DomainTCP, DestTCP) of
+            case resolve_dest_srv(Host, DomainTCP, DestTCP) of
                 [] ->
                     DomainUDP = service_proto(udp, TLS) ++ Host,
                     DestUDP = #sip_destination{transport = udp, params = Params},
-                    resolve_dest_srv(DomainUDP, DestUDP);
+                    resolve_dest_srv(Host, DomainUDP, DestUDP);
                 Dests -> Dests
             end;
         _ ->
@@ -121,7 +121,7 @@ select_bynaptr(Host, TLS) when is_boolean(TLS) ->
             [{Service, Name} | _Rest] = List2,
 
             Dest2 = service_dest(Service),
-            resolve_dest_srv(Name, Dest2)
+            resolve_dest_srv(Host, Name, Dest2)
     end.
 
 %% @doc Create `#sip_destination{}' for given NAPTR service
@@ -172,14 +172,23 @@ server_resolve(Via) when is_record(Via, sip_hdr_via) ->
            % otherwise, make SRV query
            Domain = service_proto(Transport, TLS) ++ Host,
            Dest = #sip_destination{transport = Transport, params = Params},
-           resolve_dest_srv(Domain, Dest)
+           resolve_dest_srv(Host, Domain, Dest)
     end.
 
-resolve_dest_srv(Domain, Dest) ->
-    [Res || {_Pri, _Weight, Port, Host} <- lookup_srv(Domain),
-             Res <- resolve_dest_a(Host, Dest#sip_destination{port = Port})].
+%% @doc Determine Port and IP address by SRV queries
+%% @end
+resolve_dest_srv(Target, Domain, Dest) ->
+    case lookup_srv(Domain) of
+        [] ->
+            % FIXME: hard-coded default port
+            Port = 5060,
+            [Res || Res <- resolve_dest_a(Target, Dest#sip_destination{port = Port})];
+        SRVs ->
+            [Res || {_Pri, _Weight, Port, Host} <- SRVs,
+                    Res <- resolve_dest_a(Host, Dest#sip_destination{port = Port})]
+    end.
 
-%% @doc Sort according to RFC 2782
+%% @doc Lookup SRV records and sort them according to RFC 2782
 %% @end
 lookup_srv(Domain) ->
     SRVs = inet_res:lookup(Domain, in, srv),
