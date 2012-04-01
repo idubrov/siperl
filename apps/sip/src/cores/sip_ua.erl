@@ -55,6 +55,8 @@ start_link(Callback, Args, Opts) when is_atom(Callback), is_list(Opts) ->
 %% if pre-existing route set is configured.
 %%
 %% Clients are free to modify any part of the request according to their needs.
+%%
+%% <em>This function is safe to invoke from any process.</em>
 %% @end
 -spec create_request(sip_name(), #sip_hdr_address{} | #sip_dialog_id{}) -> #sip_request{}.
 create_request(Method, To) when is_record(To, sip_hdr_address) ->
@@ -62,24 +64,32 @@ create_request(Method, To) when is_record(To, sip_hdr_address) ->
 
 %% @doc Create request within the  dialog according to the 12.2.1.1 Generating the Request
 %% Clients are free to modify any part of the request according to their needs.
+%%
+%% <em>This function is safe to invoke from any process.</em>
 %% @end
 create_request(Method, Dialog) when is_record(Dialog, sip_dialog_id) ->
     sip_ua_client:create_request(Method, Dialog).
 
 %% @doc Create ACK based on the 2xx response to the INVITE message
 %% FIXME: UAC should create and send ACK automatically?
+%%
+%% <em>This function is safe to invoke from any process.</em>
 %% @end
 -spec create_ack(#sip_response{}) -> #sip_request{}.
 create_ack(Response) when is_record(Response, sip_response) ->
     sip_ua_client:create_ack(Response).
 
 %% @doc Create request outside of the dialog according to the 8.2.6 Generating the Response
+%%
+%% <em>This function is safe to invoke from any process.</em>
 %% @end
 -spec create_response(#sip_request{}, integer()) -> #sip_response{}.
 create_response(Request, Status) ->
     sip_ua_server:create_response(Request, Status).
 
 %% @doc Create request outside of the dialog according to the 8.2.6 Generating the Response
+%%
+%% <em>This function is safe to invoke from any process.</em>
 %% @end
 -spec create_response(#sip_request{}, integer(), binary()) -> #sip_response{}.
 create_response(Request, Status, Reason) ->
@@ -87,9 +97,10 @@ create_response(Request, Status, Reason) ->
 
 %% @doc Send the request
 %%
-%% The request is processed only when callback returns the control to the `sip_ua'
-%% generic server. Responses are provided via `Callback:handle_response/4' function.
-%% <em>Should be called from UAC/UAS process only</em>
+%% Send the response on behalf of the UAC. Responses are provided through
+%% `Callback:handle_response/4' function.
+%%
+%% <em>This function could be called from UAC process only.</em>
 %% @end
 -spec send_request(#sip_request{}) -> {ok, reference()}.
 send_request(Request) when is_record(Request, sip_request) ->
@@ -97,17 +108,25 @@ send_request(Request) when is_record(Request, sip_request) ->
 
 -spec cancel_request(reference()) -> ok | {error, no_request}.
 %% @doc Cancel the request identified by the reference
+%%
 %% <em>Note that it is still possible for the client to receive 2xx response
 %% on the request that was successfully cancelled. This is due to the inherent
 %% race condition present. For example, this could happen if cancel is invoked
 %% before UAC have received 2xx response, but after it was sent by the remote side.
 %% That means, client should be ready to issue `BYE' when 2xx is received on
 %% request it has cancelled.</em>.
-%% <em>Should be called from UAC/UAS process only</em>
+%%
+%% <em>This function could be called from UAC process only.</em>
 %% @end
 cancel_request(Id) when is_reference(Id) ->
     sip_ua_client:cancel_request(Id).
 
+%% @doc Send the response
+%% Send the response on behalf of the UAS. The request must be the request being
+%% answered.
+%%
+%% <em>This function could be called from UAS process only.</em>
+%% @end
 -spec send_response(#sip_request{}, #sip_response{}) -> ok | {error, Reason :: term()}.
 send_response(Request, Response) ->
     Callback = callback(),
