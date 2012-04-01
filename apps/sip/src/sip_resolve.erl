@@ -86,9 +86,7 @@ client_resolve(#sip_uri{scheme = Scheme, port = Port} = URI) when is_record(URI,
             resolve_dest_a(Target, Dest);
         Explicit ->
             % Transport is provided explicitly, make SRV query
-            Domain = service_proto(Transport, TLS) ++ Target,
-            Dest = #sip_destination{transport = Transport, params = Params},
-            resolve_dest_srv(Target, Domain, Dest);
+            resolve_dest_srv(Scheme, Transport, Target);
         true ->
             % make NAPTR query
             select_bynaptr(Target, TLS)
@@ -103,33 +101,29 @@ select_bynaptr(Host, TLS) when is_boolean(TLS) ->
     case List of
         [] ->
             % no NAPTR records -- try making SRV queries for all supported protocols
-            if TLS -> Params = [tls]; not TLS -> Params = [] end,
-            DomainTCP = service_proto(tcp, TLS) ++ Host,
-            DestTCP = #sip_destination{transport = tcp, params = Params},
-            case resolve_dest_srv(Host, DomainTCP, DestTCP) of
+            Service = if TLS -> sips; true -> sip end,
+            case resolve_dest_srv(Service, udp, Host) of
                 [] ->
-                    DomainUDP = service_proto(udp, TLS) ++ Host,
-                    DestUDP = #sip_destination{transport = udp, params = Params},
-                    resolve_dest_srv(Host, DomainUDP, DestUDP);
+                    resolve_dest_srv(Service, tcp, Host);
                 Dests -> Dests
             end;
         _ ->
             % choose with lowest order, preference, which is supported by this implementation
-            List2 = [{Service, Name} || {_Order, _Pref, _Flags, Service, RegExp, Name} <- List,
-                                        is_supported(Service, TLS),
-                                        RegExp =:= []],
-            [{Service, Name} | _Rest] = List2,
+            List2 = [{Service, Replacement} || {_Order, _Pref, _Flags, Service, RegExp, Replacement} <- List,
+                                               is_supported(Service, TLS),
+                                               RegExp =:= []],
+            [{Service, Replacement} | _Rest] = List2,
 
-            Dest2 = service_dest(Service),
-            resolve_dest_srv(Host, Name, Dest2)
+            {Service2, Protocol} = service(Service),
+            resolve_dest_srv(Service2, Protocol, Host, Replacement)
     end.
 
 %% @doc Create `#sip_destination{}' for given NAPTR service
-service_dest("sip+d2u") -> #sip_destination{transport = udp};
-service_dest("sip+d2t") -> #sip_destination{transport = tcp};
-service_dest("sip+d2s") -> #sip_destination{transport = sctp};
-service_dest("sips+d2t") -> #sip_destination{transport = tcp, params = [tls]};
-service_dest("sips+d2s") -> #sip_destination{transport = sctp, params = [tls]}.
+service("sip+d2u") -> {sip, udp};
+service("sip+d2t") -> {sip, tcp};
+service("sip+d2s") -> {sip, sctp};
+service("sips+d2t") -> {sips, tcp};
+service("sips+d2s") -> {sips, sctp}.
 
 %% @doc Check if we support given service/TLS requirement combination
 %% @end
@@ -156,8 +150,8 @@ resolve(Addr) -> Addr. % must be an IPv4 or IPv6
 -spec server_resolve(#sip_hdr_via{}) -> [#sip_destination{}].
 server_resolve(Via) when is_record(Via, sip_hdr_via) ->
     case Via#sip_hdr_via.transport of
-        tls -> Transport = tcp, Params = [tls], TLS = true;
-        Transport -> Params = [], TLS = false
+        tls -> Transport = tcp, Params = [tls], Service = sips;
+        Transport -> Params = [], Service = sip
     end,
     Host = Via#sip_hdr_via.host,
     Port = Via#sip_hdr_via.port,
@@ -170,14 +164,18 @@ server_resolve(Via) when is_record(Via, sip_hdr_via) ->
             resolve_dest_a(Host, Dest); % Port is specified, make AAAA or A query
        true ->
            % otherwise, make SRV query
-           Domain = service_proto(Transport, TLS) ++ Host,
-           Dest = #sip_destination{transport = Transport, params = Params},
-           resolve_dest_srv(Host, Domain, Dest)
+           resolve_dest_srv(Service, Transport, Host)
     end.
 
-%% @doc Determine Port and IP address by SRV queries
+%% @doc Determine Port and IP address by SRV queries, RFC 2782
 %% @end
-resolve_dest_srv(Target, Domain, Dest) ->
+resolve_dest_srv(Service, Protocol, Target) ->
+    SRV = srv_prefix(Service, Protocol) ++ Target,
+    resolve_dest_srv(Service, Protocol, Target, SRV).
+
+resolve_dest_srv(Service, Protocol, Target, Domain) ->
+    Params = if Service =:= sips -> [tls]; true -> [] end,
+    Dest = #sip_destination{transport = Protocol, params = Params},
     case lookup_srv(Domain) of
         [] ->
             % FIXME: hard-coded default port
@@ -242,8 +240,10 @@ resolve_dest_a(Host, Destination) when is_list(Host) ->
     {ok, Addrs} = inet:getaddrs(Host, inet), % FIXME: ipv6
     [Destination#sip_destination{address = Addr} || Addr <- Addrs].
 
-%% @doc Determine proper SRV record based on given `#sip_destination{}' record.
+%% @doc Determine SRV domain prefix based on pair of service and transport
 %% @end
-service_proto(udp, false) -> "_sip._udp.";
-service_proto(tcp, false) -> "_sip._tcp.";
-service_proto(tcp, true) -> "_sips._tcp.".
+srv_prefix(sip, udp) -> "_sip._udp.";
+srv_prefix(sip, tcp) -> "_sip._tcp.";
+srv_prefix(sip, sctp) -> "_sip._sctp.";
+srv_prefix(sips, tcp) -> "_sips._tcp.";
+srv_prefix(sips, sctp) -> "_sips._sctp.".
