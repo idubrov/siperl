@@ -316,7 +316,7 @@ create_response(#sip_request{headers = ReqHeaders}, Status, Reason) ->
     Headers = [{Name, Value} || {Name, Value} <- ReqHeaders,
                                 (Name =:= 'from' orelse Name =:= 'call-id' orelse
                                  Name =:= cseq orelse Name =:= 'via' orelse
-                                 Name =:= 'to')],
+                                 Name =:= 'to' orelse (Name =:= 'timestamp' andalso Status =:= 100))],
     #sip_response{status = Status,
                   reason = Reason,
                   headers = Headers}.
@@ -773,7 +773,8 @@ create_response_test_() ->
                                 {'call-id', <<"987asjd97y7atg">>},
                                 {cseq, <<"986759 INVITE">>},
                                 {route, <<"<sip:alice@atlanta.com>">>},
-                                {route, <<"<sip:bob@biloxi.com>">>}]},
+                                {route, <<"<sip:bob@biloxi.com>">>},
+                                {timestamp, <<"100 0.2">>}]},
 
     % (default reason)
     Response =
@@ -787,9 +788,21 @@ create_response_test_() ->
     % custom reason
     Response2 = Response#sip_response{status = 201, reason = <<"Very Ok!">>},
 
+    % 100 response
+    Response3 =
+        #sip_response{status = 100, reason = <<"Trying">>,
+                     headers = [{via, <<"SIP/2.0/UDP pc33.atlanta.com;branch=z9hG4bKkjshdyff">>},
+                                {via, <<"SIP/2.0/UDP bob.biloxi.com;branch=z9hG4bK776asdhds">>},
+                                {to, <<"Bob <sip:bob@biloxi.com>;tag=XyXULrhOnNkGqswu">>},
+                                {from, <<"Alice <sip:alice@atlanta.com>;tag=88sja8x">>},
+                                {'call-id', <<"987asjd97y7atg">>},
+                                {cseq, <<"986759 INVITE">>},
+                                {timestamp, <<"100 0.2">>}]},
+
     [% Check that all required headers are copied
      ?_assertEqual(Response, create_response(Request, 405)),
-     ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>))
+     ?_assertEqual(Response2, create_response(Request, 201, <<"Very Ok!">>)),
+     ?_assertEqual(Response3, create_response(Request, 100))
      ].
 
 -spec create_ack_cancel_test_() -> list().
