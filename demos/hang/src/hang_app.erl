@@ -1,7 +1,7 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Hang SIP application. Calls other party, then cancels the call after 10 seconds.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(hang_app).
 
 -behaviour(application).

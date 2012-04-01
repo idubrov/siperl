@@ -4,7 +4,7 @@
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3261</a>.
 %%% @reference See <a href="http://tools.ietf.org/html/rfc6026">RFC 6026</a>.
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_transaction_server).
 -extends(sip_transaction_base).
 

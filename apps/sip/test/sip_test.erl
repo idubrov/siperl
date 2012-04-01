@@ -3,7 +3,7 @@
 %%% @doc
 %%% Functions to create test requests/responses.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011-2012 Ivan Dubrov
 %%%----------------------------------------------------------------
 -module(sip_test).
 

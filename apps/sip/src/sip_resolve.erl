@@ -6,7 +6,7 @@
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3263">RFC 3263</a> for details.
 %%% @reference See <a href="http://tools.ietf.org/html/rfc2782">RFC 2782</a> for DNS SRV.
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_resolve).
 

@@ -1,7 +1,7 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Busy SIP application. Starts UAS to respond 486 Busy Here for all INVITE's
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(busy_app).
 
 -behaviour(application).

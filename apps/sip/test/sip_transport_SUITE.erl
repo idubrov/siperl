@@ -4,7 +4,7 @@
 %%% Starts transport layer supervisor, mocks `sip_core:lookup_core/1'
 %%% to retrieve core process `Pid' from the message `Call-ID:' header.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011-2012 Ivan Dubrov
 -module(sip_transport_SUITE).
 
 %% Include files

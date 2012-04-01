@@ -3,7 +3,7 @@
 %%% @doc
 %%% SIP messages parsing/generation.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_message).
 -compile({parse_transform, do}).

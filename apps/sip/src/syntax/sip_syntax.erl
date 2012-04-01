@@ -3,7 +3,7 @@
 %%%
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-20">RFC 3261</a> for details.
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_syntax).
 
 %% Exports

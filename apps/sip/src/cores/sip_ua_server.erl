@@ -4,7 +4,7 @@
 %%% Used as a "mixin" in the `sip_ua' gen_server implementation.
 %%%
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_server).
 -compile({parse_transform, do}).
 

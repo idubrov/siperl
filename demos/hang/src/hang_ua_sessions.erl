@@ -1,7 +1,7 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc Sessions manager for hang UA
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011-2012 Ivan Dubrov
 -module(hang_ua_sessions).
 -behaviour(gen_event).
 

@@ -5,7 +5,7 @@
 %%% Implementation of parsing for supported URI schemes (`sip', `sips', `tel').
 %%% @end
 %%% @reference See <a href="http://tools.ietf.org/html/rfc3261#section-19">RFC 3261</a> for details.
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 %%%----------------------------------------------------------------
 -module(sip_uri).
 

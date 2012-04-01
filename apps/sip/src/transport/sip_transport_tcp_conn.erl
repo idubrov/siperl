@@ -4,7 +4,7 @@
 %%% <em>Note: transport is responsible for basic validation of
 %%% incoming requests/responses and sending "400 Bad Request/Response".</em>
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_transport_tcp_conn).
 
 -behaviour(gen_server).

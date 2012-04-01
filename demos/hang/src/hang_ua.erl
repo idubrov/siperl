@@ -1,7 +1,7 @@
 %%% @author Ivan Dubrov <dubrov.ivan@gmail.com>
 %%% @doc UAS implementation that always responds with 486 Busy Here
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011-2012 Ivan Dubrov
 -module(hang_ua).
 -extends(sip_ua_default).
 

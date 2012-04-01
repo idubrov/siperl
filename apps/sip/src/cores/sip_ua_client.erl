@@ -23,7 +23,7 @@
 %%% FIXME: Following redirects should be optional.
 %%%
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_client).
 -compile({parse_transform, do}).
 

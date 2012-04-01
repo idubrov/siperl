@@ -2,7 +2,7 @@
 %%% @doc UAC/UAS default callback
 %%%
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_default).
 
 %% API

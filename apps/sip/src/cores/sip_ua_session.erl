@@ -2,7 +2,7 @@
 %%% @doc Internal module to support sessions from the UA side (offer/answer interactions)
 %%%
 %%% @end
-%%% @copyright 2011 Ivan Dubrov. See LICENSE file.
+%%% @copyright 2011-2012 Ivan Dubrov. See LICENSE file.
 -module(sip_ua_session).
 -compile({parse_transform, do}).
 

@@ -4,7 +4,7 @@
 %%% Starts transaction layer supervisor, mocks transport layer
 %%% and runs a set of functional tests to verify transactons FSMs.
 %%% @end
-%%% @copyright 2011 Ivan Dubrov
+%%% @copyright 2011-2012 Ivan Dubrov
 -module(sip_transaction_SUITE).
 
 %% Include files
