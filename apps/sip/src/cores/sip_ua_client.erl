@@ -20,6 +20,7 @@
 %%%
 %%% FIXME: Link somehow to transactions. If pending transaction will die, the request
 %%% will stay forever in the list! #14
+%%% FIXME: Following redirects should be optional.
 %%%
 %%% @end
 %%% @copyright 2011 Ivan Dubrov. See LICENSE file.

@@ -60,6 +60,7 @@ init({Handler}) ->
 handle_cast({reply, TxKey, Response}, State) ->
     case lists:keyfind(TxKey, 1, State#state.requests) of
         false ->
+            % was canceled or already replied
             {noreply, State};
         {TxKey, Request} ->
             % add Contact: header and send response

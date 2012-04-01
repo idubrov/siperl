@@ -44,7 +44,7 @@ end_per_testcase(_TestCase, Config) ->
 apply_fun(Fun, Args) ->
     erlang:apply(Fun, Args).
 
-%% @doc Do not reply on INVITE request (it will be cancelled)
+%% @doc The 200 response should be overriden by 487 Request Terminated
 %% @end
 cancel_487_handler(Request, ReplyFun) ->
     Response = sip_ua:create_response(Request, 200),
