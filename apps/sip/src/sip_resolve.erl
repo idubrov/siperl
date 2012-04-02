@@ -101,11 +101,12 @@ select_bynaptr(Host, TLS) when is_boolean(TLS) ->
     case List of
         [] ->
             % no NAPTR records -- try making SRV queries for all supported protocols
-            Service = if TLS -> sips; true -> sip end,
-            case resolve_dest_srv(Service, udp, Host) of
-                [] ->
-                    resolve_dest_srv(Service, tcp, Host);
-                Dests -> Dests
+            if TLS -> resolve_dest_srv(sips, tcp, Host);
+               true ->
+                   case resolve_dest_srv(sip, udp, Host) of
+                       [] -> resolve_dest_srv(sip, tcp, Host);
+                       Dests -> Dests
+                   end
             end;
         _ ->
             % choose with lowest order, preference, which is supported by this implementation
@@ -178,9 +179,8 @@ resolve_dest_srv(Service, Protocol, Target, Domain) ->
     Dest = #sip_destination{transport = Protocol, params = Params},
     case lookup_srv(Domain) of
         [] ->
-            % FIXME: hard-coded default port
-            Port = 5060,
-            [Res || Res <- resolve_dest_a(Target, Dest#sip_destination{port = Port})];
+            % Note: default port is used
+            [Res || Res <- resolve_dest_a(Target, Dest)];
         SRVs ->
             [Res || {_Pri, _Weight, Port, Host} <- SRVs,
                     Res <- resolve_dest_a(Host, Dest#sip_destination{port = Port})]
